@@ -16,9 +16,18 @@ export default function DashboardHome() {
 
   const loadSessions = async () => {
     try {
+      // RLS also exposes every *active* session publicly (attendees need that),
+      // so filter to the user's own - otherwise public demo sessions show up
+      // here as editable and fail on save.
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        setSessions([])
+        return
+      }
       const { data, error } = await supabase
         .from('sessions')
         .select('*')
+        .eq('owner_id', user.id)
         .order('created_at', { ascending: false })
 
       if (error) throw error

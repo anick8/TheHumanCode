@@ -19,9 +19,11 @@ export default function SessionDetailPage() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(null)
   const [saveMessage, setSaveMessage] = useState(null)
+  const [userId, setUserId] = useState(null)
   const supabase = createClient()
 
   const sessionId = params.sessionId
+  const isOwner = Boolean(userId && session && userId === session.owner_id)
 
   useEffect(() => {
     if (sessionId) {
@@ -32,13 +34,13 @@ export default function SessionDetailPage() {
 
   const loadSession = async () => {
     try {
-      const { data, error } = await supabase
-        .from('sessions')
-        .select('*')
-        .eq('id', sessionId)
-        .single()
+      const [{ data: { user } }, { data, error }] = await Promise.all([
+        supabase.auth.getUser(),
+        supabase.from('sessions').select('*').eq('id', sessionId).single(),
+      ])
 
       if (error) throw error
+      setUserId(user?.id ?? null)
       setSession(data)
     } catch (error) {
       console.error('Error loading session:', error)
@@ -120,6 +122,13 @@ export default function SessionDetailPage() {
   // removed in the editor are deleted. Deleting a question cascades to its
   // options and any votes cast on them.
   const saveQuestions = async () => {
+    // RLS rejects writes to sessions the user doesn't own (including the
+    // ownerless demo sessions); say so plainly instead of surfacing the
+    // raw "violates row-level security policy" error.
+    if (!isOwner) {
+      setSaveError("You can't edit this session because it doesn't belong to your account. Create your own session to add questions.")
+      return
+    }
     const blankIndex = questions.findIndex((q) => !(q.text || '').trim())
     if (blankIndex !== -1) {
       setSaveError(
@@ -320,6 +329,11 @@ export default function SessionDetailPage() {
 
   return (
     <div className="py-8">
+      {!isOwner && (
+        <div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+          This session doesn&apos;t belong to your account, so it&apos;s read-only. Changes to questions, settings or design won&apos;t save.
+        </div>
+      )}
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center justify-between">
