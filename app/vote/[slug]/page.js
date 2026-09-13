@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import SessionTheme from '@/components/SessionTheme'
+import SessionLogo from '@/components/SessionLogo'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import PollQuestion from '@/components/PollQuestion'
@@ -91,7 +93,7 @@ export default function VotingPage() {
     const refresh = async () => {
       const { data } = await supabase
         .from('sessions')
-        .select('current_question_index, results_revealed')
+        .select('current_question_index, results_revealed, theme')
         .eq('id', sessionRowId)
         .maybeSingle()
       if (data) setSession((prev) => (prev ? { ...prev, ...data } : prev))
@@ -380,12 +382,14 @@ export default function VotingPage() {
   const totalQuestions = questions.length
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background to-muted">
+    <SessionTheme theme={session.theme} className="min-h-screen bg-gradient-to-br from-background to-muted">
       {/* Header */}
       <div className="border-b border-border bg-card">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-4">
+            <SessionLogo theme={session.theme} className="h-10 shrink-0" />
+            <div className="min-w-0">
               <h1 className="font-display text-xl font-bold text-foreground">{session.title}</h1>
               <div className="mt-1 text-sm text-muted-foreground">
                 <span className="capitalize">{session.results_mode} results</span>
@@ -393,6 +397,7 @@ export default function VotingPage() {
                   <span className="ml-4">Question {currentQuestionIndex + 1} of {totalQuestions}</span>
                 )}
               </div>
+            </div>
             </div>
             <div className="flex items-center">
               <div className="text-sm text-muted-foreground bg-muted px-3 py-1 rounded-full">
@@ -652,6 +657,6 @@ export default function VotingPage() {
           </p>
         </div>
       </footer>
-    </div>
+    </SessionTheme>
   )
 }

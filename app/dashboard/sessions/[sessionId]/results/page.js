@@ -5,6 +5,8 @@ import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import ResultsChart from '@/components/ResultsChart'
 import { formatDateTime } from '@/lib/utils'
+import SessionTheme from '@/components/SessionTheme'
+import SessionLogo from '@/components/SessionLogo'
 
 export default function SessionResultsPage() {
   const params = useParams()
@@ -234,11 +236,12 @@ export default function SessionResultsPage() {
   const topOptions = getTopOptions()
 
   return (
-    <div className="py-8">
+    <SessionTheme theme={session.theme} className="my-8 rounded-2xl px-6 py-8">
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center justify-between">
           <div>
+            <SessionLogo theme={session.theme} className="mb-4 h-12" />
             <h1 className="font-display text-3xl font-bold text-foreground">Results: {session.title}</h1>
             <div className="mt-2 text-muted-foreground">
               <span className="capitalize">{session.results_mode} results • </span>
@@ -581,6 +584,6 @@ export default function SessionResultsPage() {
           </div>
         </div>
       )}
-    </div>
+    </SessionTheme>
   )
 }

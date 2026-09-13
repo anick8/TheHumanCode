@@ -82,7 +82,7 @@ export default function PollQuestion({
                   : 'hover:shadow-md active:scale-[0.995]'
               } ${
                 isSelected
-                  ? 'border-ring bg-muted ring-2 ring-blue-500 ring-opacity-20'
+                  ? 'border-ring bg-muted ring-2 ring-primary/20'
                   : 'border-border hover:border-primary/50'
               } ${loading || submitting ? 'opacity-60' : ''}`}
             >

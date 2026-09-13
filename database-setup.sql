@@ -37,6 +37,28 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS current_question_index integer
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS show_results_between boolean NOT NULL DEFAULT false;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS results_revealed boolean NOT NULL DEFAULT false;
 
+-- Per-session branding from the Design editor (lib/theme.js):
+-- { primary, background, foreground, card, headingFont, bodyFont, logoUrl }.
+-- Only keys that differ from the default are stored; '{}' = default look.
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS theme jsonb NOT NULL DEFAULT '{}'::jsonb;
+
+-- Logo uploads: public-read bucket; owners write only under <their uid>/.
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES ('session-logos', 'session-logos', true, 2097152,
+        ARRAY['image/png','image/jpeg','image/svg+xml','image/webp'])
+ON CONFLICT (id) DO UPDATE SET public = true, file_size_limit = EXCLUDED.file_size_limit,
+  allowed_mime_types = EXCLUDED.allowed_mime_types;
+
+DROP POLICY IF EXISTS "session_logos_owner_insert" ON storage.objects;
+CREATE POLICY "session_logos_owner_insert" ON storage.objects FOR INSERT TO authenticated
+  WITH CHECK (bucket_id = 'session-logos' AND (storage.foldername(name))[1] = (select auth.uid())::text);
+DROP POLICY IF EXISTS "session_logos_owner_update" ON storage.objects;
+CREATE POLICY "session_logos_owner_update" ON storage.objects FOR UPDATE TO authenticated
+  USING (bucket_id = 'session-logos' AND (storage.foldername(name))[1] = (select auth.uid())::text);
+DROP POLICY IF EXISTS "session_logos_owner_delete" ON storage.objects;
+CREATE POLICY "session_logos_owner_delete" ON storage.objects FOR DELETE TO authenticated
+  USING (bucket_id = 'session-logos' AND (storage.foldername(name))[1] = (select auth.uid())::text);
+
 -- 2. QUESTIONS table (questions within a session)
 CREATE TABLE IF NOT EXISTS questions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

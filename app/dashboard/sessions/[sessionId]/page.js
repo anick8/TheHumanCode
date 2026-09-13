@@ -344,7 +344,7 @@ export default function SessionDetailPage() {
               </span>
             </div>
           </div>
-          <div className="flex space-x-4">
+          <div className="flex flex-wrap gap-3">
             <button
               onClick={startPresenting}
               className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
@@ -357,6 +357,15 @@ export default function SessionDetailPage() {
               session.current_question_index < questions.length
                 ? 'Resume'
                 : 'Start'}
+            </button>
+            <button
+              onClick={() => router.push(`/dashboard/sessions/${sessionId}/design`)}
+              className="inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors"
+            >
+              <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+              </svg>
+              Design
             </button>
             <button
               onClick={viewResults}

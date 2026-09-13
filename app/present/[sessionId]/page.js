@@ -7,6 +7,8 @@ import { QRCodeSVG } from 'qrcode.react'
 import { createClient } from '@/lib/supabase/client'
 import ResultsChart from '@/components/ResultsChart'
 import { getAppUrl } from '@/lib/utils'
+import SessionTheme from '@/components/SessionTheme'
+import SessionLogo from '@/components/SessionLogo'
 
 // Full-screen presenter view for projecting a session. The host's position
 // lives in sessions.current_question_index, and every attendee device on
@@ -209,9 +211,11 @@ export default function PresentPage() {
           : 'End poll'
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <SessionTheme theme={session.theme} className="min-h-screen flex flex-col">
       {/* Top bar */}
-      <header className="flex items-center justify-between border-b border-border px-6 py-4">
+      <header className="flex items-center justify-between gap-4 border-b border-border px-6 py-4">
+        <div className="flex min-w-0 items-center gap-4">
+        <SessionLogo theme={session.theme} className="h-10 shrink-0" />
         <div className="min-w-0">
           <p className="truncate font-display text-lg font-bold text-foreground">{session.title}</p>
           <p className="text-sm text-muted-foreground">
@@ -221,6 +225,7 @@ export default function PresentPage() {
                 ? `Question ${index + 1} of ${total}${revealed ? ' · Results' : ''}`
                 : 'Poll ended'}
           </p>
+        </div>
         </div>
         <Link
           href={`/dashboard/sessions/${sessionId}`}
@@ -240,6 +245,11 @@ export default function PresentPage() {
       <main className="flex flex-1 items-center justify-center px-6 py-10">
         {index < 0 ? (
           <div className="text-center">
+            {session.theme?.logoUrl && (
+              <div className="mb-8 flex justify-center">
+                <SessionLogo theme={session.theme} className="h-20 md:h-24" />
+              </div>
+            )}
             <p className="text-sm font-semibold uppercase tracking-widest text-accent">Scan to join</p>
             <h1 className="mt-3 font-display text-4xl font-bold text-foreground md:text-6xl">{session.title}</h1>
             <div className="mt-10 inline-block rounded-2xl bg-white p-6 shadow-2xl">
@@ -341,6 +351,6 @@ export default function PresentPage() {
           )}
         </footer>
       )}
-    </div>
+    </SessionTheme>
   )
 }
