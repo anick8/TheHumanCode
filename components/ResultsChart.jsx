@@ -1,57 +1,21 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-
+// Pure display component: renders whatever counts it is given. It has no
+// data source of its own — the caller is responsible for loading real vote
+// counts (attendee page: get_vote_counts RPC; organizer page: direct votes
+// query, both under RLS) and refreshing them. This used to self-generate
+// fake data via setInterval; that made every "Live Results" screen in the
+// app show fabricated numbers regardless of what attendees actually voted.
 export default function ResultsChart({
-  questionId,
-  sessionId,
   options = [],
-  subscriptionEnabled = true
+  voteCounts = {},
+  live = false
 }) {
-  const [voteCounts, setVoteCounts] = useState({})
-  const [totalVotes, setTotalVotes] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [subscription, setSubscription] = useState(null)
+  const totalVotes = options.reduce((sum, o) => sum + (voteCounts[o.id] || 0), 0)
 
-  // Initialize vote counts
-  useEffect(() => {
-    if (options.length > 0) {
-      const initialCounts = {}
-      options.forEach(option => {
-        initialCounts[option.id] = 0
-      })
-      setVoteCounts(initialCounts)
-      setLoading(false)
-    }
-  }, [options])
-
-  // For demo purposes, simulate real-time voting
-  useEffect(() => {
-    if (!subscriptionEnabled || options.length === 0) return
-
-    // Simulate receiving votes
-    const interval = setInterval(() => {
-      // Only simulate if we have less than 100 votes (for demo)
-      if (totalVotes < 100) {
-        const randomOptionIndex = Math.floor(Math.random() * options.length)
-        const optionId = options[randomOptionIndex].id
-
-        setVoteCounts(prev => ({
-          ...prev,
-          [optionId]: (prev[optionId] || 0) + 1
-        }))
-        setTotalVotes(prev => prev + 1)
-      }
-    }, 3000) // Add a vote every 3 seconds
-
-    return () => clearInterval(interval)
-  }, [options, subscriptionEnabled, totalVotes])
-
-  // Calculate percentages and find leading option
   const getOptionPercentage = (optionId) => {
     if (totalVotes === 0) return 0
-    const count = voteCounts[optionId] || 0
-    return Math.round((count / totalVotes) * 100)
+    return Math.round(((voteCounts[optionId] || 0) / totalVotes) * 100)
   }
 
   const leadingOptionId = options.length > 0 && totalVotes > 0
@@ -69,11 +33,11 @@ export default function ResultsChart({
         <div>
           <h2 className="font-display text-2xl font-bold text-foreground">Live Results</h2>
           <p className="mt-1 text-muted-foreground">
-            Votes update in real-time as participants submit their choices.
+            Votes update as participants submit their choices.
           </p>
         </div>
         <div className="flex items-center">
-          {subscriptionEnabled && (
+          {live && (
             <div className="flex items-center mr-4">
               <div className="h-3 w-3 rounded-full bg-emerald-500 mr-2 animate-pulse"></div>
               <span className="text-sm font-medium text-emerald-300">Live</span>
@@ -141,7 +105,7 @@ export default function ResultsChart({
             <div className="h-3 w-8 rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400 mr-2"></div>
             <span className="text-muted-foreground">Currently leading</span>
           </div>
-          {subscriptionEnabled && (
+          {live && (
             <div className="flex items-center">
               <div className="h-3 w-3 rounded-full bg-emerald-500 mr-2 animate-pulse"></div>
               <span className="text-muted-foreground">Live updates</span>
@@ -151,7 +115,7 @@ export default function ResultsChart({
       </div>
 
       {/* Empty State */}
-      {totalVotes === 0 && !loading && (
+      {totalVotes === 0 && (
         <div className="mt-8 text-center py-12">
           <div className="inline-block rounded-full bg-muted p-6 mb-4">
             <svg className="h-12 w-12 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -164,32 +128,6 @@ export default function ResultsChart({
           </p>
         </div>
       )}
-
-      {/* Loading State */}
-      {loading && (
-        <div className="mt-8 text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-solid border-primary border-r-transparent"></div>
-          <p className="mt-2 text-muted-foreground">Loading results...</p>
-        </div>
-      )}
-
-      {/* Integration Note */}
-      <div className="mt-8 rounded-lg bg-muted border border-border p-4">
-        <div className="flex items-start">
-          <svg className="h-5 w-5 text-accent mr-2 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-          </svg>
-          <div>
-            <p className="text-sm font-medium text-foreground">Real-time updates</p>
-            <p className="mt-1 text-sm text-accent">
-              {subscriptionEnabled
-                ? "Votes are simulated for this demo. In production, this will connect to Supabase Realtime for live updates."
-                : "Connect to Supabase Realtime to enable live vote updates as attendees submit their choices."
-              }
-            </p>
-          </div>
-        </div>
-      </div>
     </div>
   )
 }

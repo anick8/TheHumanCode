@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import ResultsChart from '@/components/ResultsChart'
-import { formatDateTime, getAppUrl } from '@/lib/utils'
+import { formatDateTime } from '@/lib/utils'
 
 export default function SessionResultsPage() {
   const params = useParams()
@@ -14,6 +14,12 @@ export default function SessionResultsPage() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('overview') // 'overview', 'questions', 'export'
   const [realtimeEnabled, setRealtimeEnabled] = useState(true)
+  // {optionId: count}, computed from a direct votes read (see loadVotes).
+  const [voteCounts, setVoteCounts] = useState({})
+  // Distinct voter_token count across the whole session - a real stat,
+  // unlike completion-rate/average-time which the schema has no basis for.
+  const [uniqueVoters, setUniqueVoters] = useState(0)
+  const [lastUpdated, setLastUpdated] = useState(null)
   const supabase = createClient()
 
   const sessionId = params.sessionId
@@ -24,6 +30,16 @@ export default function SessionResultsPage() {
       loadQuestionsAndOptions()
     }
   }, [sessionId])
+
+  // Poll for new votes while "Live Updates" is on. This mirrors the pattern
+  // the voter-facing page already uses (reload counts after a write) rather
+  // than a Postgres changefeed subscription - simpler, and matches how the
+  // votes table's realtime publication isn't otherwise consumed anywhere.
+  useEffect(() => {
+    if (!realtimeEnabled || questions.length === 0) return
+    const interval = setInterval(() => loadVotes(questions), 5000)
+    return () => clearInterval(interval)
+  }, [realtimeEnabled, questions])
 
   const loadSession = async () => {
     try {
@@ -42,78 +58,103 @@ export default function SessionResultsPage() {
 
   const loadQuestionsAndOptions = async () => {
     try {
-      // For demo, use sample data
-      setQuestions(getSampleQuestions())
-      setOptionsByQuestion(getSampleOptions())
+      const { data: questionsData, error: questionsError } = await supabase
+        .from('questions')
+        .select('*')
+        .eq('session_id', sessionId)
+        .order('order_index')
+
+      if (questionsError) throw questionsError
+      const loadedQuestions = questionsData || []
+
+      const optionsMap = {}
+      for (const question of loadedQuestions) {
+        const { data: optionsData, error: optionsError } = await supabase
+          .from('options')
+          .select('*')
+          .eq('question_id', question.id)
+          .order('order_index')
+
+        if (optionsError) throw optionsError
+        optionsMap[question.id] = optionsData || []
+      }
+
+      setQuestions(loadedQuestions)
+      setOptionsByQuestion(optionsMap)
+      await loadVotes(loadedQuestions)
+    } catch (error) {
+      console.error('Error loading questions:', error)
+      setQuestions([])
+      setOptionsByQuestion({})
     } finally {
       setLoading(false)
     }
   }
 
-  const getSampleQuestions = () => {
-    return [
-      {
-        id: 'q1',
-        session_id: sessionId,
-        text: "How would you rate today's event?",
-        order_index: 0,
-        created_at: new Date().toISOString()
-      },
-      {
-        id: 'q2',
-        session_id: sessionId,
-        text: "What topic interests you most for future sessions?",
-        order_index: 1,
-        created_at: new Date().toISOString()
-      },
-      {
-        id: 'q3',
-        session_id: sessionId,
-        text: "How likely are you to attend again?",
-        order_index: 2,
-        created_at: new Date().toISOString()
+  // Direct votes read rather than the get_vote_counts RPC: the RPC exists so
+  // anonymous attendees can see aggregates without table access; the session
+  // owner already has row-level SELECT on votes (database-setup.sql's "Users
+  // can view votes in their sessions" policy), which also exposes voter_token
+  // - needed for a real unique-voter count that the RPC doesn't return.
+  const loadVotes = async (questionList) => {
+    try {
+      const questionIds = questionList.map((q) => q.id)
+      if (questionIds.length === 0) {
+        setVoteCounts({})
+        setUniqueVoters(0)
+        return
       }
-    ]
-  }
 
-  const getSampleOptions = () => {
-    return {
-      'q1': [
-        { id: 'o1', question_id: 'q1', text: 'Excellent', order_index: 0 },
-        { id: 'o2', question_id: 'q1', text: 'Good', order_index: 1 },
-        { id: 'o3', question_id: 'q1', text: 'Average', order_index: 2 },
-        { id: 'o4', question_id: 'q1', text: 'Needs improvement', order_index: 3 }
-      ],
-      'q2': [
-        { id: 'o5', question_id: 'q2', text: 'AI & Machine Learning', order_index: 0 },
-        { id: 'o6', question_id: 'q2', text: 'Web Development', order_index: 1 },
-        { id: 'o7', question_id: 'q2', text: 'Mobile Apps', order_index: 2 },
-        { id: 'o8', question_id: 'q2', text: 'DevOps & Cloud', order_index: 3 }
-      ],
-      'q3': [
-        { id: 'o9', question_id: 'q3', text: 'Very likely', order_index: 0 },
-        { id: 'o10', question_id: 'q3', text: 'Likely', order_index: 1 },
-        { id: 'o11', question_id: 'q3', text: 'Neutral', order_index: 2 },
-        { id: 'o12', question_id: 'q3', text: 'Unlikely', order_index: 3 }
-      ]
+      const { data, error } = await supabase
+        .from('votes')
+        .select('option_id, voter_token')
+        .in('question_id', questionIds)
+
+      if (error) throw error
+
+      const counts = {}
+      const voters = new Set()
+      for (const v of data || []) {
+        counts[v.option_id] = (counts[v.option_id] || 0) + 1
+        voters.add(v.voter_token)
+      }
+      setVoteCounts(counts)
+      setUniqueVoters(voters.size)
+      setLastUpdated(new Date().toISOString())
+    } catch (error) {
+      console.error('Error loading votes:', error)
     }
   }
 
+  const getQuestionVoteCount = (questionId) =>
+    (optionsByQuestion[questionId] || []).reduce(
+      (sum, o) => sum + (voteCounts[o.id] || 0),
+      0
+    )
+
+  // totalVotes and uniqueVoters are real (loadVotes). completionRate and
+  // averageTimePerVote have no basis in the schema - nothing here tracks
+  // per-voter progress through a session or timing - so they're left out
+  // rather than shown as invented numbers.
   const getVoteStats = () => {
+    const totalVotes = Object.values(voteCounts).reduce((a, b) => a + b, 0)
     return {
-      totalVotes: 147,
-      uniqueVoters: 89,
-      questionsAnswered: questions.length,
-      averageTimePerVote: '45 seconds',
-      completionRate: '78%'
+      totalVotes,
+      uniqueVoters,
+      questionsAnswered: questions.length
     }
   }
 
   const exportResults = () => {
     const data = {
       session,
-      questions,
-      optionsByQuestion,
+      questions: questions.map((q) => ({
+        ...q,
+        options: (optionsByQuestion[q.id] || []).map((o) => ({
+          ...o,
+          votes: voteCounts[o.id] || 0
+        }))
+      })),
       stats: getVoteStats(),
       exportedAt: new Date().toISOString()
     }
@@ -129,9 +170,37 @@ export default function SessionResultsPage() {
     linkElement.click()
   }
 
+  const exportResultsCSV = () => {
+    const rows = [['Question', 'Option', 'Votes', 'Percentage']]
+    for (const q of questions) {
+      const qOptions = optionsByQuestion[q.id] || []
+      const qTotal = getQuestionVoteCount(q.id)
+      for (const o of qOptions) {
+        const count = voteCounts[o.id] || 0
+        const pct = qTotal === 0 ? 0 : Math.round((count / qTotal) * 100)
+        // Quote every field and escape embedded quotes (RFC 4180) - question
+        // and option text are free-form user input and may contain commas.
+        const escape = (v) => `"${String(v).replace(/"/g, '""')}"`
+        rows.push([escape(q.text), escape(o.text), count, `${pct}%`])
+      }
+    }
+    const csv = rows.map((r) => r.join(',')).join('\n')
+    const dataUri = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv)
+    const exportFileDefaultName = `poll-results-${session?.slug || 'session'}-${new Date().toISOString().slice(0, 10)}.csv`
+
+    const linkElement = document.createElement('a')
+    linkElement.setAttribute('href', dataUri)
+    linkElement.setAttribute('download', exportFileDefaultName)
+    linkElement.click()
+  }
+
+  // "Most Active" means highest vote count, not "whatever is first" - pick
+  // by actual votes now that real counts exist.
   const getTopQuestion = () => {
     if (questions.length === 0) return null
-    return questions[0] // For demo, return first question
+    return questions.reduce((top, q) =>
+      getQuestionVoteCount(q.id) > getQuestionVoteCount(top.id) ? q : top
+    , questions[0])
   }
 
   const getTopOptions = () => {
@@ -173,7 +242,7 @@ export default function SessionResultsPage() {
             <h1 className="font-display text-3xl font-bold text-foreground">Results: {session.title}</h1>
             <div className="mt-2 text-muted-foreground">
               <span className="capitalize">{session.results_mode} results • </span>
-              <span>Updated {formatDateTime(new Date().toISOString())}</span>
+              <span>{lastUpdated ? `Updated ${formatDateTime(lastUpdated)}` : 'Loading…'}</span>
             </div>
           </div>
           <div className="flex items-center space-x-4">
@@ -260,8 +329,11 @@ export default function SessionResultsPage() {
       {/* Tab Content */}
       {activeTab === 'overview' && (
         <div className="space-y-8">
-          {/* Stats Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* Stats Cards - only stats the schema can actually support.
+              Completion rate and average time were removed rather than
+              faked: nothing tracks a voter's progress through a session or
+              how long they took. */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
               <div className="text-3xl font-bold text-foreground">{stats.totalVotes}</div>
               <div className="text-sm text-muted-foreground">Total Votes</div>
@@ -274,23 +346,15 @@ export default function SessionResultsPage() {
               <div className="text-3xl font-bold text-foreground">{stats.uniqueVoters}</div>
               <div className="text-sm text-muted-foreground">Unique Voters</div>
               <div className="mt-2 text-xs text-muted-foreground">
-                People who participated
+                Distinct voter tokens
               </div>
             </div>
 
             <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-              <div className="text-3xl font-bold text-foreground">{stats.completionRate}</div>
-              <div className="text-sm text-muted-foreground">Completion Rate</div>
+              <div className="text-3xl font-bold text-foreground">{stats.questionsAnswered}</div>
+              <div className="text-sm text-muted-foreground">Questions</div>
               <div className="mt-2 text-xs text-muted-foreground">
-                Answered all questions
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-              <div className="text-3xl font-bold text-foreground">{stats.averageTimePerVote}</div>
-              <div className="text-sm text-muted-foreground">Average Time</div>
-              <div className="mt-2 text-xs text-muted-foreground">
-                Per voting session
+                In this session
               </div>
             </div>
           </div>
@@ -313,10 +377,9 @@ export default function SessionResultsPage() {
               </div>
 
               <ResultsChart
-                questionId={topQuestion.id}
-                sessionId={session.id}
                 options={topOptions}
-                subscriptionEnabled={realtimeEnabled}
+                voteCounts={voteCounts}
+                live={realtimeEnabled}
               />
             </div>
           )}
@@ -372,65 +435,56 @@ export default function SessionResultsPage() {
               </div>
 
               <ResultsChart
-                questionId={question.id}
-                sessionId={session.id}
                 options={optionsByQuestion[question.id] || []}
-                subscriptionEnabled={realtimeEnabled}
+                voteCounts={voteCounts}
+                live={realtimeEnabled}
               />
 
-              {/* Option Details */}
+              {/* Option Details. No "Trend" column: nothing in the schema
+                  tracks vote history over time, so there is no real trend to
+                  show - it was previously Math.random(), removed rather than
+                  replaced with another fake number. */}
               {optionsByQuestion[question.id] && optionsByQuestion[question.id].length > 0 && (
                 <div className="mt-8 pt-8 border-t border-border">
                   <h4 className="text-lg font-semibold text-foreground mb-4">Option Details</h4>
                   <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-300">
+                    <table className="min-w-full divide-y divide-border">
                       <thead>
                         <tr>
                           <th className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">Option</th>
                           <th className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">Votes</th>
                           <th className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">Percentage</th>
-                          <th className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">Trend</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        {optionsByQuestion[question.id].map((option, optionIndex) => {
-                          const votes = Math.floor(Math.random() * 50) + 10
-                          const percentage = Math.round((votes / 147) * 100)
-                          const trend = Math.random() > 0.5 ? 'up' : 'down'
-                          const trendAmount = Math.floor(Math.random() * 15) + 1
+                      <tbody className="divide-y divide-border">
+                        {(() => {
+                          const qOptions = optionsByQuestion[question.id]
+                          const qTotal = getQuestionVoteCount(question.id)
+                          return qOptions.map((option, optionIndex) => {
+                            const votes = voteCounts[option.id] || 0
+                            const percentage = qTotal === 0 ? 0 : Math.round((votes / qTotal) * 100)
 
-                          return (
-                            <tr key={option.id}>
-                              <td className="px-4 py-4 text-sm text-foreground">
-                                <div className="flex items-center">
-                                  <span className="mr-2 text-muted-foreground">{String.fromCharCode(65 + optionIndex)}</span>
-                                  {option.text}
-                                </div>
-                              </td>
-                              <td className="px-4 py-4 text-sm text-foreground">{votes}</td>
-                              <td className="px-4 py-4 text-sm text-foreground">
-                                <div className="flex items-center">
-                                  <span className="font-medium">{percentage}%</span>
-                                  <div className="ml-2 h-2 w-24 bg-muted rounded-full overflow-hidden">
-                                    <div className="h-full rounded-full bg-gradient-to-r from-primary to-accent" style={{ width: `${percentage}%` }}></div>
+                            return (
+                              <tr key={option.id}>
+                                <td className="px-4 py-4 text-sm text-foreground">
+                                  <div className="flex items-center">
+                                    <span className="mr-2 text-muted-foreground">{String.fromCharCode(65 + optionIndex)}</span>
+                                    {option.text}
                                   </div>
-                                </div>
-                              </td>
-                              <td className="px-4 py-4 text-sm">
-                                <div className={`flex items-center ${trend === 'up' ? 'text-emerald-400' : 'text-destructive'}`}>
-                                  <svg className="h-4 w-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                    {trend === 'up' ? (
-                                      <path fillRule="evenodd" d="M5.293 9.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 01-1.414 1.414L11 7.414V15a1 1 0 11-2 0V7.414L6.707 9.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                                    ) : (
-                                      <path fillRule="evenodd" d="M14.707 10.293a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 111.414-1.414L9 12.586V5a1 1 0 012 0v7.586l2.293-2.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                    )}
-                                  </svg>
-                                  {trendAmount}%
-                                </div>
-                              </td>
-                            </tr>
-                          )
-                        })}
+                                </td>
+                                <td className="px-4 py-4 text-sm text-foreground">{votes}</td>
+                                <td className="px-4 py-4 text-sm text-foreground">
+                                  <div className="flex items-center">
+                                    <span className="font-medium">{percentage}%</span>
+                                    <div className="ml-2 h-2 w-24 bg-muted rounded-full overflow-hidden">
+                                      <div className="h-full rounded-full bg-gradient-to-r from-primary to-accent" style={{ width: `${percentage}%` }}></div>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })
+                        })()}
                       </tbody>
                     </table>
                   </div>
@@ -477,7 +531,7 @@ export default function SessionResultsPage() {
                 Export vote data as CSV for easy analysis in spreadsheet software.
               </p>
               <button
-                onClick={exportResults}
+                onClick={exportResultsCSV}
                 className="mt-6 w-full inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors"
               >
                 <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -497,22 +551,15 @@ export default function SessionResultsPage() {
                 <p className="text-muted-foreground mb-4">
                   Create a shareable link to a read-only results page.
                 </p>
-                <div className="flex">
-                  <div className="flex-1">
-                    <input
-                      type="text"
-                      readOnly
-                      value={`${getAppUrl()}/vote/${session.slug}/results`}
-                      className="block w-full rounded-l-lg border border-r-0 border-border px-4 py-3 text-foreground bg-muted"
-                    />
-                  </div>
-                  <button
-                    onClick={() => navigator.clipboard.writeText(`${getAppUrl()}/vote/${session.slug}/results`)}
-                    className="inline-flex items-center rounded-r-lg border border-l-0 border-border bg-card px-4 py-3 text-sm font-medium text-foreground hover:bg-muted transition-colors"
-                  >
-                    Copy
-                  </button>
-                </div>
+                {/* /vote/[slug]/results has no route yet - matches the Embed
+                    button's honest "coming soon" pattern rather than handing
+                    out a URL that 404s. */}
+                <button
+                  onClick={() => alert('Public results page coming soon!')}
+                  className="w-full inline-flex items-center justify-center rounded-lg border border-border bg-card px-4 py-3 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                >
+                  Generate Results Link
+                </button>
               </div>
 
               <div>

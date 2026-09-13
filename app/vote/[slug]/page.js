@@ -384,24 +384,31 @@ export default function VotingPage() {
 
                   {session.results_mode === 'live' ? (
                     <ResultsChart
-                      questionId={question.id}
-                      sessionId={session.id}
                       options={optionsByQuestion[question.id] || []}
-                      subscriptionEnabled={true}
+                      voteCounts={voteCounts}
+                      live={true}
                     />
                   ) : (
                     <div className="space-y-4">
-                      {(optionsByQuestion[question.id] || []).map((option) => (
-                        <div key={option.id} className="space-y-2">
-                          <div className="flex justify-between text-sm">
-                            <span className="font-medium text-foreground">{option.text}</span>
-                            <span className="text-muted-foreground">45% • 27 votes</span>
-                          </div>
-                          <div className="h-3 w-full bg-muted rounded-full overflow-hidden">
-                            <div className="h-full rounded-full bg-gradient-to-r from-primary to-accent" style={{ width: '45%' }}></div>
-                          </div>
-                        </div>
-                      ))}
+                      {(() => {
+                        const qOptions = optionsByQuestion[question.id] || []
+                        const qTotal = qOptions.reduce((sum, o) => sum + (voteCounts[o.id] || 0), 0)
+                        return qOptions.map((option) => {
+                          const count = voteCounts[option.id] || 0
+                          const pct = qTotal === 0 ? 0 : Math.round((count / qTotal) * 100)
+                          return (
+                            <div key={option.id} className="space-y-2">
+                              <div className="flex justify-between text-sm">
+                                <span className="font-medium text-foreground">{option.text}</span>
+                                <span className="text-muted-foreground">{pct}% • {count} vote{count !== 1 ? 's' : ''}</span>
+                              </div>
+                              <div className="h-3 w-full bg-muted rounded-full overflow-hidden">
+                                <div className="h-full rounded-full bg-gradient-to-r from-primary to-accent" style={{ width: `${pct}%` }}></div>
+                              </div>
+                            </div>
+                          )
+                        })
+                      })()}
                     </div>
                   )}
                 </div>
