@@ -54,7 +54,9 @@ export default function PollQuestion({
         </div>
         <p className="mt-2 text-muted-foreground">
           {showResults
-            ? 'Your vote is in. Results so far:'
+            ? selected
+              ? 'Your vote is in. Results so far:'
+              : 'Voting is closed. Results:'
             : 'Select your answer below:'}
         </p>
       </div>

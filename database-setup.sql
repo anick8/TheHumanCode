@@ -31,6 +31,12 @@ CREATE TABLE IF NOT EXISTS sessions (
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS current_question_index integer
   CHECK (current_question_index IS NULL OR current_question_index >= -1);
 
+-- Host option: reveal each question's results before moving on. With it on,
+-- the presenter's Next first sets results_revealed (results shown on every
+-- device, voting closed for that question), then advances and resets it.
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS show_results_between boolean NOT NULL DEFAULT false;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS results_revealed boolean NOT NULL DEFAULT false;
+
 -- 2. QUESTIONS table (questions within a session)
 CREATE TABLE IF NOT EXISTS questions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

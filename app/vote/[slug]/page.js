@@ -63,6 +63,14 @@ export default function VotingPage() {
     }
   }, [hostMode, hostIndex, questions.length])
 
+  // The host revealed this question's results: fetch the latest counts now
+  // rather than waiting for the next poll. PollQuestion then shows results
+  // and disables its options, which closes voting on this device.
+  const resultsRevealed = hostMode && Boolean(session?.results_revealed)
+  useEffect(() => {
+    if (resultsRevealed && session?.id) loadVoteCounts(session.id)
+  }, [resultsRevealed])
+
   // The presenter's Next arrives as a Realtime UPDATE on this session row.
   // A slow poll backs it up: venue Wi-Fi drops websockets, and a missed event
   // would otherwise strand a phone on an old question until reload. The poll
@@ -83,7 +91,7 @@ export default function VotingPage() {
     const refresh = async () => {
       const { data } = await supabase
         .from('sessions')
-        .select('current_question_index')
+        .select('current_question_index, results_revealed')
         .eq('id', sessionRowId)
         .maybeSingle()
       if (data) setSession((prev) => (prev ? { ...prev, ...data } : prev))
@@ -539,16 +547,19 @@ export default function VotingPage() {
                 selectedOptionId={votes[currentQuestion.id]}
                 showResults={
                   hostMode
-                    ? session.results_mode === 'live' && Boolean(votes[currentQuestion.id])
+                    ? resultsRevealed ||
+                      (session.results_mode === 'live' && Boolean(votes[currentQuestion.id]))
                     : showResults && session.results_mode === 'live'
                 }
                 resultsData={getResultsData()}
               />
             )}
 
-            {hostMode && currentQuestion && votes[currentQuestion.id] && (
+            {hostMode && currentQuestion && (votes[currentQuestion.id] || resultsRevealed) && (
               <div className="mt-6 rounded-lg border border-border bg-muted p-4 text-center text-muted-foreground">
-                Vote recorded. The next question will appear when the host moves on.
+                {votes[currentQuestion.id]
+                  ? 'Vote recorded. The next question will appear when the host moves on.'
+                  : 'Voting is closed for this question. The next one will appear when the host moves on.'}
               </div>
             )}
 

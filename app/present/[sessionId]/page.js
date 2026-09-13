@@ -5,12 +5,15 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { QRCodeSVG } from 'qrcode.react'
 import { createClient } from '@/lib/supabase/client'
+import ResultsChart from '@/components/ResultsChart'
 import { getAppUrl } from '@/lib/utils'
 
 // Full-screen presenter view for projecting a session. The host's position
 // lives in sessions.current_question_index, and every attendee device on
 // /vote/[slug] follows it over Supabase Realtime:
 //   -1 = lobby (QR code), 0..n-1 = question, n = finished, NULL = not presenting
+// With show_results_between on, Next becomes two steps per question: first
+// it sets results_revealed (results on screen, voting closed), then it moves on.
 // Lives outside /dashboard so the dashboard nav doesn't appear on the
 // projector; middleware.js protects /present/* the same way.
 export default function PresentPage() {
@@ -23,6 +26,7 @@ export default function PresentPage() {
   const [session, setSession] = useState(null)
   const [questions, setQuestions] = useState([])
   const [optionsByQuestion, setOptionsByQuestion] = useState({})
+  const [voteCounts, setVoteCounts] = useState({})
   const [userId, setUserId] = useState(null)
   const [advancing, setAdvancing] = useState(false)
   const [error, setError] = useState(null)
@@ -69,7 +73,7 @@ export default function PresentPage() {
         // Opening this page directly (not via Start) on a session that isn't
         // presenting puts attendees in the lobby, same as pressing Start.
         if (user?.id === sessionData.owner_id && sessionData.current_question_index === null) {
-          await updateIndex(-1, sessionData)
+          await updateSession({ current_question_index: -1, results_revealed: false }, sessionData)
         }
       } catch (e) {
         if (!cancelled) setError(e.message || 'Could not load this session.')
@@ -100,17 +104,33 @@ export default function PresentPage() {
     }
   }, [sessionId])
 
+  // While results are on screen, keep the chart current as late votes land.
+  const revealed = Boolean(session?.results_revealed)
+  useEffect(() => {
+    if (!revealed || !sessionId) return
+    const loadCounts = async () => {
+      const { data, error: rpcError } = await supabase.rpc('get_vote_counts', { p_session_id: sessionId })
+      if (rpcError) return
+      const counts = {}
+      for (const row of data || []) counts[row.opt_id] = Number(row.vote_total) || 0
+      setVoteCounts(counts)
+    }
+    loadCounts()
+    const interval = setInterval(loadCounts, 3000)
+    return () => clearInterval(interval)
+  }, [revealed, sessionId])
+
   // RLS turns an unauthorized UPDATE into "0 rows affected" rather than an
   // error, so check the returned rows - otherwise a non-owner's click would
   // look like it worked while no attendee moved.
-  const updateIndex = async (nextIndex, baseSession = session) => {
+  const updateSession = async (patch, baseSession = session) => {
     setAdvancing(true)
     setError(null)
-    setSession({ ...baseSession, current_question_index: nextIndex })
+    setSession({ ...baseSession, ...patch })
 
     const { data, error: updateError } = await supabase
       .from('sessions')
-      .update({ current_question_index: nextIndex })
+      .update(patch)
       .eq('id', sessionId)
       .select('id')
 
@@ -127,10 +147,15 @@ export default function PresentPage() {
   const index = session?.current_question_index ?? -1
   const total = questions.length
   const isOwner = Boolean(userId && session && userId === session.owner_id)
+  const showBetween = Boolean(session?.show_results_between)
   const canAdvance = isOwner && total > 0 && index < total && !advancing
+  // With the option on, a question's first Next reveals its results.
+  const revealStep = showBetween && !revealed && index >= 0 && index < total
 
   const goNext = () => {
-    if (canAdvance) updateIndex(index + 1)
+    if (!canAdvance) return
+    if (revealStep) updateSession({ results_revealed: true })
+    else updateSession({ current_question_index: index + 1, results_revealed: false })
   }
 
   // Presentation clickers send PageDown / ArrowRight.
@@ -147,7 +172,9 @@ export default function PresentPage() {
   })
 
   const stopPresenting = async () => {
-    if (await updateIndex(null)) router.push(`/dashboard/sessions/${sessionId}`)
+    if (await updateSession({ current_question_index: null, results_revealed: false })) {
+      router.push(`/dashboard/sessions/${sessionId}`)
+    }
   }
 
   if (loading) {
@@ -173,7 +200,13 @@ export default function PresentPage() {
   const currentOptions = currentQuestion ? optionsByQuestion[currentQuestion.id] || [] : []
 
   const nextLabel =
-    index < 0 ? 'Start first question' : index < total - 1 ? 'Next question' : 'End poll'
+    index < 0
+      ? 'Start first question'
+      : revealStep
+        ? 'Show results'
+        : index < total - 1
+          ? 'Next question'
+          : 'End poll'
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -182,7 +215,11 @@ export default function PresentPage() {
         <div className="min-w-0">
           <p className="truncate font-display text-lg font-bold text-foreground">{session.title}</p>
           <p className="text-sm text-muted-foreground">
-            {index < 0 ? 'Waiting room' : index < total ? `Question ${index + 1} of ${total}` : 'Poll ended'}
+            {index < 0
+              ? 'Waiting room'
+              : index < total
+                ? `Question ${index + 1} of ${total}${revealed ? ' · Results' : ''}`
+                : 'Poll ended'}
           </p>
         </div>
         <Link
@@ -221,19 +258,25 @@ export default function PresentPage() {
             <h1 className="mt-4 font-display text-4xl font-bold leading-tight text-foreground md:text-5xl">
               {currentQuestion.text}
             </h1>
-            <div className="mt-10 grid gap-4 sm:grid-cols-2">
-              {currentOptions.map((option, i) => (
-                <div
-                  key={option.id}
-                  className="flex items-center rounded-xl border border-border bg-card px-6 py-5 text-xl text-foreground"
-                >
-                  <span className="mr-4 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/15 font-display text-accent">
-                    {String.fromCharCode(65 + i)}
-                  </span>
-                  {option.text}
-                </div>
-              ))}
-            </div>
+            {revealed ? (
+              <div className="mt-10">
+                <ResultsChart options={currentOptions} voteCounts={voteCounts} live={false} />
+              </div>
+            ) : (
+              <div className="mt-10 grid gap-4 sm:grid-cols-2">
+                {currentOptions.map((option, i) => (
+                  <div
+                    key={option.id}
+                    className="flex items-center rounded-xl border border-border bg-card px-6 py-5 text-xl text-foreground"
+                  >
+                    <span className="mr-4 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/15 font-display text-accent">
+                      {String.fromCharCode(65 + i)}
+                    </span>
+                    {option.text}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <div className="text-center">
@@ -248,7 +291,7 @@ export default function PresentPage() {
                   View full results
                 </Link>
                 <button
-                  onClick={() => updateIndex(-1)}
+                  onClick={() => updateSession({ current_question_index: -1, results_revealed: false })}
                   disabled={advancing}
                   className="rounded-lg border border-border px-6 py-3 font-semibold text-foreground hover:bg-muted transition-colors disabled:opacity-50"
                 >
@@ -269,20 +312,32 @@ export default function PresentPage() {
 
       {/* Controls - the session owner only */}
       {index < total && (
-        <footer className="flex items-center justify-end border-t border-border px-6 py-4">
+        <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-border px-6 py-4">
           {isOwner ? (
-            <button
-              onClick={goNext}
-              disabled={!canAdvance}
-              className="inline-flex items-center rounded-lg bg-gradient-to-r from-primary to-accent px-8 py-4 text-lg font-semibold text-white shadow-lg hover:opacity-90 transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {advancing ? 'Updating…' : nextLabel}
-              <svg className="ml-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
+            <>
+              <label className="inline-flex cursor-pointer items-center gap-3 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  checked={showBetween}
+                  onChange={() => updateSession({ show_results_between: !showBetween })}
+                  disabled={advancing}
+                  className="h-4 w-4 accent-[var(--color-primary)]"
+                />
+                Show results after each question
+              </label>
+              <button
+                onClick={goNext}
+                disabled={!canAdvance}
+                className="inline-flex items-center rounded-lg bg-gradient-to-r from-primary to-accent px-8 py-4 text-lg font-semibold text-white shadow-lg hover:opacity-90 transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {advancing ? 'Updating…' : nextLabel}
+                <svg className="ml-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </>
           ) : (
-            <p className="text-sm text-muted-foreground">Only the session owner can control this presentation.</p>
+            <p className="ml-auto text-sm text-muted-foreground">Only the session owner can control this presentation.</p>
           )}
         </footer>
       )}

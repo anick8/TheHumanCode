@@ -281,7 +281,7 @@ export default function SessionDetailPage() {
     if (!inProgress) {
       const { data, error } = await supabase
         .from('sessions')
-        .update({ current_question_index: -1 })
+        .update({ current_question_index: -1, results_revealed: false })
         .eq('id', sessionId)
         .select('id')
       if (error || !data?.length) {

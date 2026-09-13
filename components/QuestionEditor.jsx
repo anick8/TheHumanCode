@@ -216,7 +216,7 @@ export default function QuestionEditor({
                           </h3>
                           <p className="mt-1 text-sm text-muted-foreground">
                             {questionOptions.length} option{questionOptions.length !== 1 ? 's' : ''}
-                            {questionOptions.length === 0 && ' — Add options below'}
+                            {questionOptions.length === 0 && 'Add options below'}
                           </p>
                         </div>
                       </div>
