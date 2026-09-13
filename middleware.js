@@ -26,8 +26,9 @@ export async function middleware(request) {
 
   const { data: { session } } = await supabase.auth.getSession()
 
-  // Protect dashboard routes - redirect to home if not authenticated
-  if (request.nextUrl.pathname.startsWith('/dashboard') && !session) {
+  // Protect dashboard and presenter routes - redirect to home if not authenticated
+  const { pathname } = request.nextUrl
+  if ((pathname.startsWith('/dashboard') || pathname.startsWith('/present')) && !session) {
     return NextResponse.redirect(new URL('/', request.url))
   }
 
@@ -35,5 +36,5 @@ export async function middleware(request) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*']
+  matcher: ['/dashboard/:path*', '/present/:path*']
 }

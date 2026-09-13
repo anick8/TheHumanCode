@@ -32,7 +32,16 @@ export default function VotingPage() {
     }
   }, [slug])
 
+  // Host-driven mode: the organizer's presenter screen (/present/[sessionId])
+  // sets sessions.current_question_index and every attendee follows it.
+  //   NULL = self-paced, -1 = lobby, 0..n-1 = question, n = finished
+  const hostIndex = session?.current_question_index ?? null
+  const hostMode = hostIndex !== null
+
   useEffect(() => {
+    // Self-paced live mode jumps to the results view after voting. In host
+    // mode, results stay inline on the question until the host moves on.
+    if (hostMode) return
     if (session && session.results_mode === 'live' && currentQuestionIndex < questions.length) {
       const questionId = questions[currentQuestionIndex]?.id
       if (questionId && votes[questionId]) {
@@ -40,7 +49,58 @@ export default function VotingPage() {
         setShowResults(true)
       }
     }
-  }, [currentQuestionIndex, votes, session, questions])
+  }, [currentQuestionIndex, votes, session, questions, hostMode])
+
+  // Follow the host.
+  useEffect(() => {
+    if (!hostMode || questions.length === 0) return
+    if (hostIndex >= questions.length) {
+      setShowResults(true)
+      if (session?.id) loadVoteCounts(session.id)
+    } else {
+      setShowResults(false)
+      if (hostIndex >= 0) setCurrentQuestionIndex(hostIndex)
+    }
+  }, [hostMode, hostIndex, questions.length])
+
+  // The presenter's Next arrives as a Realtime UPDATE on this session row.
+  // A slow poll backs it up: venue Wi-Fi drops websockets, and a missed event
+  // would otherwise strand a phone on an old question until reload. The poll
+  // also refreshes vote counts so live results include other people's votes.
+  const sessionRowId = session?.id
+  useEffect(() => {
+    if (!sessionRowId) return
+
+    const channel = supabase
+      .channel(`vote-${sessionRowId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'sessions', filter: `id=eq.${sessionRowId}` },
+        (payload) => setSession((prev) => (prev ? { ...prev, ...payload.new } : prev))
+      )
+      .subscribe()
+
+    const refresh = async () => {
+      const { data } = await supabase
+        .from('sessions')
+        .select('current_question_index')
+        .eq('id', sessionRowId)
+        .maybeSingle()
+      if (data) setSession((prev) => (prev ? { ...prev, ...data } : prev))
+      loadVoteCounts(sessionRowId)
+    }
+    const interval = setInterval(refresh, 8000)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisible)
+      supabase.removeChannel(channel)
+    }
+  }, [sessionRowId])
 
   const loadSession = async () => {
     try {
@@ -169,7 +229,8 @@ export default function VotingPage() {
 
       await loadVoteCounts(session.id)
 
-      if (session.results_mode === 'after_all') {
+      // In host mode the presenter decides when to move on.
+      if (!hostMode && session.results_mode === 'after_all') {
         if (currentQuestionIndex < questions.length - 1) {
           setCurrentQuestionIndex(prev => prev + 1)
         } else {
@@ -320,7 +381,7 @@ export default function VotingPage() {
               <h1 className="font-display text-xl font-bold text-foreground">{session.title}</h1>
               <div className="mt-1 text-sm text-muted-foreground">
                 <span className="capitalize">{session.results_mode} results</span>
-                {totalQuestions > 0 && (
+                {totalQuestions > 0 && !(hostMode && (hostIndex < 0 || hostIndex >= totalQuestions)) && (
                   <span className="ml-4">Question {currentQuestionIndex + 1} of {totalQuestions}</span>
                 )}
               </div>
@@ -354,6 +415,17 @@ export default function VotingPage() {
                   Return to Home
                 </a>
               </div>
+            </div>
+          </div>
+        ) : hostMode && hostIndex < 0 ? (
+          // Waiting room: the host has started but hasn't shown a question yet
+          <div className="max-w-3xl mx-auto">
+            <div className="rounded-2xl border border-border bg-card shadow-lg p-10 text-center">
+              <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
+              <h2 className="font-display mt-6 text-2xl font-bold text-foreground">You're in!</h2>
+              <p className="mt-2 text-muted-foreground">
+                Waiting for the host to start. The first question will appear here automatically.
+              </p>
             </div>
           </div>
         ) : showResults ? (
@@ -465,13 +537,23 @@ export default function VotingPage() {
                 onVote={handleVote}
                 loading={submittingVote}
                 selectedOptionId={votes[currentQuestion.id]}
-                showResults={showResults && session.results_mode === 'live'}
+                showResults={
+                  hostMode
+                    ? session.results_mode === 'live' && Boolean(votes[currentQuestion.id])
+                    : showResults && session.results_mode === 'live'
+                }
                 resultsData={getResultsData()}
               />
             )}
 
-            {/* Navigation */}
-            <div className="mt-8 flex justify-between">
+            {hostMode && currentQuestion && votes[currentQuestion.id] && (
+              <div className="mt-6 rounded-lg border border-border bg-muted p-4 text-center text-muted-foreground">
+                Vote recorded. The next question will appear when the host moves on.
+              </div>
+            )}
+
+            {/* Navigation - self-paced only; in host mode the presenter drives */}
+            <div className={`mt-8 flex justify-between ${hostMode ? 'hidden' : ''}`}>
               <button
                 onClick={prevQuestion}
                 disabled={currentQuestionIndex === 0 || submittingVote}

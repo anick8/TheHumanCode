@@ -24,6 +24,13 @@ CREATE TABLE IF NOT EXISTS sessions (
   updated_at timestamptz DEFAULT now()
 );
 
+-- Presenter position for host-driven sessions (/present/[sessionId]). Added
+-- with ALTER rather than in CREATE TABLE so existing installs pick it up too.
+--   NULL = not presenting (attendees self-pace), -1 = lobby,
+--   0..n-1 = question at that order position, n = finished
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS current_question_index integer
+  CHECK (current_question_index IS NULL OR current_question_index >= -1);
+
 -- 2. QUESTIONS table (questions within a session)
 CREATE TABLE IF NOT EXISTS questions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -158,6 +165,24 @@ BEGIN
      )
   THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE votes;
+  END IF;
+END $$;
+
+-- Attendee devices subscribe to UPDATEs on their session row so the
+-- presenter's Next reaches every phone. Realtime respects RLS, and the
+-- "Anyone can view active sessions by slug" policy already makes the row
+-- readable by anon, so this adds no new exposure.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime')
+     AND NOT EXISTS (
+       SELECT 1 FROM pg_publication_tables
+       WHERE pubname = 'supabase_realtime'
+         AND schemaname = 'public'
+         AND tablename = 'sessions'
+     )
+  THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE sessions;
   END IF;
 END $$;
 
