@@ -2,12 +2,13 @@
 
 import { useState, useRef } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
+import { getAppUrl } from '@/lib/utils'
 
 export default function QRCodeDisplay({ slug, size = 256 }) {
   const [downloading, setDownloading] = useState(false)
   const qrRef = useRef(null)
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  const appUrl = getAppUrl()
   const voteUrl = `${appUrl}/vote/${slug}`
 
   const downloadQRCode = () => {
@@ -74,15 +75,15 @@ export default function QRCodeDisplay({ slug, size = 256 }) {
   }
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
+    <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
       <div className="text-center">
-        <h3 className="text-xl font-semibold text-gray-900 mb-4">QR Code for Voting</h3>
-        <p className="text-gray-600 mb-6">
+        <h3 className="text-xl font-semibold text-foreground mb-4">QR Code for Voting</h3>
+        <p className="text-muted-foreground mb-6">
           Share this QR code at your event. Attendees scan it to vote.
         </p>
 
         {/* QR Code Container */}
-        <div className="inline-flex items-center justify-center p-4 bg-white rounded-xl border border-gray-200 mb-6">
+        <div className="inline-flex items-center justify-center p-4 bg-card rounded-xl border border-border mb-6">
           <div ref={qrRef}>
             <QRCodeSVG
               value={voteUrl}
@@ -97,14 +98,14 @@ export default function QRCodeDisplay({ slug, size = 256 }) {
 
         {/* Voting URL */}
         <div className="mb-6">
-          <p className="text-sm text-gray-500 mb-2">Voting URL</p>
+          <p className="text-sm text-muted-foreground mb-2">Voting URL</p>
           <div className="flex items-center">
-            <code className="flex-1 px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 truncate">
+            <code className="flex-1 px-4 py-2 bg-muted border border-border rounded-lg text-sm text-foreground truncate">
               {voteUrl}
             </code>
             <button
               onClick={copyLink}
-              className="ml-2 inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              className="ml-2 inline-flex items-center px-4 py-2 border border-border bg-card text-sm font-medium rounded-lg text-foreground hover:bg-muted transition-colors"
             >
               <svg className="h-4 w-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -115,9 +116,9 @@ export default function QRCodeDisplay({ slug, size = 256 }) {
         </div>
 
         {/* Instructions */}
-        <div className="mb-6 rounded-lg bg-blue-50 p-4 text-left">
-          <h4 className="text-sm font-semibold text-blue-900 mb-2">How to use this QR code</h4>
-          <ul className="text-sm text-blue-800 space-y-1">
+        <div className="mb-6 rounded-lg bg-muted p-4 text-left">
+          <h4 className="text-sm font-semibold text-foreground mb-2">How to use this QR code</h4>
+          <ul className="text-sm text-muted-foreground space-y-1">
             <li className="flex items-start">
               <span className="mr-2">📱</span>
               <span>Display on screen at your event or print on handouts</span>
@@ -138,7 +139,7 @@ export default function QRCodeDisplay({ slug, size = 256 }) {
           <button
             onClick={downloadQRCode}
             disabled={downloading}
-            className="flex-1 inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50"
+            className="flex-1 inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50"
           >
             {downloading ? (
               <>
@@ -156,7 +157,7 @@ export default function QRCodeDisplay({ slug, size = 256 }) {
           </button>
           <button
             onClick={() => window.print()}
-            className="flex-1 inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-6 py-3 text-base font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors"
+            className="flex-1 inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors"
           >
             <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />

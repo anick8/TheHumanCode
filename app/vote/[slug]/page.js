@@ -278,11 +278,11 @@ export default function VotingPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
+      <div className="min-h-screen bg-gradient-to-br from-background to-muted">
         <div className="container mx-auto px-4 py-16 text-center">
-          <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-solid border-blue-600 border-r-transparent"></div>
-          <h1 className="mt-6 text-2xl font-bold text-gray-900">Loading poll...</h1>
-          <p className="mt-2 text-gray-600">Please wait while we prepare your voting experience.</p>
+          <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
+          <h1 className="font-display mt-6 text-2xl font-bold text-foreground">Loading poll...</h1>
+          <p className="mt-2 text-muted-foreground">Please wait while we prepare your voting experience.</p>
         </div>
       </div>
     )
@@ -290,14 +290,14 @@ export default function VotingPage() {
 
   if (!session) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
+      <div className="min-h-screen bg-gradient-to-br from-background to-muted">
         <div className="container mx-auto px-4 py-16 text-center">
-          <h1 className="text-3xl font-bold text-gray-900">Poll Not Found</h1>
-          <p className="mt-2 text-gray-600 max-w-md mx-auto">
+          <h1 className="font-display text-3xl font-bold text-foreground">Poll Not Found</h1>
+          <p className="mt-2 text-muted-foreground max-w-md mx-auto">
             This poll session is no longer available. It may have ended or been removed by the organizer.
           </p>
           <div className="mt-8">
-            <a href="/" className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity">
+            <a href="/" className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity">
               Return to Home
             </a>
           </div>
@@ -311,14 +311,14 @@ export default function VotingPage() {
   const totalQuestions = questions.length
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
+    <div className="min-h-screen bg-gradient-to-br from-background to-muted">
       {/* Header */}
-      <div className="border-b border-gray-200 bg-white">
+      <div className="border-b border-border bg-card">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-bold text-gray-900">{session.title}</h1>
-              <div className="mt-1 text-sm text-gray-600">
+              <h1 className="font-display text-xl font-bold text-foreground">{session.title}</h1>
+              <div className="mt-1 text-sm text-muted-foreground">
                 <span className="capitalize">{session.results_mode} results</span>
                 {totalQuestions > 0 && (
                   <span className="ml-4">Question {currentQuestionIndex + 1} of {totalQuestions}</span>
@@ -326,7 +326,7 @@ export default function VotingPage() {
               </div>
             </div>
             <div className="flex items-center">
-              <div className="text-sm text-gray-600 bg-gray-100 px-3 py-1 rounded-full">
+              <div className="text-sm text-muted-foreground bg-muted px-3 py-1 rounded-full">
                 Anonymous Vote
               </div>
             </div>
@@ -338,19 +338,19 @@ export default function VotingPage() {
       <main className="container mx-auto px-4 py-8">
         {questions.length === 0 ? (
           <div className="max-w-3xl mx-auto">
-            <div className="rounded-2xl border border-gray-200 bg-white shadow-lg p-8 text-center">
-              <div className="inline-block rounded-full bg-gray-100 p-6 mb-4">
-                <svg className="h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="rounded-2xl border border-border bg-card shadow-lg p-8 text-center">
+              <div className="inline-block rounded-full bg-muted p-6 mb-4">
+                <svg className="h-12 w-12 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
-              <h2 className="text-2xl font-bold text-gray-900">No Questions Yet</h2>
-              <p className="mt-2 text-gray-600 max-w-md mx-auto">
+              <h2 className="font-display text-2xl font-bold text-foreground">No Questions Yet</h2>
+              <p className="mt-2 text-muted-foreground max-w-md mx-auto">
                 The organizer hasn't added any questions to this poll yet.
                 Please check back later or contact the event organizer.
               </p>
               <div className="mt-8">
-                <a href="/" className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity">
+                <a href="/" className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity">
                   Return to Home
                 </a>
               </div>
@@ -360,8 +360,8 @@ export default function VotingPage() {
           // Results View
           <div className="max-w-4xl mx-auto">
             <div className="mb-8 text-center">
-              <h2 className="text-3xl font-bold text-gray-900">Poll Results</h2>
-              <p className="mt-2 text-gray-600">
+              <h2 className="font-display text-3xl font-bold text-foreground">Poll Results</h2>
+              <p className="mt-2 text-muted-foreground">
                 {session.results_mode === 'live'
                   ? 'Live results are shown below. Thank you for voting!'
                   : 'Thank you for participating! Here are the results:'}
@@ -370,12 +370,12 @@ export default function VotingPage() {
 
             <div className="space-y-8">
               {questions.map((question, index) => (
-                <div key={question.id} className="rounded-2xl border border-gray-200 bg-white shadow-lg p-8">
+                <div key={question.id} className="rounded-2xl border border-border bg-card shadow-lg p-8">
                   <div className="mb-6">
-                    <h3 className="text-2xl font-bold text-gray-900">
-                      <span className="text-blue-600">Q{index + 1}:</span> {question.text}
+                    <h3 className="text-2xl font-bold text-foreground">
+                      <span className="text-accent">Q{index + 1}:</span> {question.text}
                     </h3>
-                    <p className="mt-2 text-gray-600">
+                    <p className="mt-2 text-muted-foreground">
                       {index === currentQuestionIndex && votes[question.id]
                         ? `You voted: "${optionsByQuestion[question.id]?.find(o => o.id === votes[question.id])?.text}"`
                         : 'Your vote is anonymous'}
@@ -394,11 +394,11 @@ export default function VotingPage() {
                       {(optionsByQuestion[question.id] || []).map((option) => (
                         <div key={option.id} className="space-y-2">
                           <div className="flex justify-between text-sm">
-                            <span className="font-medium text-gray-900">{option.text}</span>
-                            <span className="text-gray-600">45% • 27 votes</span>
+                            <span className="font-medium text-foreground">{option.text}</span>
+                            <span className="text-muted-foreground">45% • 27 votes</span>
                           </div>
-                          <div className="h-3 w-full bg-gray-200 rounded-full overflow-hidden">
-                            <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500" style={{ width: '45%' }}></div>
+                          <div className="h-3 w-full bg-muted rounded-full overflow-hidden">
+                            <div className="h-full rounded-full bg-gradient-to-r from-primary to-accent" style={{ width: '45%' }}></div>
                           </div>
                         </div>
                       ))}
@@ -409,14 +409,14 @@ export default function VotingPage() {
             </div>
 
             <div className="mt-8 text-center">
-              <p className="text-gray-600 mb-4">
+              <p className="text-muted-foreground mb-4">
                 {session.results_mode === 'live'
                   ? 'Results update automatically as more people vote.'
                   : 'Results are final for this session.'}
               </p>
               <button
                 onClick={() => window.location.reload()}
-                className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
+                className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
               >
                 <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -431,13 +431,13 @@ export default function VotingPage() {
             {/* Question Progress */}
             {totalQuestions > 1 && (
               <div className="mb-8">
-                <div className="flex justify-between text-sm text-gray-600 mb-2">
+                <div className="flex justify-between text-sm text-muted-foreground mb-2">
                   <span>Question {currentQuestionIndex + 1} of {totalQuestions}</span>
                   <span>{Math.round(((currentQuestionIndex + 1) / totalQuestions) * 100)}% complete</span>
                 </div>
-                <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
+                <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-500"
+                    className="h-full rounded-full bg-gradient-to-r from-primary to-accent transition-all duration-500"
                     style={{ width: `${((currentQuestionIndex + 1) / totalQuestions) * 100}%` }}
                   ></div>
                 </div>
@@ -445,8 +445,8 @@ export default function VotingPage() {
             )}
 
             {voteError && (
-              <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4">
-                <p className="text-sm font-medium text-red-800">{voteError}</p>
+              <div className="mb-6 rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+                <p className="text-sm font-medium text-destructive">{voteError}</p>
               </div>
             )}
 
@@ -468,7 +468,7 @@ export default function VotingPage() {
               <button
                 onClick={prevQuestion}
                 disabled={currentQuestionIndex === 0 || submittingVote}
-                className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-6 py-3 text-base font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -480,7 +480,7 @@ export default function VotingPage() {
                 {session.results_mode === 'live' && votes[currentQuestion?.id] && (
                   <button
                     onClick={() => setShowResults(true)}
-                    className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-green-600 to-emerald-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
+                    className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-500 px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
                   >
                     <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -493,7 +493,7 @@ export default function VotingPage() {
                   <button
                     onClick={nextQuestion}
                     disabled={!votes[currentQuestion?.id] || submittingVote}
-                    className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {currentQuestionIndex < totalQuestions - 1 ? (
                       <>
@@ -516,9 +516,9 @@ export default function VotingPage() {
             </div>
 
             {/* Instructions */}
-            <div className="mt-8 rounded-lg bg-blue-50 border border-blue-200 p-6">
-              <h4 className="text-lg font-semibold text-blue-900 mb-2">Voting Instructions</h4>
-              <ul className="text-blue-800 space-y-2">
+            <div className="mt-8 rounded-lg bg-muted border border-border p-6">
+              <h4 className="text-lg font-semibold text-foreground mb-2">Voting Instructions</h4>
+              <ul className="text-muted-foreground space-y-2">
                 <li className="flex items-start">
                   <span className="mr-2">📱</span>
                   <span>Select your answer by clicking on an option</span>
@@ -542,12 +542,12 @@ export default function VotingPage() {
       </main>
 
       {/* Footer */}
-      <footer className="mt-12 border-t border-gray-200 bg-white py-8">
+      <footer className="mt-12 border-t border-border bg-card py-8">
         <div className="container mx-auto px-4 text-center">
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-muted-foreground">
             Powered by LivePolls • Your vote is anonymous and secure
           </p>
-          <p className="mt-2 text-xs text-gray-500">
+          <p className="mt-2 text-xs text-muted-foreground">
             Need help? Contact the event organizer.
           </p>
         </div>

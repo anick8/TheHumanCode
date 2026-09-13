@@ -37,17 +37,17 @@ export default function DashboardNav({ session, user: propUser }) {
   }
 
   return (
-    <nav className="border-b border-gray-200 bg-white sticky top-0 z-30 shadow-2xs">
+    <nav className="border-b border-border bg-card sticky top-0 z-30 shadow-2xs">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 justify-between items-center">
           <div className="flex items-center">
             <div className="flex flex-shrink-0 items-center">
               <Link href="/dashboard" className="flex items-center">
-                <div className="h-9 w-9 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 flex items-center justify-center shadow-xs">
+                <div className="h-9 w-9 rounded-xl bg-gradient-to-r from-primary to-accent flex items-center justify-center shadow-xs">
                   <span className="text-xl font-black text-white">⚡</span>
                 </div>
-                <span className="ml-3 text-xl font-bold text-gray-900">LivePolls</span>
-                <span className="ml-2 text-xs font-semibold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                <span className="ml-3 text-xl font-bold text-foreground">LivePolls</span>
+                <span className="ml-2 text-xs font-semibold bg-primary/15 text-accent px-2 py-0.5 rounded-full">
                   Dashboard
                 </span>
               </Link>
@@ -59,8 +59,8 @@ export default function DashboardNav({ session, user: propUser }) {
                   href={item.href}
                   className={`inline-flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
                     isActive(item.href)
-                      ? 'bg-blue-50 text-blue-700 font-semibold'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                      ? 'bg-muted text-accent font-semibold'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                   }`}
                 >
                   {item.name}
@@ -71,17 +71,17 @@ export default function DashboardNav({ session, user: propUser }) {
 
           <div className="flex items-center space-x-4">
             <div className="flex items-center">
-              <div className="h-8 w-8 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 flex items-center justify-center text-white text-xs font-bold shadow-xs">
+              <div className="h-8 w-8 rounded-full bg-gradient-to-r from-primary to-accent flex items-center justify-center text-white text-xs font-bold shadow-xs">
                 {userInitial}
               </div>
-              <span className="ml-2.5 text-xs sm:text-sm font-medium text-gray-700 max-w-[140px] sm:max-w-[200px] truncate hidden xs:inline-block">
+              <span className="ml-2.5 text-xs sm:text-sm font-medium text-foreground max-w-[140px] sm:max-w-[200px] truncate hidden xs:inline-block">
                 {userEmail}
               </span>
             </div>
 
             <button
               onClick={handleSignOut}
-              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs sm:text-sm font-medium text-gray-700 shadow-2xs hover:bg-gray-50 hover:text-red-600 transition-colors"
+              className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs sm:text-sm font-medium text-foreground shadow-2xs hover:bg-muted hover:text-destructive transition-colors"
             >
               Sign Out
             </button>
@@ -89,15 +89,15 @@ export default function DashboardNav({ session, user: propUser }) {
         </div>
 
         {/* Mobile navigation */}
-        <div className="sm:hidden border-t border-gray-100 py-2 flex space-x-2">
+        <div className="sm:hidden border-t border-border py-2 flex space-x-2">
           {navigation.map((item) => (
             <Link
               key={item.name}
               href={item.href}
               className={`px-3 py-1.5 text-xs font-medium rounded-md ${
                 isActive(item.href)
-                  ? 'bg-blue-50 text-blue-700 font-semibold'
-                  : 'text-gray-600 hover:text-gray-900'
+                  ? 'bg-muted text-accent font-semibold'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               {item.name}

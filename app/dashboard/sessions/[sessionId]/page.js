@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import QRCodeDisplay from '@/components/QRCodeDisplay'
 import SessionForm from '@/components/SessionForm'
 import QuestionEditor from '@/components/QuestionEditor'
-import { formatDateTime } from '@/lib/utils'
+import { formatDateTime, getAppUrl } from '@/lib/utils'
 
 export default function SessionDetailPage() {
   const params = useParams()
@@ -276,8 +276,8 @@ export default function SessionDetailPage() {
     return (
       <div className="py-8">
         <div className="animate-pulse">
-          <div className="h-8 bg-gray-200 rounded w-48 mb-8"></div>
-          <div className="h-64 bg-gray-100 rounded-lg"></div>
+          <div className="h-8 bg-muted rounded w-48 mb-8"></div>
+          <div className="h-64 bg-muted rounded-lg"></div>
         </div>
       </div>
     )
@@ -286,11 +286,11 @@ export default function SessionDetailPage() {
   if (!session) {
     return (
       <div className="py-8 text-center">
-        <h2 className="text-2xl font-bold text-gray-900">Session not found</h2>
-        <p className="mt-2 text-gray-600">The session you're looking for doesn't exist.</p>
+        <h2 className="font-display text-2xl font-bold text-foreground">Session not found</h2>
+        <p className="mt-2 text-muted-foreground">The session you're looking for doesn't exist.</p>
         <button
           onClick={() => router.push('/dashboard')}
-          className="mt-6 inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
+          className="mt-6 inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
         >
           Back to Dashboard
         </button>
@@ -304,8 +304,8 @@ export default function SessionDetailPage() {
       <div className="mb-8">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">{session.title}</h1>
-            <div className="mt-2 flex items-center space-x-4 text-gray-600">
+            <h1 className="font-display text-3xl font-bold text-foreground">{session.title}</h1>
+            <div className="mt-2 flex items-center space-x-4 text-muted-foreground">
               <span className="flex items-center">
                 <svg className="h-4 w-4 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
@@ -314,12 +314,12 @@ export default function SessionDetailPage() {
               </span>
               <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
                 session.is_active
-                  ? 'bg-green-100 text-green-800'
-                  : 'bg-gray-100 text-gray-800'
+                  ? 'bg-emerald-500/15 text-emerald-300'
+                  : 'bg-muted text-foreground'
               }`}>
                 {session.is_active ? 'Active' : 'Inactive'}
               </span>
-              <span className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-800 capitalize">
+              <span className="inline-flex items-center rounded-full bg-primary/15 px-3 py-1 text-xs font-medium text-accent capitalize">
                 {session.results_mode} results
               </span>
             </div>
@@ -327,7 +327,7 @@ export default function SessionDetailPage() {
           <div className="flex space-x-4">
             <button
               onClick={viewResults}
-              className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-6 py-3 text-base font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors"
+              className="inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors"
             >
               <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -336,7 +336,7 @@ export default function SessionDetailPage() {
             </button>
             <button
               onClick={deleteSession}
-              className="inline-flex items-center justify-center rounded-lg border border-red-300 bg-white px-6 py-3 text-base font-semibold text-red-700 shadow-sm hover:bg-red-50 transition-colors"
+              className="inline-flex items-center justify-center rounded-lg border border-destructive/40 bg-card px-6 py-3 text-base font-semibold text-destructive shadow-sm hover:bg-destructive/10 transition-colors"
             >
               <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -348,14 +348,14 @@ export default function SessionDetailPage() {
       </div>
 
       {/* Tabs */}
-      <div className="mb-8 border-b border-gray-200">
+      <div className="mb-8 border-b border-border">
         <nav className="-mb-px flex space-x-8">
           <button
             onClick={() => setActiveTab('questions')}
             className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
               activeTab === 'questions'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                ? 'border-ring text-accent'
+                : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
             }`}
           >
             <svg className="mr-2 h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -367,8 +367,8 @@ export default function SessionDetailPage() {
             onClick={() => setActiveTab('qr')}
             className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
               activeTab === 'qr'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                ? 'border-ring text-accent'
+                : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
             }`}
           >
             <svg className="mr-2 h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -380,8 +380,8 @@ export default function SessionDetailPage() {
             onClick={() => setActiveTab('settings')}
             className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
               activeTab === 'settings'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                ? 'border-ring text-accent'
+                : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
             }`}
           >
             <svg className="mr-2 h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -404,36 +404,36 @@ export default function SessionDetailPage() {
           />
 
           {/* Save bar */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
             <div className="flex items-center justify-between gap-6">
               <div className="min-w-0">
-                <h3 className="text-lg font-semibold text-gray-900">
+                <h3 className="text-lg font-semibold text-foreground">
                   Publish to attendees
                 </h3>
-                <p className="mt-1 text-sm text-gray-600">
+                <p className="mt-1 text-sm text-muted-foreground">
                   Edits above are held in the browser until you save. Attendees at{' '}
-                  <code className="text-gray-800">/vote/{session.slug}</code> only see
+                  <code className="text-foreground">/vote/{session.slug}</code> only see
                   saved questions.
                 </p>
               </div>
               <button
                 onClick={saveQuestions}
                 disabled={saving}
-                className="inline-flex shrink-0 items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50"
+                className="inline-flex shrink-0 items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50"
               >
                 {saving ? 'Saving…' : 'Save Questions'}
               </button>
             </div>
 
             {saveError && (
-              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
-                <p className="text-sm font-medium text-red-800">{saveError}</p>
+              <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+                <p className="text-sm font-medium text-destructive">{saveError}</p>
               </div>
             )}
 
             {saveMessage && (
-              <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-4">
-                <p className="text-sm font-medium text-green-800">{saveMessage}</p>
+              <div className="mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
+                <p className="text-sm font-medium text-emerald-300">{saveMessage}</p>
               </div>
             )}
           </div>
@@ -453,20 +453,20 @@ export default function SessionDetailPage() {
           />
 
           {/* Voting URL */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
-            <h3 className="text-xl font-semibold text-gray-900 mb-4">Voting URL</h3>
-            <p className="text-gray-600 mb-4">
+          <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
+            <h3 className="text-xl font-semibold text-foreground mb-4">Voting URL</h3>
+            <p className="text-muted-foreground mb-4">
               Share this URL with attendees. They can open it directly without scanning the QR code.
             </p>
-            <div className="bg-gray-50 rounded-lg p-4">
-              <code className="text-gray-800 break-all">
-                {process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/vote/{session.slug}
+            <div className="bg-muted rounded-lg p-4">
+              <code className="text-foreground break-all">
+                {getAppUrl()}/vote/{session.slug}
               </code>
             </div>
             <div className="mt-4 flex space-x-4">
               <button
-                onClick={() => navigator.clipboard.writeText(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/vote/${session.slug}`)}
-                className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-6 py-3 text-base font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors"
+                onClick={() => navigator.clipboard.writeText(`${getAppUrl()}/vote/${session.slug}`)}
+                className="inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors"
               >
                 <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -475,7 +475,7 @@ export default function SessionDetailPage() {
               </button>
               <button
                 onClick={() => window.open(`/vote/${session.slug}`, '_blank')}
-                className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
+                className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
               >
                 <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import ResultsChart from '@/components/ResultsChart'
-import { formatDateTime } from '@/lib/utils'
+import { formatDateTime, getAppUrl } from '@/lib/utils'
 
 export default function SessionResultsPage() {
   const params = useParams()
@@ -144,8 +144,8 @@ export default function SessionResultsPage() {
     return (
       <div className="py-8">
         <div className="animate-pulse">
-          <div className="h-8 bg-gray-200 rounded w-48 mb-8"></div>
-          <div className="h-64 bg-gray-100 rounded-lg"></div>
+          <div className="h-8 bg-muted rounded w-48 mb-8"></div>
+          <div className="h-64 bg-muted rounded-lg"></div>
         </div>
       </div>
     )
@@ -154,8 +154,8 @@ export default function SessionResultsPage() {
   if (!session) {
     return (
       <div className="py-8 text-center">
-        <h2 className="text-2xl font-bold text-gray-900">Session not found</h2>
-        <p className="mt-2 text-gray-600">The session you're looking for doesn't exist.</p>
+        <h2 className="font-display text-2xl font-bold text-foreground">Session not found</h2>
+        <p className="mt-2 text-muted-foreground">The session you're looking for doesn't exist.</p>
       </div>
     )
   }
@@ -170,8 +170,8 @@ export default function SessionResultsPage() {
       <div className="mb-8">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Results: {session.title}</h1>
-            <div className="mt-2 text-gray-600">
+            <h1 className="font-display text-3xl font-bold text-foreground">Results: {session.title}</h1>
+            <div className="mt-2 text-muted-foreground">
               <span className="capitalize">{session.results_mode} results • </span>
               <span>Updated {formatDateTime(new Date().toISOString())}</span>
             </div>
@@ -179,7 +179,7 @@ export default function SessionResultsPage() {
           <div className="flex items-center space-x-4">
             <button
               onClick={exportResults}
-              className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-6 py-3 text-base font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors"
+              className="inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors"
             >
               <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -190,13 +190,13 @@ export default function SessionResultsPage() {
               onClick={() => setRealtimeEnabled(!realtimeEnabled)}
               className={`inline-flex items-center justify-center rounded-lg px-6 py-3 text-base font-semibold shadow-sm transition-colors ${
                 realtimeEnabled
-                  ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:opacity-90'
-                  : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                  ? 'bg-gradient-to-r from-emerald-600 to-emerald-500 text-white hover:opacity-90'
+                  : 'border border-border bg-card text-foreground hover:bg-muted'
               }`}
             >
               {realtimeEnabled ? (
                 <>
-                  <div className="mr-2 h-3 w-3 rounded-full bg-green-300 animate-pulse"></div>
+                  <div className="mr-2 h-3 w-3 rounded-full bg-emerald-400 animate-pulse"></div>
                   Live Updates On
                 </>
               ) : (
@@ -213,14 +213,14 @@ export default function SessionResultsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="mb-8 border-b border-gray-200">
+      <div className="mb-8 border-b border-border">
         <nav className="-mb-px flex space-x-8">
           <button
             onClick={() => setActiveTab('overview')}
             className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
               activeTab === 'overview'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                ? 'border-ring text-accent'
+                : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
             }`}
           >
             <svg className="mr-2 h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -232,8 +232,8 @@ export default function SessionResultsPage() {
             onClick={() => setActiveTab('questions')}
             className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
               activeTab === 'questions'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                ? 'border-ring text-accent'
+                : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
             }`}
           >
             <svg className="mr-2 h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -245,8 +245,8 @@ export default function SessionResultsPage() {
             onClick={() => setActiveTab('export')}
             className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
               activeTab === 'export'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                ? 'border-ring text-accent'
+                : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
             }`}
           >
             <svg className="mr-2 h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -262,34 +262,34 @@ export default function SessionResultsPage() {
         <div className="space-y-8">
           {/* Stats Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-              <div className="text-3xl font-bold text-gray-900">{stats.totalVotes}</div>
-              <div className="text-sm text-gray-600">Total Votes</div>
-              <div className="mt-2 text-xs text-gray-500">
+            <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+              <div className="text-3xl font-bold text-foreground">{stats.totalVotes}</div>
+              <div className="text-sm text-muted-foreground">Total Votes</div>
+              <div className="mt-2 text-xs text-muted-foreground">
                 Across all questions
               </div>
             </div>
 
-            <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-              <div className="text-3xl font-bold text-gray-900">{stats.uniqueVoters}</div>
-              <div className="text-sm text-gray-600">Unique Voters</div>
-              <div className="mt-2 text-xs text-gray-500">
+            <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+              <div className="text-3xl font-bold text-foreground">{stats.uniqueVoters}</div>
+              <div className="text-sm text-muted-foreground">Unique Voters</div>
+              <div className="mt-2 text-xs text-muted-foreground">
                 People who participated
               </div>
             </div>
 
-            <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-              <div className="text-3xl font-bold text-gray-900">{stats.completionRate}</div>
-              <div className="text-sm text-gray-600">Completion Rate</div>
-              <div className="mt-2 text-xs text-gray-500">
+            <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+              <div className="text-3xl font-bold text-foreground">{stats.completionRate}</div>
+              <div className="text-sm text-muted-foreground">Completion Rate</div>
+              <div className="mt-2 text-xs text-muted-foreground">
                 Answered all questions
               </div>
             </div>
 
-            <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-              <div className="text-3xl font-bold text-gray-900">{stats.averageTimePerVote}</div>
-              <div className="text-sm text-gray-600">Average Time</div>
-              <div className="mt-2 text-xs text-gray-500">
+            <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+              <div className="text-3xl font-bold text-foreground">{stats.averageTimePerVote}</div>
+              <div className="text-sm text-muted-foreground">Average Time</div>
+              <div className="mt-2 text-xs text-muted-foreground">
                 Per voting session
               </div>
             </div>
@@ -297,17 +297,17 @@ export default function SessionResultsPage() {
 
           {/* Top Question */}
           {topQuestion && (
-            <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-lg">
+            <div className="rounded-2xl border border-border bg-card p-8 shadow-lg">
               <div className="mb-6">
-                <h2 className="text-2xl font-bold text-gray-900">Most Active Question</h2>
-                <p className="mt-1 text-gray-600">
+                <h2 className="font-display text-2xl font-bold text-foreground">Most Active Question</h2>
+                <p className="mt-1 text-muted-foreground">
                   Question with the highest voter engagement
                 </p>
               </div>
 
               <div className="mb-8">
-                <h3 className="text-xl font-semibold text-gray-900">{topQuestion.text}</h3>
-                <div className="mt-2 text-sm text-gray-600">
+                <h3 className="text-xl font-semibold text-foreground">{topQuestion.text}</h3>
+                <div className="mt-2 text-sm text-muted-foreground">
                   {topOptions.length} options • {stats.totalVotes} total votes
                 </div>
               </div>
@@ -322,21 +322,21 @@ export default function SessionResultsPage() {
           )}
 
           {/* QR Code Reminder */}
-          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-8">
+          <div className="rounded-2xl border border-border bg-muted p-8">
             <div className="flex items-start">
-              <svg className="h-6 w-6 text-blue-600 mr-3 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="h-6 w-6 text-accent mr-3 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
               </svg>
               <div>
-                <h3 className="text-lg font-semibold text-blue-900 mb-2">Share these results</h3>
-                <p className="text-blue-800">
+                <h3 className="text-lg font-semibold text-foreground mb-2">Share these results</h3>
+                <p className="text-accent">
                   Use the QR code from the session page to continue collecting votes.
                   Results update automatically as more people vote.
                 </p>
                 <div className="mt-4">
                   <a
                     href={`/dashboard/sessions/${sessionId}`}
-                    className="inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-800"
+                    className="inline-flex items-center text-sm font-medium text-accent hover:text-accent"
                   >
                     <svg className="mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -353,20 +353,20 @@ export default function SessionResultsPage() {
       {activeTab === 'questions' && (
         <div className="space-y-8">
           {questions.map((question, index) => (
-            <div key={question.id} className="rounded-2xl border border-gray-200 bg-white p-8 shadow-lg">
+            <div key={question.id} className="rounded-2xl border border-border bg-card p-8 shadow-lg">
               <div className="mb-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <span className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium text-sm mr-4">
+                    <span className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-gradient-to-r from-primary to-accent text-white font-medium text-sm mr-4">
                       {index + 1}
                     </span>
-                    <h3 className="text-xl font-semibold text-gray-900 inline">{question.text}</h3>
+                    <h3 className="text-xl font-semibold text-foreground inline">{question.text}</h3>
                   </div>
-                  <div className="text-sm text-gray-600">
+                  <div className="text-sm text-muted-foreground">
                     {optionsByQuestion[question.id]?.length || 0} options
                   </div>
                 </div>
-                <p className="mt-2 text-gray-600">
+                <p className="mt-2 text-muted-foreground">
                   See how participants voted on this question.
                 </p>
               </div>
@@ -380,16 +380,16 @@ export default function SessionResultsPage() {
 
               {/* Option Details */}
               {optionsByQuestion[question.id] && optionsByQuestion[question.id].length > 0 && (
-                <div className="mt-8 pt-8 border-t border-gray-200">
-                  <h4 className="text-lg font-semibold text-gray-900 mb-4">Option Details</h4>
+                <div className="mt-8 pt-8 border-t border-border">
+                  <h4 className="text-lg font-semibold text-foreground mb-4">Option Details</h4>
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-300">
                       <thead>
                         <tr>
-                          <th className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Option</th>
-                          <th className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Votes</th>
-                          <th className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Percentage</th>
-                          <th className="px-4 py-3.5 text-left text-sm font-semibold text-gray-900">Trend</th>
+                          <th className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">Option</th>
+                          <th className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">Votes</th>
+                          <th className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">Percentage</th>
+                          <th className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">Trend</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
@@ -401,23 +401,23 @@ export default function SessionResultsPage() {
 
                           return (
                             <tr key={option.id}>
-                              <td className="px-4 py-4 text-sm text-gray-900">
+                              <td className="px-4 py-4 text-sm text-foreground">
                                 <div className="flex items-center">
-                                  <span className="mr-2 text-gray-500">{String.fromCharCode(65 + optionIndex)}</span>
+                                  <span className="mr-2 text-muted-foreground">{String.fromCharCode(65 + optionIndex)}</span>
                                   {option.text}
                                 </div>
                               </td>
-                              <td className="px-4 py-4 text-sm text-gray-900">{votes}</td>
-                              <td className="px-4 py-4 text-sm text-gray-900">
+                              <td className="px-4 py-4 text-sm text-foreground">{votes}</td>
+                              <td className="px-4 py-4 text-sm text-foreground">
                                 <div className="flex items-center">
                                   <span className="font-medium">{percentage}%</span>
-                                  <div className="ml-2 h-2 w-24 bg-gray-200 rounded-full overflow-hidden">
-                                    <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500" style={{ width: `${percentage}%` }}></div>
+                                  <div className="ml-2 h-2 w-24 bg-muted rounded-full overflow-hidden">
+                                    <div className="h-full rounded-full bg-gradient-to-r from-primary to-accent" style={{ width: `${percentage}%` }}></div>
                                   </div>
                                 </div>
                               </td>
                               <td className="px-4 py-4 text-sm">
-                                <div className={`flex items-center ${trend === 'up' ? 'text-green-600' : 'text-red-600'}`}>
+                                <div className={`flex items-center ${trend === 'up' ? 'text-emerald-400' : 'text-destructive'}`}>
                                   <svg className="h-4 w-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
                                     {trend === 'up' ? (
                                       <path fillRule="evenodd" d="M5.293 9.707a1 1 0 010-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 01-1.414 1.414L11 7.414V15a1 1 0 11-2 0V7.414L6.707 9.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
@@ -445,19 +445,19 @@ export default function SessionResultsPage() {
         <div className="space-y-8">
           {/* Export Options */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
-              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-blue-100">
-                <svg className="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary/15">
+                <svg className="h-6 w-6 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900">JSON Export</h3>
-              <p className="mt-2 text-gray-600">
+              <h3 className="text-xl font-semibold text-foreground">JSON Export</h3>
+              <p className="mt-2 text-muted-foreground">
                 Download complete results as JSON for analysis in Excel, Python, or other tools.
               </p>
               <button
                 onClick={exportResults}
-                className="mt-6 w-full inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
+                className="mt-6 w-full inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
               >
                 <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -466,19 +466,19 @@ export default function SessionResultsPage() {
               </button>
             </div>
 
-            <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
-              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-green-100">
-                <svg className="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-emerald-500/15">
+                <svg className="h-6 w-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900">CSV Export</h3>
-              <p className="mt-2 text-gray-600">
+              <h3 className="text-xl font-semibold text-foreground">CSV Export</h3>
+              <p className="mt-2 text-muted-foreground">
                 Export vote data as CSV for easy analysis in spreadsheet software.
               </p>
               <button
                 onClick={exportResults}
-                className="mt-6 w-full inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-6 py-3 text-base font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors"
+                className="mt-6 w-full inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors"
               >
                 <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -489,12 +489,12 @@ export default function SessionResultsPage() {
           </div>
 
           {/* Share Results */}
-          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
-            <h3 className="text-2xl font-semibold text-gray-900 mb-6">Share Results</h3>
+          <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
+            <h3 className="text-2xl font-semibold text-foreground mb-6">Share Results</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div>
-                <h4 className="text-lg font-semibold text-gray-900 mb-4">Public Results Page</h4>
-                <p className="text-gray-600 mb-4">
+                <h4 className="text-lg font-semibold text-foreground mb-4">Public Results Page</h4>
+                <p className="text-muted-foreground mb-4">
                   Create a shareable link to a read-only results page.
                 </p>
                 <div className="flex">
@@ -502,13 +502,13 @@ export default function SessionResultsPage() {
                     <input
                       type="text"
                       readOnly
-                      value={`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/vote/${session.slug}/results`}
-                      className="block w-full rounded-l-lg border border-r-0 border-gray-300 px-4 py-3 text-gray-900 bg-gray-50"
+                      value={`${getAppUrl()}/vote/${session.slug}/results`}
+                      className="block w-full rounded-l-lg border border-r-0 border-border px-4 py-3 text-foreground bg-muted"
                     />
                   </div>
                   <button
-                    onClick={() => navigator.clipboard.writeText(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/vote/${session.slug}/results`)}
-                    className="inline-flex items-center rounded-r-lg border border-l-0 border-gray-300 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                    onClick={() => navigator.clipboard.writeText(`${getAppUrl()}/vote/${session.slug}/results`)}
+                    className="inline-flex items-center rounded-r-lg border border-l-0 border-border bg-card px-4 py-3 text-sm font-medium text-foreground hover:bg-muted transition-colors"
                   >
                     Copy
                   </button>
@@ -516,13 +516,13 @@ export default function SessionResultsPage() {
               </div>
 
               <div>
-                <h4 className="text-lg font-semibold text-gray-900 mb-4">Embed Code</h4>
-                <p className="text-gray-600 mb-4">
+                <h4 className="text-lg font-semibold text-foreground mb-4">Embed Code</h4>
+                <p className="text-muted-foreground mb-4">
                   Embed live results in your website or presentation.
                 </p>
                 <button
                   onClick={() => alert('Embed feature coming soon!')}
-                  className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
+                  className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
                 >
                   <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />

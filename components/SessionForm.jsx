@@ -25,15 +25,15 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
   }
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
-      <h2 className="text-2xl font-semibold text-gray-900 mb-6">
+    <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
+      <h2 className="font-display text-2xl font-semibold text-foreground mb-6">
         {initialData ? 'Edit Session' : 'Create New Session'}
       </h2>
 
       <form onSubmit={handleSubmit} className="space-y-8">
         {/* Title */}
         <div>
-          <label htmlFor="title" className="block text-sm font-medium text-gray-900 mb-2">
+          <label htmlFor="title" className="block text-sm font-medium text-foreground mb-2">
             Session Title
           </label>
           <input
@@ -41,11 +41,11 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
             id="title"
             value={formData.title}
             onChange={(e) => updateField('title', e.target.value)}
-            className="block w-full rounded-lg border border-gray-300 px-4 py-3 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:ring-opacity-20"
+            className="block w-full rounded-lg border border-border px-4 py-3 text-foreground shadow-sm focus:border-ring focus:ring-2 focus:ring-ring focus:ring-opacity-20"
             placeholder="e.g., Conference Feedback 2024"
             required
           />
-          <p className="mt-2 text-sm text-gray-500">
+          <p className="mt-2 text-sm text-muted-foreground">
             A descriptive title for your poll session. This is only visible to you.
           </p>
         </div>
@@ -53,13 +53,13 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
         {/* Slug */}
         <div>
           <div className="flex items-center justify-between mb-2">
-            <label htmlFor="slug" className="block text-sm font-medium text-gray-900">
+            <label htmlFor="slug" className="block text-sm font-medium text-foreground">
               URL Slug
             </label>
             <button
               type="button"
               onClick={regenerateSlug}
-              className="inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-800"
+              className="inline-flex items-center text-sm font-medium text-accent hover:text-accent"
             >
               <svg className="mr-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -74,32 +74,32 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
                 id="slug"
                 value={formData.slug}
                 onChange={(e) => updateField('slug', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
-                className="block w-full rounded-l-lg border border-r-0 border-gray-300 px-4 py-3 text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:ring-opacity-20"
+                className="block w-full rounded-l-lg border border-r-0 border-border px-4 py-3 text-foreground focus:border-ring focus:ring-2 focus:ring-ring focus:ring-opacity-20"
                 pattern="[a-z0-9-]+"
                 title="Use lowercase letters, numbers, and hyphens only"
                 required
               />
             </div>
-            <div className="inline-flex items-center rounded-r-lg border border-l-0 border-gray-300 bg-gray-50 px-4">
-              <span className="text-gray-600">/vote/</span>
-              <span className="ml-1 font-medium text-gray-900">{formData.slug}</span>
+            <div className="inline-flex items-center rounded-r-lg border border-l-0 border-border bg-muted px-4">
+              <span className="text-muted-foreground">/vote/</span>
+              <span className="ml-1 font-medium text-foreground">{formData.slug}</span>
             </div>
           </div>
-          <p className="mt-2 text-sm text-gray-500">
+          <p className="mt-2 text-sm text-muted-foreground">
             The unique URL path for your session. Use only lowercase letters, numbers, and hyphens.
           </p>
         </div>
 
         {/* Results Mode */}
         <div>
-          <label className="block text-sm font-medium text-gray-900 mb-2">
+          <label className="block text-sm font-medium text-foreground mb-2">
             Results Display
           </label>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <label className={`relative rounded-lg border p-4 cursor-pointer transition-colors ${
               formData.results_mode === 'live'
-                ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-500 ring-opacity-20'
-                : 'border-gray-300 hover:bg-gray-50'
+                ? 'border-ring bg-muted ring-2 ring-blue-500 ring-opacity-20'
+                : 'border-border hover:bg-muted'
             }`}>
               <input
                 type="radio"
@@ -113,13 +113,13 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
                 <div className="flex-shrink-0">
                   <div className="h-5 w-5 rounded-full border flex items-center justify-center">
                     <div className={`h-2.5 w-2.5 rounded-full ${
-                      formData.results_mode === 'live' ? 'bg-blue-600' : 'bg-transparent'
+                      formData.results_mode === 'live' ? 'bg-primary' : 'bg-transparent'
                     }`} />
                   </div>
                 </div>
                 <div className="ml-3">
-                  <span className="block text-sm font-semibold text-gray-900">Live Results</span>
-                  <span className="block mt-1 text-sm text-gray-600">
+                  <span className="block text-sm font-semibold text-foreground">Live Results</span>
+                  <span className="block mt-1 text-sm text-muted-foreground">
                     Attendees see results update in real-time as votes come in.
                   </span>
                 </div>
@@ -128,8 +128,8 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
 
             <label className={`relative rounded-lg border p-4 cursor-pointer transition-colors ${
               formData.results_mode === 'after_all'
-                ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-500 ring-opacity-20'
-                : 'border-gray-300 hover:bg-gray-50'
+                ? 'border-ring bg-muted ring-2 ring-blue-500 ring-opacity-20'
+                : 'border-border hover:bg-muted'
             }`}>
               <input
                 type="radio"
@@ -143,20 +143,20 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
                 <div className="flex-shrink-0">
                   <div className="h-5 w-5 rounded-full border flex items-center justify-center">
                     <div className={`h-2.5 w-2.5 rounded-full ${
-                      formData.results_mode === 'after_all' ? 'bg-blue-600' : 'bg-transparent'
+                      formData.results_mode === 'after_all' ? 'bg-primary' : 'bg-transparent'
                     }`} />
                   </div>
                 </div>
                 <div className="ml-3">
-                  <span className="block text-sm font-semibold text-gray-900">After All Questions</span>
-                  <span className="block mt-1 text-sm text-gray-600">
+                  <span className="block text-sm font-semibold text-foreground">After All Questions</span>
+                  <span className="block mt-1 text-sm text-muted-foreground">
                     Attendees see results only after completing all questions.
                   </span>
                 </div>
               </div>
             </label>
           </div>
-          <p className="mt-2 text-sm text-gray-500">
+          <p className="mt-2 text-sm text-muted-foreground">
             Choose when attendees can see voting results. You can change this later.
           </p>
         </div>
@@ -170,32 +170,32 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
               type="checkbox"
               checked={formData.is_active}
               onChange={(e) => updateField('is_active', e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              className="h-4 w-4 rounded border-border text-accent focus:ring-ring"
             />
           </div>
           <div className="ml-3">
-            <label htmlFor="is_active" className="text-sm font-medium text-gray-900">
+            <label htmlFor="is_active" className="text-sm font-medium text-foreground">
               Active Session
             </label>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-muted-foreground">
               When active, attendees can scan the QR code and vote. Uncheck to temporarily disable voting.
             </p>
           </div>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex justify-end space-x-4 pt-6 border-t border-gray-200">
+        <div className="flex justify-end space-x-4 pt-6 border-t border-border">
           <button
             type="button"
             onClick={() => window.history.back()}
-            className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-6 py-3 text-base font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors"
+            className="inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={loading}
-            className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50"
+            className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50"
           >
             {loading ? (
               <>

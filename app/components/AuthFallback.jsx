@@ -22,14 +22,14 @@ export default function AuthFallback() {
   }
 
   return (
-    <div className="fixed inset-0 bg-white z-50 flex items-center justify-center">
+    <div className="fixed inset-0 bg-card z-50 flex items-center justify-center">
       <div className="max-w-md mx-auto text-center p-8">
         <div className="mb-8">
-          <div className="inline-flex items-center justify-center h-16 w-16 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 mb-4">
+          <div className="inline-flex items-center justify-center h-16 w-16 rounded-full bg-gradient-to-r from-primary to-accent mb-4">
             <span className="text-2xl text-white">⚡</span>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Demo Mode Active</h1>
-          <p className="text-gray-600 mb-6">
+          <h1 className="font-display text-2xl font-bold text-foreground mb-2">Demo Mode Active</h1>
+          <p className="text-muted-foreground mb-6">
             Supabase authentication is taking longer than expected. Continue with demo data?
           </p>
         </div>
@@ -40,20 +40,20 @@ export default function AuthFallback() {
               localStorage.setItem('demo_mode', 'true')
               router.push('/demo')
             }}
-            className="w-full inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
+            className="w-full inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
           >
             Enter Demo Mode
           </button>
 
           <button
             onClick={() => window.location.reload()}
-            className="w-full inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-6 py-3 text-base font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors"
+            className="w-full inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors"
           >
             Try Again
           </button>
         </div>
 
-        <div className="mt-8 text-sm text-gray-500">
+        <div className="mt-8 text-sm text-muted-foreground">
           <p className="mb-2">To configure Google OAuth:</p>
           <ol className="text-left space-y-1">
             <li>1. Go to Supabase Dashboard → Authentication → Providers</li>

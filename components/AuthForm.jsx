@@ -122,17 +122,17 @@ export default function AuthForm({ defaultTab = 'signin', onSuccess }) {
   }
 
   return (
-    <div className="w-full max-w-md bg-white rounded-2xl border border-gray-200 shadow-xl overflow-hidden">
+    <div className="w-full max-w-md bg-card rounded-2xl border border-border shadow-xl overflow-hidden">
       {/* Tab Switcher */}
       {tab !== 'reset' && (
-        <div className="flex border-b border-gray-200 bg-gray-50/70">
+        <div className="flex border-b border-border bg-muted/70">
           <button
             type="button"
             onClick={() => handleTabSwitch('signin')}
             className={`flex-1 py-3.5 text-sm font-semibold transition-colors ${
               tab === 'signin'
-                ? 'bg-white text-blue-600 border-b-2 border-blue-600 shadow-xs'
-                : 'text-gray-500 hover:text-gray-700'
+                ? 'bg-card text-accent border-b-2 border-primary shadow-xs'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             Sign In
@@ -142,8 +142,8 @@ export default function AuthForm({ defaultTab = 'signin', onSuccess }) {
             onClick={() => handleTabSwitch('signup')}
             className={`flex-1 py-3.5 text-sm font-semibold transition-colors ${
               tab === 'signup'
-                ? 'bg-white text-blue-600 border-b-2 border-blue-600 shadow-xs'
-                : 'text-gray-500 hover:text-gray-700'
+                ? 'bg-card text-accent border-b-2 border-primary shadow-xs'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             Create Account
@@ -152,12 +152,12 @@ export default function AuthForm({ defaultTab = 'signin', onSuccess }) {
       )}
 
       {tab === 'reset' && (
-        <div className="px-6 pt-5 pb-2 flex items-center justify-between border-b border-gray-100">
-          <h3 className="text-lg font-bold text-gray-900">Reset Password</h3>
+        <div className="px-6 pt-5 pb-2 flex items-center justify-between border-b border-border">
+          <h3 className="text-lg font-bold text-foreground">Reset Password</h3>
           <button
             type="button"
             onClick={() => handleTabSwitch('signin')}
-            className="text-xs font-medium text-blue-600 hover:text-blue-800"
+            className="text-xs font-medium text-accent hover:text-accent"
           >
             ← Back to Sign In
           </button>
@@ -167,8 +167,8 @@ export default function AuthForm({ defaultTab = 'signin', onSuccess }) {
       <div className="p-6 sm:p-8">
         {/* Error Alert */}
         {error && (
-          <div className="mb-5 rounded-lg bg-red-50 border border-red-200 p-3.5 flex items-start text-sm text-red-800">
-            <svg className="w-5 h-5 text-red-500 mr-2.5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+          <div className="mb-5 rounded-lg bg-destructive/10 border border-destructive/30 p-3.5 flex items-start text-sm text-destructive">
+            <svg className="w-5 h-5 text-destructive mr-2.5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
               <path
                 fillRule="evenodd"
                 d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
@@ -181,8 +181,8 @@ export default function AuthForm({ defaultTab = 'signin', onSuccess }) {
 
         {/* Success Alert */}
         {successMessage && (
-          <div className="mb-5 rounded-lg bg-green-50 border border-green-200 p-3.5 flex items-start text-sm text-green-800">
-            <svg className="w-5 h-5 text-green-500 mr-2.5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+          <div className="mb-5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 p-3.5 flex items-start text-sm text-emerald-300">
+            <svg className="w-5 h-5 text-emerald-400 mr-2.5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
               <path
                 fillRule="evenodd"
                 d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
@@ -197,11 +197,11 @@ export default function AuthForm({ defaultTab = 'signin', onSuccess }) {
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Email field */}
           <div>
-            <label htmlFor="auth-email" className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
+            <label htmlFor="auth-email" className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-1.5">
               Email Address
             </label>
             <div className="relative rounded-lg shadow-xs">
-              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-muted-foreground">
                 <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
                 </svg>
@@ -213,7 +213,7 @@ export default function AuthForm({ defaultTab = 'signin', onSuccess }) {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="name@example.com"
-                className="block w-full pl-10 pr-3.5 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                className="block w-full pl-10 pr-3.5 py-2.5 border border-border rounded-lg text-sm text-foreground placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring transition-colors"
                 autoComplete="email"
               />
             </div>
@@ -223,21 +223,21 @@ export default function AuthForm({ defaultTab = 'signin', onSuccess }) {
           {tab !== 'reset' && (
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label htmlFor="auth-password" className="block text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                <label htmlFor="auth-password" className="block text-xs font-semibold text-foreground uppercase tracking-wider">
                   Password
                 </label>
                 {tab === 'signin' && (
                   <button
                     type="button"
                     onClick={() => handleTabSwitch('reset')}
-                    className="text-xs text-blue-600 hover:text-blue-800 transition-colors"
+                    className="text-xs text-accent hover:text-accent transition-colors"
                   >
                     Forgot password?
                   </button>
                 )}
               </div>
               <div className="relative rounded-lg shadow-xs">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-muted-foreground">
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                   </svg>
@@ -249,13 +249,13 @@ export default function AuthForm({ defaultTab = 'signin', onSuccess }) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder={tab === 'signup' ? 'Create a secure password (6+ chars)' : 'Enter your password'}
-                  className="block w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                  className="block w-full pl-10 pr-10 py-2.5 border border-border rounded-lg text-sm text-foreground placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring transition-colors"
                   autoComplete={tab === 'signup' ? 'new-password' : 'current-password'}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 focus:outline-none"
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-muted-foreground hover:text-muted-foreground focus:outline-none"
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
                   {showPassword ? (
@@ -276,11 +276,11 @@ export default function AuthForm({ defaultTab = 'signin', onSuccess }) {
           {/* Confirm Password (only on Sign Up) */}
           {tab === 'signup' && (
             <div>
-              <label htmlFor="auth-confirm-password" className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5">
+              <label htmlFor="auth-confirm-password" className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-1.5">
                 Confirm Password
               </label>
               <div className="relative rounded-lg shadow-xs">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-muted-foreground">
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                   </svg>
@@ -292,7 +292,7 @@ export default function AuthForm({ defaultTab = 'signin', onSuccess }) {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Repeat your password"
-                  className="block w-full pl-10 pr-3.5 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                  className="block w-full pl-10 pr-3.5 py-2.5 border border-border rounded-lg text-sm text-foreground placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring transition-colors"
                   autoComplete="new-password"
                 />
               </div>
@@ -303,7 +303,7 @@ export default function AuthForm({ defaultTab = 'signin', onSuccess }) {
           <button
             type="submit"
             disabled={loading}
-            className="w-full mt-2 inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-md hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full mt-2 inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-4 py-3 text-sm font-semibold text-white shadow-md hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? (
               <span className="flex items-center">
@@ -326,17 +326,17 @@ export default function AuthForm({ defaultTab = 'signin', onSuccess }) {
           <div className="mt-6">
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-200"></div>
+                <div className="w-full border-t border-border"></div>
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white px-3 text-gray-500 font-medium">Or continue with</span>
+                <span className="bg-card px-3 text-muted-foreground font-medium">Or continue with</span>
               </div>
             </div>
 
             <button
               type="button"
               onClick={handleGoogleSignIn}
-              className="mt-4 w-full inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 shadow-xs hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+              className="mt-4 w-full inline-flex items-center justify-center rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground shadow-xs hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 transition-colors"
             >
               <svg className="mr-2.5 h-4 w-4" viewBox="0 0 24 24">
                 <path
@@ -362,14 +362,14 @@ export default function AuthForm({ defaultTab = 'signin', onSuccess }) {
         )}
 
         {/* Footer switch prompt */}
-        <div className="mt-6 text-center text-xs text-gray-500">
+        <div className="mt-6 text-center text-xs text-muted-foreground">
           {tab === 'signin' ? (
             <p>
               Don't have an account?{' '}
               <button
                 type="button"
                 onClick={() => handleTabSwitch('signup')}
-                className="font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+                className="font-semibold text-accent hover:text-accent transition-colors"
               >
                 Create one now
               </button>
@@ -380,7 +380,7 @@ export default function AuthForm({ defaultTab = 'signin', onSuccess }) {
               <button
                 type="button"
                 onClick={() => handleTabSwitch('signin')}
-                className="font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+                className="font-semibold text-accent hover:text-accent transition-colors"
               >
                 Sign in here
               </button>

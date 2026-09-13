@@ -50,14 +50,14 @@ export default function NewSessionPage() {
     <div className="max-w-3xl mx-auto py-4">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <div className="flex items-center space-x-2 text-sm text-gray-500 mb-2">
-            <Link href="/dashboard" className="hover:text-gray-900 transition-colors">
+          <div className="flex items-center space-x-2 text-sm text-muted-foreground mb-2">
+            <Link href="/dashboard" className="hover:text-foreground transition-colors">
               Dashboard
             </Link>
             <span>/</span>
-            <span className="text-gray-900 font-medium">New Session</span>
+            <span className="text-foreground font-medium">New Session</span>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">Create Poll Session</h1>
+          <h1 className="font-display text-3xl font-bold text-foreground">Create Poll Session</h1>
         </div>
       </div>
 

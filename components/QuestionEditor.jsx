@@ -137,11 +137,11 @@ export default function QuestionEditor({
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
+      <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
         <div className="animate-pulse">
-          <div className="h-8 bg-gray-200 rounded w-48 mb-8"></div>
+          <div className="h-8 bg-muted rounded w-48 mb-8"></div>
           {[1, 2].map((i) => (
-            <div key={i} className="h-32 bg-gray-100 rounded-lg mb-4"></div>
+            <div key={i} className="h-32 bg-muted rounded-lg mb-4"></div>
           ))}
         </div>
       </div>
@@ -149,19 +149,19 @@ export default function QuestionEditor({
   }
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
+    <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h2 className="text-2xl font-semibold text-gray-900">Questions & Options</h2>
-          <p className="mt-2 text-gray-600">
+          <h2 className="font-display text-2xl font-semibold text-foreground">Questions & Options</h2>
+          <p className="mt-2 text-muted-foreground">
             Add questions and answer choices for your poll. Attendees will see them in this order.
           </p>
         </div>
         <button
           onClick={addQuestion}
           disabled={loading}
-          className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50"
+          className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50"
         >
           <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -173,14 +173,14 @@ export default function QuestionEditor({
       {/* Questions List */}
       <div className="space-y-6">
         {questions.length === 0 ? (
-          <div className="rounded-2xl border-2 border-dashed border-gray-300 p-12 text-center">
-            <div className="mx-auto h-24 w-24 rounded-full bg-blue-50 flex items-center justify-center">
-              <svg className="h-12 w-12 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="rounded-2xl border-2 border-dashed border-border p-12 text-center">
+            <div className="mx-auto h-24 w-24 rounded-full bg-muted flex items-center justify-center">
+              <svg className="h-12 w-12 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            <h3 className="mt-6 text-lg font-medium text-gray-900">No questions yet</h3>
-            <p className="mt-2 text-gray-600 max-w-md mx-auto">
+            <h3 className="mt-6 text-lg font-medium text-foreground">No questions yet</h3>
+            <p className="mt-2 text-muted-foreground max-w-md mx-auto">
               Add your first question to create a poll. Each question can have multiple answer options.
             </p>
           </div>
@@ -195,8 +195,8 @@ export default function QuestionEditor({
                 key={question.id}
                 className={`rounded-xl border transition-colors ${
                   isExpanded
-                    ? 'border-blue-200 bg-blue-50'
-                    : 'border-gray-200 bg-white hover:border-gray-300'
+                    ? 'border-primary/40 bg-muted'
+                    : 'border-border bg-card hover:border-primary/50'
                 }`}
               >
                 {/* Question Header */}
@@ -207,14 +207,14 @@ export default function QuestionEditor({
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center">
-                        <span className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium text-sm mr-4">
+                        <span className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-gradient-to-r from-primary to-accent text-white font-medium text-sm mr-4">
                           {index + 1}
                         </span>
                         <div>
-                          <h3 className="text-lg font-semibold text-gray-900">
+                          <h3 className="text-lg font-semibold text-foreground">
                             {question.text || 'Untitled Question'}
                           </h3>
-                          <p className="mt-1 text-sm text-gray-600">
+                          <p className="mt-1 text-sm text-muted-foreground">
                             {questionOptions.length} option{questionOptions.length !== 1 ? 's' : ''}
                             {questionOptions.length === 0 && ' — Add options below'}
                           </p>
@@ -228,7 +228,7 @@ export default function QuestionEditor({
                             e.stopPropagation()
                             moveQuestionUp(index)
                           }}
-                          className="inline-flex items-center p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
+                          className="inline-flex items-center p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg"
                           title="Move up"
                         >
                           <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -242,7 +242,7 @@ export default function QuestionEditor({
                             e.stopPropagation()
                             moveQuestionDown(index)
                           }}
-                          className="inline-flex items-center p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
+                          className="inline-flex items-center p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg"
                           title="Move down"
                         >
                           <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -255,7 +255,7 @@ export default function QuestionEditor({
                           e.stopPropagation()
                           setEditingQuestion(isEditing ? null : question.id)
                         }}
-                        className="inline-flex items-center p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
+                        className="inline-flex items-center p-2 text-muted-foreground hover:text-accent hover:bg-muted rounded-lg"
                         title={isEditing ? 'Finish editing' : 'Edit question'}
                       >
                         <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -269,7 +269,7 @@ export default function QuestionEditor({
                             deleteQuestion(question.id)
                           }
                         }}
-                        className="inline-flex items-center p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                        className="inline-flex items-center p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg"
                         title="Delete question"
                       >
                         <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -282,21 +282,21 @@ export default function QuestionEditor({
 
                 {/* Expanded Content */}
                 {isExpanded && (
-                  <div className="px-6 pb-6 border-t border-gray-200 pt-6">
+                  <div className="px-6 pb-6 border-t border-border pt-6">
                     {/* Edit Question */}
                     {isEditing && (
                       <div className="mb-6">
-                        <label className="block text-sm font-medium text-gray-900 mb-2">
+                        <label className="block text-sm font-medium text-foreground mb-2">
                           Question Text
                         </label>
                         <textarea
                           value={question.text}
                           onChange={(e) => updateQuestion(question.id, 'text', e.target.value)}
-                          className="block w-full rounded-lg border border-gray-300 px-4 py-3 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:ring-opacity-20 resize-none"
+                          className="block w-full rounded-lg border border-border px-4 py-3 text-foreground shadow-sm focus:border-ring focus:ring-2 focus:ring-ring focus:ring-opacity-20 resize-none"
                           rows="2"
                           placeholder="Enter your question here..."
                         />
-                        <p className="mt-2 text-sm text-gray-500">
+                        <p className="mt-2 text-sm text-muted-foreground">
                           What do you want to ask your audience?
                         </p>
                       </div>
@@ -304,10 +304,10 @@ export default function QuestionEditor({
 
                     {/* Options Header */}
                     <div className="flex items-center justify-between mb-4">
-                      <h4 className="text-lg font-semibold text-gray-900">Answer Options</h4>
+                      <h4 className="text-lg font-semibold text-foreground">Answer Options</h4>
                       <button
                         onClick={() => addOption(question.id)}
-                        className="inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-800"
+                        className="inline-flex items-center text-sm font-medium text-accent hover:text-accent"
                       >
                         <svg className="mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -319,8 +319,8 @@ export default function QuestionEditor({
                     {/* Options List */}
                     <div className="space-y-4">
                       {questionOptions.length === 0 ? (
-                        <div className="rounded-lg border-2 border-dashed border-gray-300 p-6 text-center">
-                          <p className="text-gray-600">
+                        <div className="rounded-lg border-2 border-dashed border-border p-6 text-center">
+                          <p className="text-muted-foreground">
                             No options yet. Add answer choices for this question.
                           </p>
                         </div>
@@ -328,7 +328,7 @@ export default function QuestionEditor({
                         questionOptions.map((option, optionIndex) => (
                           <div key={option.id} className="flex items-center space-x-4">
                             <div className="flex-shrink-0">
-                              <span className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-gray-100 text-gray-800 font-medium text-sm">
+                              <span className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-muted text-foreground font-medium text-sm">
                                 {String.fromCharCode(65 + optionIndex)}
                               </span>
                             </div>
@@ -337,14 +337,14 @@ export default function QuestionEditor({
                                 type="text"
                                 value={option.text}
                                 onChange={(e) => updateOption(question.id, option.id, 'text', e.target.value)}
-                                className="block w-full rounded-lg border border-gray-300 px-4 py-2 text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:ring-opacity-20"
+                                className="block w-full rounded-lg border border-border px-4 py-2 text-foreground shadow-sm focus:border-ring focus:ring-2 focus:ring-ring focus:ring-opacity-20"
                                 placeholder={`Option ${optionIndex + 1}`}
                               />
                             </div>
                             <div className="flex-shrink-0">
                               <button
                                 onClick={() => deleteOption(question.id, option.id)}
-                                className="inline-flex items-center p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                                className="inline-flex items-center p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg"
                                 title="Delete option"
                               >
                                 <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -358,8 +358,8 @@ export default function QuestionEditor({
                     </div>
 
                     {/* Instructions */}
-                    <div className="mt-6 rounded-lg bg-gray-50 p-4">
-                      <p className="text-sm text-gray-600">
+                    <div className="mt-6 rounded-lg bg-muted p-4">
+                      <p className="text-sm text-muted-foreground">
                         {questionOptions.length >= 2
                           ? `Attendees will see these ${questionOptions.length} options in alphabetical order.`
                           : 'Add at least 2 options for a meaningful poll.'}
@@ -374,14 +374,14 @@ export default function QuestionEditor({
       </div>
 
       {/* Instructions */}
-      <div className="mt-8 rounded-2xl border border-blue-200 bg-blue-50 p-6">
+      <div className="mt-8 rounded-2xl border border-border bg-muted p-6">
         <div className="flex items-start">
-          <svg className="h-6 w-6 text-blue-600 mr-3 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+          <svg className="h-6 w-6 text-accent mr-3 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
           </svg>
           <div>
-            <h4 className="text-lg font-semibold text-blue-900 mb-2">Tips for great polls</h4>
-            <ul className="text-blue-800 space-y-2">
+            <h4 className="text-lg font-semibold text-foreground mb-2">Tips for great polls</h4>
+            <ul className="text-muted-foreground space-y-2">
               <li className="flex items-start">
                 <span className="mr-2">🔢</span>
                 <span>Keep questions clear and concise. Avoid technical jargon.</span>
