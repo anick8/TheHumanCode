@@ -31,10 +31,12 @@ export default function ResultsChart({
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h2 className="font-display text-2xl font-bold text-foreground">Live Results</h2>
-          <p className="mt-1 text-muted-foreground">
-            Votes update as participants submit their choices.
-          </p>
+          <h2 className="font-display text-2xl font-bold text-foreground">{live ? 'Live Results' : 'Results'}</h2>
+          {live && (
+            <p className="mt-1 text-muted-foreground">
+              Votes update as participants submit their choices.
+            </p>
+          )}
         </div>
         <div className="flex items-center">
           {live && (

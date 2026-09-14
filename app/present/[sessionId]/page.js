@@ -14,7 +14,7 @@ import SessionLogo from '@/components/SessionLogo'
 // lives in sessions.current_question_index, and every attendee device on
 // /vote/[slug] follows it over Supabase Realtime:
 //   -1 = lobby (QR code), 0..n-1 = question, n = finished, NULL = not presenting
-// With show_results_between on, Next becomes two steps per question: first
+// With results_mode 'live', Next becomes two steps per question: first
 // it sets results_revealed (results on screen, voting closed), then it moves on.
 // Lives outside /dashboard so the dashboard nav doesn't appear on the
 // projector; middleware.js protects /present/* the same way.
@@ -106,10 +106,15 @@ export default function PresentPage() {
     }
   }, [sessionId])
 
-  // While results are on screen, keep the chart current as late votes land.
+  // While a question is open, poll counts so the presenter sees votes arrive
+  // (and the chart stays current once results are revealed).
   const revealed = Boolean(session?.results_revealed)
+  const inQuestion =
+    session?.current_question_index != null &&
+    session.current_question_index >= 0 &&
+    session.current_question_index < questions.length
   useEffect(() => {
-    if (!revealed || !sessionId) return
+    if (!inQuestion || !sessionId) return
     const loadCounts = async () => {
       const { data, error: rpcError } = await supabase.rpc('get_vote_counts', { p_session_id: sessionId })
       if (rpcError) return
@@ -120,7 +125,7 @@ export default function PresentPage() {
     loadCounts()
     const interval = setInterval(loadCounts, 3000)
     return () => clearInterval(interval)
-  }, [revealed, sessionId])
+  }, [inQuestion, sessionId])
 
   // RLS turns an unauthorized UPDATE into "0 rows affected" rather than an
   // error, so check the returned rows - otherwise a non-owner's click would
@@ -149,9 +154,9 @@ export default function PresentPage() {
   const index = session?.current_question_index ?? -1
   const total = questions.length
   const isOwner = Boolean(userId && session && userId === session.owner_id)
-  const showBetween = Boolean(session?.show_results_between)
+  const showBetween = session?.results_mode === 'live'
   const canAdvance = isOwner && total > 0 && index < total && !advancing
-  // With the option on, a question's first Next reveals its results.
+  // In Live Results mode, a question's first Next reveals its results.
   const revealStep = showBetween && !revealed && index >= 0 && index < total
 
   const goNext = () => {
@@ -200,6 +205,8 @@ export default function PresentPage() {
   const voteUrl = `${getAppUrl()}/vote/${session.slug}`
   const currentQuestion = index >= 0 && index < total ? questions[index] : null
   const currentOptions = currentQuestion ? optionsByQuestion[currentQuestion.id] || [] : []
+  const questionVotes = currentOptions.reduce((sum, o) => sum + (voteCounts[o.id] || 0), 0)
+  const votesLabel = `${questionVotes} vote${questionVotes !== 1 ? 's' : ''}`
 
   const nextLabel =
     index < 0
@@ -287,6 +294,17 @@ export default function PresentPage() {
                 ))}
               </div>
             )}
+            {!revealed && (
+              <div className="mt-10 flex justify-center">
+                <span className="inline-flex items-center gap-3 rounded-full border border-border bg-card px-6 py-3 text-2xl font-semibold text-foreground">
+                  <span className="relative flex h-3 w-3">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75"></span>
+                    <span className="relative inline-flex h-3 w-3 rounded-full bg-primary"></span>
+                  </span>
+                  {votesLabel}
+                </span>
+              </div>
+            )}
           </div>
         ) : (
           <div className="text-center">
@@ -325,16 +343,17 @@ export default function PresentPage() {
         <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-border px-6 py-4">
           {isOwner ? (
             <>
-              <label className="inline-flex cursor-pointer items-center gap-3 text-sm text-foreground">
-                <input
-                  type="checkbox"
-                  checked={showBetween}
-                  onChange={() => updateSession({ show_results_between: !showBetween })}
-                  disabled={advancing}
-                  className="h-4 w-4 accent-[var(--color-primary)]"
-                />
-                Show results after each question
-              </label>
+              <p className="text-sm text-muted-foreground">
+                {showBetween ? 'Live results: shown after each question' : 'Results shown after the last question'}
+                {' · '}
+                <Link href={`/dashboard/sessions/${sessionId}`} className="text-accent hover:underline">
+                  Change
+                </Link>
+              </p>
+              <div className="flex items-center gap-4">
+              {currentQuestion && (
+                <span className="text-sm font-medium text-muted-foreground">{votesLabel}</span>
+              )}
               <button
                 onClick={goNext}
                 disabled={!canAdvance}
@@ -345,6 +364,7 @@ export default function PresentPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
               </button>
+              </div>
             </>
           ) : (
             <p className="ml-auto text-sm text-muted-foreground">Only the session owner can control this presentation.</p>

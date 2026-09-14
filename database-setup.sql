@@ -34,6 +34,8 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS current_question_index integer
 -- Host option: reveal each question's results before moving on. With it on,
 -- the presenter's Next first sets results_revealed (results shown on every
 -- device, voting closed for that question), then advances and resets it.
+-- show_results_between is superseded by results_mode ('live' = reveal after
+-- each question) and is no longer read by the app.
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS show_results_between boolean NOT NULL DEFAULT false;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS results_revealed boolean NOT NULL DEFAULT false;
 

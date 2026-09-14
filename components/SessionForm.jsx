@@ -98,7 +98,7 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <label className={`relative rounded-lg border p-4 cursor-pointer transition-colors ${
               formData.results_mode === 'live'
-                ? 'border-ring bg-muted ring-2 ring-blue-500 ring-opacity-20'
+                ? 'border-ring bg-muted ring-2 ring-primary/20'
                 : 'border-border hover:bg-muted'
             }`}>
               <input
@@ -120,7 +120,7 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
                 <div className="ml-3">
                   <span className="block text-sm font-semibold text-foreground">Live Results</span>
                   <span className="block mt-1 text-sm text-muted-foreground">
-                    Attendees see results update in real-time as votes come in.
+                    After each question, a results page shows how everyone voted on it.
                   </span>
                 </div>
               </div>
@@ -128,7 +128,7 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
 
             <label className={`relative rounded-lg border p-4 cursor-pointer transition-colors ${
               formData.results_mode === 'after_all'
-                ? 'border-ring bg-muted ring-2 ring-blue-500 ring-opacity-20'
+                ? 'border-ring bg-muted ring-2 ring-primary/20'
                 : 'border-border hover:bg-muted'
             }`}>
               <input
@@ -150,7 +150,7 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
                 <div className="ml-3">
                   <span className="block text-sm font-semibold text-foreground">After All Questions</span>
                   <span className="block mt-1 text-sm text-muted-foreground">
-                    Attendees see results only after completing all questions.
+                    Results for every question are shown once, after the last question.
                   </span>
                 </div>
               </div>

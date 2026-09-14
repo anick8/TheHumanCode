@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import SessionTheme from '@/components/SessionTheme'
 import SessionLogo from '@/components/SessionLogo'
 import { useParams, useRouter } from 'next/navigation'
@@ -40,19 +40,6 @@ export default function VotingPage() {
   const hostIndex = session?.current_question_index ?? null
   const hostMode = hostIndex !== null
 
-  useEffect(() => {
-    // Self-paced live mode jumps to the results view after voting. In host
-    // mode, results stay inline on the question until the host moves on.
-    if (hostMode) return
-    if (session && session.results_mode === 'live' && currentQuestionIndex < questions.length) {
-      const questionId = questions[currentQuestionIndex]?.id
-      if (questionId && votes[questionId]) {
-        // Show results immediately for live mode after voting
-        setShowResults(true)
-      }
-    }
-  }, [currentQuestionIndex, votes, session, questions, hostMode])
-
   // Follow the host.
   useEffect(() => {
     if (!hostMode || questions.length === 0) return
@@ -75,9 +62,17 @@ export default function VotingPage() {
 
   // The presenter's Next arrives as a Realtime UPDATE on this session row.
   // A slow poll backs it up: venue Wi-Fi drops websockets, and a missed event
-  // would otherwise strand a phone on an old question until reload. The poll
-  // also refreshes vote counts so live results include other people's votes.
+  // would otherwise strand a phone on an old question until reload. Counts are
+  // only refreshed while results are on screen - voters never see live counts.
   const sessionRowId = session?.id
+  // Live Results = a results page after each question; After All = one summary
+  // at the end. Self-paced voters in Live mode see a question's results as
+  // soon as they have voted on it.
+  const perQuestionResults = session?.results_mode === 'live'
+  const votedCurrent = Boolean(votes[questions[currentQuestionIndex]?.id])
+  const questionResultsShown = hostMode ? resultsRevealed : perQuestionResults && votedCurrent
+  const resultsVisibleRef = useRef(false)
+  resultsVisibleRef.current = showResults || questionResultsShown
   useEffect(() => {
     if (!sessionRowId) return
 
@@ -97,7 +92,7 @@ export default function VotingPage() {
         .eq('id', sessionRowId)
         .maybeSingle()
       if (data) setSession((prev) => (prev ? { ...prev, ...data } : prev))
-      loadVoteCounts(sessionRowId)
+      if (resultsVisibleRef.current) loadVoteCounts(sessionRowId)
     }
     const interval = setInterval(refresh, 8000)
     const onVisible = () => {
@@ -237,17 +232,19 @@ export default function VotingPage() {
         [currentQuestion.id]: optionId
       }))
 
-      await loadVoteCounts(session.id)
-
-      // In host mode the presenter decides when to move on.
-      if (!hostMode && session.results_mode === 'after_all') {
+      // In host mode the presenter decides when to move on. Self-paced Live
+      // voters stay put to see this question's results; After All voters
+      // advance straight away and see results after the last question.
+      if (!hostMode && perQuestionResults) {
+        await loadVoteCounts(session.id)
+      } else if (!hostMode) {
         if (currentQuestionIndex < questions.length - 1) {
           setCurrentQuestionIndex(prev => prev + 1)
         } else {
+          await loadVoteCounts(session.id)
           setShowResults(true)
         }
       }
-      // Live mode stays on the current question; the useEffect above reveals results.
     } catch (error) {
       console.error('Error submitting vote:', error)
       setVoteError(error.message || 'Could not record your vote. Please try again.')
@@ -262,6 +259,7 @@ export default function VotingPage() {
       setShowResults(false)
     } else {
       // Last question - show final results
+      if (session?.id) loadVoteCounts(session.id)
       setShowResults(true)
     }
   }
@@ -447,9 +445,7 @@ export default function VotingPage() {
             <div className="mb-8 text-center">
               <h2 className="font-display text-3xl font-bold text-foreground">Poll Results</h2>
               <p className="mt-2 text-muted-foreground">
-                {session.results_mode === 'live'
-                  ? 'Live results are shown below. Thank you for voting!'
-                  : 'Thank you for participating! Here are the results:'}
+                Thank you for participating! Here are the results:
               </p>
             </div>
 
@@ -471,7 +467,7 @@ export default function VotingPage() {
                     <ResultsChart
                       options={optionsByQuestion[question.id] || []}
                       voteCounts={voteCounts}
-                      live={true}
+                      live={false}
                     />
                   ) : (
                     <div className="space-y-4">
@@ -502,9 +498,7 @@ export default function VotingPage() {
 
             <div className="mt-8 text-center">
               <p className="text-muted-foreground mb-4">
-                {session.results_mode === 'live'
-                  ? 'Results update automatically as more people vote.'
-                  : 'Results are final for this session.'}
+                Results may change as more people finish voting.
               </p>
               <button
                 onClick={() => window.location.reload()}
@@ -543,6 +537,11 @@ export default function VotingPage() {
             )}
 
             {/* Poll Question */}
+            {currentQuestion && questionResultsShown && (
+              <h2 className="font-display mb-4 text-center text-2xl font-bold text-foreground">
+                Question {currentQuestionIndex + 1} results
+              </h2>
+            )}
             {currentQuestion && (
               <PollQuestion
                 question={currentQuestion}
@@ -550,12 +549,7 @@ export default function VotingPage() {
                 onVote={handleVote}
                 loading={submittingVote}
                 selectedOptionId={votes[currentQuestion.id]}
-                showResults={
-                  hostMode
-                    ? resultsRevealed ||
-                      (session.results_mode === 'live' && Boolean(votes[currentQuestion.id]))
-                    : showResults && session.results_mode === 'live'
-                }
+                showResults={questionResultsShown}
                 resultsData={getResultsData()}
               />
             )}
@@ -582,20 +576,7 @@ export default function VotingPage() {
               </button>
 
               <div className="flex items-center space-x-4">
-                {session.results_mode === 'live' && votes[currentQuestion?.id] && (
-                  <button
-                    onClick={() => setShowResults(true)}
-                    className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-500 px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
-                  >
-                    <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                    </svg>
-                    View Results
-                  </button>
-                )}
-
-                {session.results_mode === 'after_all' && (
-                  <button
+                <button
                     onClick={nextQuestion}
                     disabled={!votes[currentQuestion?.id] || submittingVote}
                     className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
@@ -616,7 +597,6 @@ export default function VotingPage() {
                       </>
                     )}
                   </button>
-                )}
               </div>
             </div>
 
@@ -635,9 +615,11 @@ export default function VotingPage() {
                 <li className="flex items-start">
                   <span className="mr-2">📊</span>
                   <span>
-                    {session.results_mode === 'live'
-                      ? 'Results show immediately after you vote'
-                      : 'Results show after answering all questions'}
+                    {!perQuestionResults
+                      ? 'Results are shown after the last question'
+                      : hostMode
+                        ? "You'll see each question's results when the host reveals them"
+                        : "You'll see each question's results after you vote"}
                   </span>
                 </li>
               </ul>

@@ -46,7 +46,7 @@ export default function DashboardNav({ session, user: propUser }) {
                 <div className="h-9 w-9 rounded-xl bg-gradient-to-r from-primary to-accent flex items-center justify-center shadow-xs">
                   <span className="text-xl font-black text-white">⚡</span>
                 </div>
-                <span className="ml-3 text-xl font-bold text-foreground">LivePolls</span>
+                <span className="ml-3 text-xl font-bold text-foreground">TheHumanCode</span>
                 <span className="ml-2 text-xs font-semibold bg-primary/15 text-accent px-2 py-0.5 rounded-full">
                   Dashboard
                 </span>
