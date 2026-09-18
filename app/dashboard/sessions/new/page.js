@@ -62,7 +62,7 @@ export default function NewSessionPage() {
             <span>/</span>
             <span className="text-foreground font-medium">New Session</span>
           </div>
-          <h1 className="font-display text-3xl font-bold text-foreground">Create Poll Session</h1>
+          
         </div>
       </div>
 

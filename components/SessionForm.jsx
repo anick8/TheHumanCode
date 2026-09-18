@@ -117,74 +117,48 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
           </p>
         </div>
 
-        {/* Results Mode */}
+        {/* Results Display */}
         <div>
           <label className="block text-sm font-medium text-foreground mb-2">
             Results Display
           </label>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <label className={`relative rounded-lg border p-4 cursor-pointer transition-colors ${
-              formData.results_mode === 'live'
-                ? 'border-ring bg-muted ring-2 ring-primary/20'
-                : 'border-border hover:bg-muted'
-            }`}>
-              <input
-                type="radio"
-                name="results_mode"
-                value="live"
-                checked={formData.results_mode === 'live'}
-                onChange={(e) => updateField('results_mode', e.target.value)}
-                className="sr-only"
-              />
-              <div className="flex items-start">
-                <div className="flex-shrink-0">
-                  <div className="h-5 w-5 rounded-full border flex items-center justify-center">
-                    <div className={`h-2.5 w-2.5 rounded-full ${
-                      formData.results_mode === 'live' ? 'bg-primary' : 'bg-transparent'
-                    }`} />
-                  </div>
-                </div>
-                <div className="ml-3">
-                  <span className="block text-sm font-semibold text-foreground">Live Results</span>
-                  <span className="block mt-1 text-sm text-muted-foreground">
-                    After each question, a results page shows how everyone voted on it.
-                  </span>
-                </div>
-              </div>
-            </label>
-
-            <label className={`relative rounded-lg border p-4 cursor-pointer transition-colors ${
-              formData.results_mode === 'after_all'
-                ? 'border-ring bg-muted ring-2 ring-primary/20'
-                : 'border-border hover:bg-muted'
-            }`}>
-              <input
-                type="radio"
-                name="results_mode"
-                value="after_all"
-                checked={formData.results_mode === 'after_all'}
-                onChange={(e) => updateField('results_mode', e.target.value)}
-                className="sr-only"
-              />
-              <div className="flex items-start">
-                <div className="flex-shrink-0">
-                  <div className="h-5 w-5 rounded-full border flex items-center justify-center">
-                    <div className={`h-2.5 w-2.5 rounded-full ${
-                      formData.results_mode === 'after_all' ? 'bg-primary' : 'bg-transparent'
-                    }`} />
-                  </div>
-                </div>
-                <div className="ml-3">
-                  <span className="block text-sm font-semibold text-foreground">After All Questions</span>
-                  <span className="block mt-1 text-sm text-muted-foreground">
-                    Results for every question are shown once, after the last question.
-                  </span>
-                </div>
-              </div>
-            </label>
+          <div
+            role="radiogroup"
+            aria-label="Results Display"
+            className="inline-flex rounded-lg border border-border bg-muted p-1"
+          >
+            <button
+              type="button"
+              role="radio"
+              aria-checked={formData.results_mode === 'live'}
+              onClick={() => updateField('results_mode', 'live')}
+              className={`rounded-md px-4 py-2 text-sm font-semibold transition-colors ${
+                formData.results_mode === 'live'
+                  ? 'bg-gradient-to-r from-primary to-accent text-white shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Live Results
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={formData.results_mode === 'after_all'}
+              onClick={() => updateField('results_mode', 'after_all')}
+              className={`rounded-md px-4 py-2 text-sm font-semibold transition-colors ${
+                formData.results_mode === 'after_all'
+                  ? 'bg-gradient-to-r from-primary to-accent text-white shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              After All Questions
+            </button>
           </div>
           <p className="mt-2 text-sm text-muted-foreground">
-            Choose when attendees can see voting results. You can change this later.
+            {formData.results_mode === 'live'
+              ? 'A results page shows after each question.'
+              : 'Results are shown once, after the last question.'}
+            {' '}You can change this later.
           </p>
         </div>
 
