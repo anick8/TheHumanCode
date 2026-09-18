@@ -32,6 +32,9 @@ export default function PresentPage() {
   const [userId, setUserId] = useState(null)
   const [advancing, setAdvancing] = useState(false)
   const [error, setError] = useState(null)
+  const [participantCount, setParticipantCount] = useState(0)
+  const [participantNames, setParticipantNames] = useState([])
+  const [leaderboard, setLeaderboard] = useState([])
 
   useEffect(() => {
     if (!sessionId) return
@@ -127,6 +130,60 @@ export default function PresentPage() {
     return () => clearInterval(interval)
   }, [inQuestion, sessionId])
 
+  // Lobby for identified sessions: a public join count via the aggregate RPC,
+  // plus the live name wall for the owner (RLS keeps participant rows private
+  // to everyone else).
+  const lobby = session?.is_scored ? true : session?.current_question_index === -1
+  const identified = session?.participation_mode === 'identified'
+  const isScored = Boolean(session?.is_scored)
+  useEffect(() => {
+    if (!identified || !lobby || !sessionId) return
+    let cancelled = false
+    const load = async () => {
+      const { data } = await supabase.rpc('get_participant_count', { p_session_id: sessionId })
+      if (!cancelled) setParticipantCount(Number(data) || 0)
+
+      if (userId && session?.owner_id === userId) {
+        const { data: rows } = await supabase
+          .from('participants')
+          .select('name, external_id')
+          .eq('session_id', sessionId)
+          .order('created_at')
+        if (!cancelled) {
+          setParticipantNames((rows || []).map((r) => r.name || r.external_id).filter(Boolean))
+        }
+      }
+    }
+    load()
+    const interval = setInterval(load, 4000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [identified, lobby, sessionId, userId, session?.owner_id])
+
+  // Scored quiz: the owner sees a live ranked board. RLS returns nothing to
+  // non-owners, so the board is effectively owner-only.
+  useEffect(() => {
+    if (!isScored || !sessionId) return
+    let cancelled = false
+    const load = async () => {
+      const { data } = await supabase
+        .from('participants')
+        .select('id, name, external_id, score, answered_count, finished_at')
+        .eq('session_id', sessionId)
+        .order('score', { ascending: false })
+        .order('finished_at', { ascending: true, nullsFirst: false })
+      if (!cancelled) setLeaderboard(data || [])
+    }
+    load()
+    const interval = setInterval(load, 3000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [isScored, sessionId])
+
   // RLS turns an unauthorized UPDATE into "0 rows affected" rather than an
   // error, so check the returned rows - otherwise a non-owner's click would
   // look like it worked while no attendee moved.
@@ -160,6 +217,7 @@ export default function PresentPage() {
   const revealStep = showBetween && !revealed && index >= 0 && index < total
 
   const goNext = () => {
+    if (isScored) return
     if (!canAdvance) return
     if (revealStep) updateSession({ results_revealed: true })
     else updateSession({ current_question_index: index + 1, results_revealed: false })
@@ -226,11 +284,13 @@ export default function PresentPage() {
         <div className="min-w-0">
           <p className="truncate font-display text-lg font-bold text-foreground">{session.title}</p>
           <p className="text-sm text-muted-foreground">
-            {index < 0
-              ? 'Waiting room'
-              : index < total
-                ? `Question ${index + 1} of ${total}${revealed ? ' · Results' : ''}`
-                : 'Poll ended'}
+            {session.is_scored
+              ? (session.scored_closed ? 'Quiz closed · Final results' : 'Scored quiz · Live leaderboard')
+              : index < 0
+                ? 'Waiting room'
+                : index < total
+                  ? `Question ${index + 1} of ${total}${revealed ? ' · Results' : ''}`
+                  : 'Poll ended'}
           </p>
         </div>
         </div>
@@ -250,7 +310,71 @@ export default function PresentPage() {
 
       {/* Stage */}
       <main className="flex flex-1 items-center justify-center px-6 py-10">
-        {index < 0 ? (
+        {isScored ? (
+          <div className="w-full max-w-4xl">
+            {!session.scored_closed ? (
+              <>
+                <div className="text-center">
+                  <p className="text-sm font-semibold uppercase tracking-widest text-accent">Scored quiz · Live</p>
+                  <h1 className="mt-3 font-display text-4xl font-bold text-foreground md:text-5xl">{session.title}</h1>
+                  <p className="mt-3 text-muted-foreground">
+                    {participantCount} {participantCount === 1 ? 'participant' : 'participants'} joined
+                    {session.score_time_limit_seconds
+                      ? ` · ${Math.round(session.score_time_limit_seconds / 60)} min limit`
+                      : ' · no time limit'}
+                  </p>
+                </div>
+                <div className="mt-8 rounded-2xl border border-border bg-card p-6">
+                  <h2 className="font-display mb-4 text-2xl font-bold text-foreground">Leaderboard</h2>
+                  {leaderboard.length === 0 ? (
+                    <p className="text-muted-foreground">Waiting for players to join and answer…</p>
+                  ) : (
+                    <ol className="space-y-2">
+                      {leaderboard.map((p, i) => (
+                        <li key={p.id} className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
+                          <span className="flex items-center gap-3">
+                            <span className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold ${
+                              i === 0 ? 'bg-amber-400/20 text-amber-300' : 'bg-muted text-foreground'
+                            }`}>
+                              {i + 1}
+                            </span>
+                            <span className="font-medium text-foreground">{p.name || p.external_id || 'Player'}</span>
+                          </span>
+                          <span className="flex items-center gap-4 text-sm">
+                            <span className="text-muted-foreground">{p.answered_count}/{questions.length}</span>
+                            <span className="font-bold text-accent">{p.score} pts</span>
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="text-center">
+                <p className="text-sm font-semibold uppercase tracking-widest text-accent">Final results</p>
+                <h1 className="mt-3 font-display text-4xl font-bold text-foreground md:text-5xl">{session.title}</h1>
+                <div className="mt-10 space-y-4">
+                  {leaderboard.slice(0, 3).map((p, i) => (
+                    <div
+                      key={p.id}
+                      className={`mx-auto flex max-w-xl items-center justify-between rounded-2xl border px-8 py-6 ${
+                        i === 0 ? 'border-amber-400/40 bg-amber-400/10' : 'border-border bg-card'
+                      }`}
+                    >
+                      <span className="flex items-center gap-4">
+                        <span className="font-display text-3xl font-bold text-accent">{i + 1}</span>
+                        <span className="text-2xl font-semibold text-foreground">{p.name || p.external_id || 'Player'}</span>
+                      </span>
+                      <span className="font-display text-3xl font-bold text-foreground">{p.score}</span>
+                    </div>
+                  ))}
+                  {leaderboard.length === 0 && <p className="text-muted-foreground">No participants.</p>}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : index < 0 ? (
           <div className="text-center">
             {session.theme?.logoUrl && (
               <div className="mb-8 flex justify-center">
@@ -265,6 +389,25 @@ export default function PresentPage() {
             <p className="mt-6 break-all font-mono text-base text-muted-foreground md:text-lg">{voteUrl}</p>
             {total === 0 && (
               <p className="mt-6 text-destructive">Add questions to this session before presenting.</p>
+            )}
+            {identified && (
+              <div className="mt-8">
+                <p className="text-base font-medium text-foreground">
+                  {participantCount} {participantCount === 1 ? 'participant' : 'participants'} joined
+                </p>
+                {isOwner && participantNames.length > 0 && (
+                  <div className="mx-auto mt-4 flex max-w-3xl flex-wrap justify-center gap-2">
+                    {participantNames.map((name, i) => (
+                      <span
+                        key={`${name}-${i}`}
+                        className="rounded-full border border-border bg-card px-3 py-1 text-sm text-foreground"
+                      >
+                        {name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         ) : currentQuestion ? (
@@ -339,7 +482,24 @@ export default function PresentPage() {
       </main>
 
       {/* Controls - the session owner only */}
-      {index < total && (
+      {isScored ? (
+        <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-border px-6 py-4">
+          <p className="text-sm text-muted-foreground">
+            Scored quiz · participants play at their own pace
+          </p>
+          {isOwner ? (
+            <button
+              onClick={() => updateSession({ scored_closed: !session.scored_closed })}
+              disabled={advancing}
+              className="rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {session.scored_closed ? 'Reopen quiz' : 'Close quiz & show winners'}
+            </button>
+          ) : (
+            <p className="text-sm text-muted-foreground">Only the session owner can control this presentation.</p>
+          )}
+        </footer>
+      ) : index < total && (
         <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-border px-6 py-4">
           {isOwner ? (
             <>

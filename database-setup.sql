@@ -362,3 +362,616 @@ BEGIN
   RETURN result;
 END;
 $$;
+
+-- 15. Identified (non-anonymous) participation
+-- A session is either 'anonymous' (device token only, the original behavior)
+-- or 'identified': each attendee joins with a name and/or ID before voting,
+-- and every answer is attributed to that participant. Identity is
+-- self-declared - there is no attendee auth - so an external_id is a dedupe
+-- key, not proof of identity. Participant rows stay owner-readable; attendees
+-- only ever see aggregates.
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS participation_mode text NOT NULL DEFAULT 'anonymous'
+  CHECK (participation_mode IN ('anonymous', 'identified'));
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS identity_requires_name boolean NOT NULL DEFAULT true;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS identity_requires_id boolean NOT NULL DEFAULT false;
+
+-- An identified session must collect at least one identifier.
+ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_identity_requirements;
+ALTER TABLE sessions ADD CONSTRAINT sessions_identity_requirements
+  CHECK (participation_mode <> 'identified' OR identity_requires_name OR identity_requires_id);
+
+CREATE TABLE IF NOT EXISTS participants (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id uuid NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  name text,
+  external_id text,
+  join_token text NOT NULL,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_participants_session ON participants(session_id);
+-- Dedupe by external ID when supplied; name-only joins are not deduped.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_session_external
+  ON participants(session_id, external_id) WHERE external_id IS NOT NULL;
+
+ALTER TABLE votes ADD COLUMN IF NOT EXISTS participant_id uuid REFERENCES participants(id) ON DELETE CASCADE;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_votes_question_participant
+  ON votes(question_id, participant_id) WHERE participant_id IS NOT NULL;
+
+ALTER TABLE participants ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view participants in their sessions" ON participants;
+CREATE POLICY "Users can view participants in their sessions" ON participants
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM sessions
+      WHERE sessions.id = participants.session_id
+      AND sessions.owner_id = auth.uid()
+    )
+  );
+
+-- Identified votes are written only through submit_identified_vote() below
+-- (SECURITY DEFINER, which validates the join token and the option's
+-- ownership). Anonymous devices keep inserting directly, but may not attach a
+-- participant - that closes off writing identified rows around the RPC.
+DROP POLICY IF EXISTS "Anyone can vote" ON votes;
+DROP POLICY IF EXISTS "Anyone can vote anonymously" ON votes;
+CREATE POLICY "Anyone can vote anonymously" ON votes FOR INSERT TO anon, authenticated
+  WITH CHECK (participant_id IS NULL);
+
+-- Lock the session type once voting has started: existing rows may be
+-- anonymous (no identity), and switching mid-flight would silently strand them.
+CREATE OR REPLACE FUNCTION public.prevent_identity_change_after_votes()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+  IF (NEW.participation_mode IS DISTINCT FROM OLD.participation_mode
+      OR NEW.identity_requires_name IS DISTINCT FROM OLD.identity_requires_name
+      OR NEW.identity_requires_id IS DISTINCT FROM OLD.identity_requires_id)
+     AND EXISTS (
+       SELECT 1 FROM public.votes v
+       JOIN public.questions q ON q.id = v.question_id
+       WHERE q.session_id = NEW.id
+     )
+  THEN
+    RAISE EXCEPTION 'The session type cannot be changed after voting has started';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS prevent_identity_change_after_votes ON sessions;
+CREATE TRIGGER prevent_identity_change_after_votes BEFORE UPDATE ON sessions
+  FOR EACH ROW EXECUTE FUNCTION prevent_identity_change_after_votes();
+
+-- join_session: idempotent join for identified sessions. Validates that the
+-- session is active and identified, enforces the required fields server-side,
+-- and - when an external_id is supplied - resolves a rejoin to the same
+-- participant, rotating the join token to the new device.
+CREATE OR REPLACE FUNCTION public.join_session(
+  p_session_id uuid,
+  p_name text,
+  p_external_id text,
+  p_join_token text
+)
+RETURNS TABLE (participant_id uuid, participant_name text, participant_external_id text)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_session public.sessions%ROWTYPE;
+  v_name text := nullif(btrim(coalesce(p_name, '')), '');
+  v_external text := nullif(btrim(coalesce(p_external_id, '')), '');
+  v_id uuid;
+BEGIN
+  SELECT * INTO v_session FROM public.sessions
+   WHERE id = p_session_id AND is_active = true;
+
+  IF NOT FOUND OR v_session.participation_mode <> 'identified' THEN
+    RAISE EXCEPTION 'This session is not accepting identified participants';
+  END IF;
+  IF v_session.identity_requires_name AND v_name IS NULL THEN
+    RAISE EXCEPTION 'A name is required to join';
+  END IF;
+  IF v_session.identity_requires_id AND v_external IS NULL THEN
+    RAISE EXCEPTION 'An ID is required to join';
+  END IF;
+  IF p_join_token IS NULL OR btrim(p_join_token) = '' THEN
+    RAISE EXCEPTION 'A join token is required';
+  END IF;
+
+  IF v_external IS NOT NULL THEN
+    INSERT INTO public.participants (session_id, name, external_id, join_token)
+    VALUES (p_session_id, v_name, v_external, p_join_token)
+    ON CONFLICT (session_id, external_id) WHERE external_id IS NOT NULL
+    DO UPDATE SET name = EXCLUDED.name, join_token = EXCLUDED.join_token
+    RETURNING id INTO v_id;
+  ELSE
+    INSERT INTO public.participants (session_id, name, external_id, join_token)
+    VALUES (p_session_id, v_name, NULL, p_join_token)
+    RETURNING id INTO v_id;
+  END IF;
+
+  RETURN QUERY
+    SELECT p.id, p.name, p.external_id FROM public.participants p WHERE p.id = v_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.join_session(uuid, text, text, text) FROM public;
+GRANT EXECUTE ON FUNCTION public.join_session(uuid, text, text, text) TO anon, authenticated;
+
+-- submit_identified_vote is defined in full in section 16 (scored quizzes).
+-- Dropped here so a re-run replaces the earlier two-column version instead of
+-- colliding with the scored signature.
+DROP FUNCTION IF EXISTS public.submit_identified_vote(text, uuid, uuid);
+
+-- get_participant_answers: the caller's own answers, keyed by the join token.
+-- Lets a participant resume on reload or a new device without exposing anyone
+-- else's rows.
+CREATE OR REPLACE FUNCTION public.get_participant_answers(p_join_token text)
+RETURNS TABLE (answer_question_id uuid, answer_option_id uuid)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+STABLE
+AS $$
+  SELECT v.question_id, v.option_id
+  FROM public.votes v
+  JOIN public.participants p ON p.id = v.participant_id
+  WHERE p.join_token = p_join_token;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_participant_answers(text) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_participant_answers(text) TO anon, authenticated;
+
+-- get_participant_count: public aggregate for the presenter lobby, mirroring
+-- get_vote_counts - a count, never rows.
+CREATE OR REPLACE FUNCTION public.get_participant_count(p_session_id uuid)
+RETURNS bigint
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+STABLE
+AS $$
+  SELECT count(*)::bigint
+  FROM public.participants p
+  WHERE p.session_id = p_session_id
+    AND EXISTS (
+      SELECT 1 FROM public.sessions s
+      WHERE s.id = p_session_id AND s.is_active = true
+    );
+$$;
+
+REVOKE ALL ON FUNCTION public.get_participant_count(uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_participant_count(uuid) TO anon, authenticated;
+
+-- Owner presenter lobby can subscribe to joins live; realtime respects RLS,
+-- so only the owner receives these events.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime')
+     AND NOT EXISTS (
+       SELECT 1 FROM pg_publication_tables
+       WHERE pubname = 'supabase_realtime'
+         AND schemaname = 'public'
+         AND tablename = 'participants'
+     )
+  THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE participants;
+  END IF;
+END $$;
+
+-- 16. Scored quizzes
+-- Opt-in scoring for identified sessions. Each question carries manual points
+-- and exactly one correct option. The answer key lives in question_keys, which
+-- attendees can never read; submissions are judged server-side inside the
+-- SECURITY DEFINER RPC. Timing is per participant: the stopwatch starts at
+-- start_scored_session() and finished_at is stamped on the last answer.
+
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS is_scored boolean NOT NULL DEFAULT false;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS score_time_limit_seconds integer;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS scored_closed boolean NOT NULL DEFAULT false;
+
+ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_scored_requires_identified;
+ALTER TABLE sessions ADD CONSTRAINT sessions_scored_requires_identified
+  CHECK (NOT is_scored OR participation_mode = 'identified');
+ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_score_time_limit_positive;
+ALTER TABLE sessions ADD CONSTRAINT sessions_score_time_limit_positive
+  CHECK (score_time_limit_seconds IS NULL OR score_time_limit_seconds > 0);
+
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS points integer NOT NULL DEFAULT 10;
+ALTER TABLE questions DROP CONSTRAINT IF EXISTS questions_points_nonnegative;
+ALTER TABLE questions ADD CONSTRAINT questions_points_nonnegative CHECK (points >= 0);
+
+ALTER TABLE participants ADD COLUMN IF NOT EXISTS score integer NOT NULL DEFAULT 0;
+ALTER TABLE participants ADD COLUMN IF NOT EXISTS answered_count integer NOT NULL DEFAULT 0;
+ALTER TABLE participants ADD COLUMN IF NOT EXISTS started_at timestamptz;
+ALTER TABLE participants ADD COLUMN IF NOT EXISTS finished_at timestamptz;
+
+ALTER TABLE votes ADD COLUMN IF NOT EXISTS is_correct boolean;
+ALTER TABLE votes ADD COLUMN IF NOT EXISTS awarded_points integer NOT NULL DEFAULT 0;
+
+-- Private answer key. One correct option per question.
+CREATE TABLE IF NOT EXISTS question_keys (
+  question_id uuid PRIMARY KEY REFERENCES questions(id) ON DELETE CASCADE,
+  option_id uuid NOT NULL REFERENCES options(id) ON DELETE CASCADE,
+  created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE question_keys ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can manage question keys in their sessions" ON question_keys;
+CREATE POLICY "Users can manage question keys in their sessions" ON question_keys
+  FOR ALL USING (
+    EXISTS (
+      SELECT 1 FROM questions q
+      JOIN sessions s ON s.id = q.session_id
+      WHERE q.id = question_keys.question_id
+      AND s.owner_id = auth.uid()
+    )
+  ) WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM questions q
+      JOIN sessions s ON s.id = q.session_id
+      WHERE q.id = question_keys.question_id
+      AND s.owner_id = auth.uid()
+    )
+  );
+
+CREATE OR REPLACE FUNCTION public.validate_question_key()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.options o
+    WHERE o.id = NEW.option_id AND o.question_id = NEW.question_id
+  ) THEN
+    RAISE EXCEPTION 'The correct option must belong to its question';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS validate_question_key ON question_keys;
+CREATE TRIGGER validate_question_key BEFORE INSERT OR UPDATE ON question_keys
+  FOR EACH ROW EXECUTE FUNCTION validate_question_key();
+
+-- Extend the identity lock to cover the scoring configuration.
+CREATE OR REPLACE FUNCTION public.prevent_identity_change_after_votes()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+  IF (NEW.participation_mode IS DISTINCT FROM OLD.participation_mode
+      OR NEW.identity_requires_name IS DISTINCT FROM OLD.identity_requires_name
+      OR NEW.identity_requires_id IS DISTINCT FROM OLD.identity_requires_id
+      OR NEW.is_scored IS DISTINCT FROM OLD.is_scored
+      OR NEW.score_time_limit_seconds IS DISTINCT FROM OLD.score_time_limit_seconds)
+     AND EXISTS (
+       SELECT 1 FROM public.votes v
+       JOIN public.questions q ON q.id = v.question_id
+       WHERE q.session_id = NEW.id
+     )
+  THEN
+    RAISE EXCEPTION 'The session type cannot be changed after voting has started';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+-- Points and answer keys freeze once a question has been answered, so an
+-- in-flight scoreboard can't be rewritten.
+CREATE OR REPLACE FUNCTION public.prevent_points_change_after_votes()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+  IF NEW.points IS DISTINCT FROM OLD.points
+     AND EXISTS (SELECT 1 FROM public.votes v WHERE v.question_id = NEW.id)
+  THEN
+    RAISE EXCEPTION 'Question points cannot change after voting has started';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS prevent_points_change_after_votes ON questions;
+CREATE TRIGGER prevent_points_change_after_votes BEFORE UPDATE ON questions
+  FOR EACH ROW EXECUTE FUNCTION prevent_points_change_after_votes();
+
+CREATE OR REPLACE FUNCTION public.prevent_key_change_after_votes()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_question uuid;
+  v_session uuid;
+BEGIN
+  IF TG_OP = 'DELETE' THEN v_question := OLD.question_id; ELSE v_question := NEW.question_id; END IF;
+  SELECT q.session_id INTO v_session FROM public.questions q WHERE q.id = v_question;
+
+  IF EXISTS (
+    SELECT 1 FROM public.votes v
+    JOIN public.questions q ON q.id = v.question_id
+    WHERE q.session_id = v_session
+  ) THEN
+    RAISE EXCEPTION 'The answer key cannot change after voting has started';
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS prevent_key_change_after_votes ON question_keys;
+CREATE TRIGGER prevent_key_change_after_votes BEFORE INSERT OR UPDATE OR DELETE ON question_keys
+  FOR EACH ROW EXECUTE FUNCTION prevent_key_change_after_votes();
+
+-- A scored quiz's question set is fixed once answering begins.
+CREATE OR REPLACE FUNCTION public.prevent_scored_structure_change()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+DECLARE
+  v_session uuid;
+  v_scored boolean;
+BEGIN
+  IF TG_TABLE_NAME = 'questions' THEN
+    IF TG_OP = 'DELETE' THEN v_session := OLD.session_id; ELSE v_session := NEW.session_id; END IF;
+  ELSE
+    IF TG_OP = 'DELETE' THEN
+      SELECT q.session_id INTO v_session FROM public.questions q WHERE q.id = OLD.question_id;
+    ELSE
+      SELECT q.session_id INTO v_session FROM public.questions q WHERE q.id = NEW.question_id;
+    END IF;
+  END IF;
+
+  SELECT s.is_scored INTO v_scored FROM public.sessions s WHERE s.id = v_session;
+
+  IF v_scored AND EXISTS (
+    SELECT 1 FROM public.votes v
+    JOIN public.questions q ON q.id = v.question_id
+    WHERE q.session_id = v_session
+  ) THEN
+    RAISE EXCEPTION 'Questions and options cannot change after a scored quiz has started';
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS prevent_scored_structure_change ON questions;
+CREATE TRIGGER prevent_scored_structure_change BEFORE INSERT OR DELETE ON questions
+  FOR EACH ROW EXECUTE FUNCTION prevent_scored_structure_change();
+
+DROP TRIGGER IF EXISTS prevent_scored_structure_change ON options;
+CREATE TRIGGER prevent_scored_structure_change BEFORE INSERT OR DELETE ON options
+  FOR EACH ROW EXECUTE FUNCTION prevent_scored_structure_change();
+
+-- start_scored_session: begins (or resumes) a participant's stopwatch. Returns
+-- the session's own deadline (null when no limit) plus the quiz shape.
+CREATE OR REPLACE FUNCTION public.start_scored_session(p_join_token text)
+RETURNS TABLE (started_at timestamptz, deadline timestamptz, question_count integer, total_points integer)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_participant public.participants%ROWTYPE;
+  v_session public.sessions%ROWTYPE;
+  v_started timestamptz;
+  v_count integer;
+  v_total integer;
+BEGIN
+  SELECT * INTO v_participant FROM public.participants WHERE join_token = p_join_token;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Unknown participant';
+  END IF;
+
+  SELECT * INTO v_session FROM public.sessions WHERE id = v_participant.session_id;
+  IF NOT FOUND OR v_session.is_active = false THEN
+    RAISE EXCEPTION 'This session is not active';
+  END IF;
+  IF NOT v_session.is_scored THEN
+    RAISE EXCEPTION 'This session is not scored';
+  END IF;
+  IF v_session.scored_closed THEN
+    RAISE EXCEPTION 'This quiz is closed';
+  END IF;
+
+  v_started := coalesce(v_participant.started_at, now());
+  IF v_participant.started_at IS NULL THEN
+    UPDATE public.participants SET started_at = v_started WHERE id = v_participant.id;
+  END IF;
+
+  SELECT count(*), coalesce(sum(points), 0) INTO v_count, v_total
+  FROM public.questions WHERE session_id = v_session.id;
+
+  RETURN QUERY SELECT
+    v_started,
+    CASE WHEN v_session.score_time_limit_seconds IS NULL THEN NULL
+         ELSE v_started + make_interval(secs => v_session.score_time_limit_seconds) END,
+    v_count,
+    v_total;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.start_scored_session(text) FROM public;
+GRANT EXECUTE ON FUNCTION public.start_scored_session(text) TO anon, authenticated;
+
+-- submit_identified_vote: now judges scored answers. Replaces the earlier
+-- two-column version, so drop it first (CREATE OR REPLACE cannot change the
+-- OUT column list).
+DROP FUNCTION IF EXISTS public.submit_identified_vote(text, uuid, uuid);
+
+CREATE OR REPLACE FUNCTION public.submit_identified_vote(
+  p_join_token text,
+  p_question_id uuid,
+  p_option_id uuid
+)
+RETURNS TABLE (
+  recorded_option_id uuid,
+  recorded boolean,
+  is_correct boolean,
+  awarded_points integer,
+  total_score integer,
+  answered_count integer,
+  finished_at timestamptz,
+  time_up boolean,
+  closed boolean
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_participant public.participants%ROWTYPE;
+  v_session public.sessions%ROWTYPE;
+  v_existing public.votes%ROWTYPE;
+  v_correct boolean;
+  v_points integer := 0;
+  v_score integer;
+  v_answered integer;
+  v_finished timestamptz;
+BEGIN
+  SELECT * INTO v_participant FROM public.participants WHERE join_token = p_join_token;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Unknown participant';
+  END IF;
+
+  SELECT * INTO v_session FROM public.sessions WHERE id = v_participant.session_id;
+  IF NOT FOUND OR v_session.is_active = false THEN
+    RAISE EXCEPTION 'This session is not active';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.options WHERE id = p_option_id AND question_id = p_question_id
+  ) THEN
+    RAISE EXCEPTION 'That option does not belong to the question';
+  END IF;
+
+  -- Scored sessions: the host's close and the participant's own deadline are
+  -- returned as flags, not raised, so the client can show a result screen.
+  IF v_session.is_scored THEN
+    IF v_session.scored_closed THEN
+      RETURN QUERY SELECT NULL::uuid, false, NULL::boolean, 0, v_participant.score,
+        v_participant.answered_count, v_participant.finished_at, false, true;
+      RETURN;
+    END IF;
+    IF v_session.score_time_limit_seconds IS NOT NULL
+       AND (v_participant.started_at IS NULL
+            OR now() > v_participant.started_at + make_interval(secs => v_session.score_time_limit_seconds)) THEN
+      RETURN QUERY SELECT NULL::uuid, false, NULL::boolean, 0, v_participant.score,
+        v_participant.answered_count, v_participant.finished_at, true, false;
+      RETURN;
+    END IF;
+  END IF;
+
+  -- Answered before: return the stored row and never score twice.
+  SELECT * INTO v_existing FROM public.votes v
+   WHERE v.question_id = p_question_id AND v.participant_id = v_participant.id;
+  IF FOUND THEN
+    RETURN QUERY SELECT v_existing.option_id, false, v_existing.is_correct,
+      v_existing.awarded_points, v_participant.score, v_participant.answered_count,
+      v_participant.finished_at, false, v_session.scored_closed;
+    RETURN;
+  END IF;
+
+  IF v_session.is_scored THEN
+    SELECT EXISTS (
+      SELECT 1 FROM public.question_keys k
+      WHERE k.question_id = p_question_id AND k.option_id = p_option_id
+    ) INTO v_correct;
+    IF v_correct THEN
+      SELECT q.points INTO v_points FROM public.questions q WHERE q.id = p_question_id;
+      v_points := coalesce(v_points, 0);
+    END IF;
+  ELSE
+    v_correct := NULL;
+  END IF;
+
+  INSERT INTO public.votes (option_id, question_id, voter_token, participant_id, is_correct, awarded_points)
+  VALUES (p_option_id, p_question_id, v_participant.id::text, v_participant.id, v_correct, v_points);
+
+  UPDATE public.participants p
+     SET score = p.score + v_points,
+         answered_count = p.answered_count + 1,
+         finished_at = CASE
+           WHEN p.finished_at IS NOT NULL THEN p.finished_at
+           WHEN p.answered_count + 1 >= (
+             SELECT count(*) FROM public.questions q WHERE q.session_id = v_participant.session_id
+           ) THEN now()
+           ELSE NULL
+         END
+   WHERE p.id = v_participant.id
+  RETURNING p.score, p.answered_count, p.finished_at INTO v_score, v_answered, v_finished;
+
+  RETURN QUERY SELECT p_option_id, true, v_correct, v_points, v_score, v_answered, v_finished, false, false;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.submit_identified_vote(text, uuid, uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.submit_identified_vote(text, uuid, uuid) TO anon, authenticated;
+
+-- get_participant_standing: a participant's own score and rank only.
+CREATE OR REPLACE FUNCTION public.get_participant_standing(p_join_token text)
+RETURNS TABLE (total_score integer, participant_rank bigint, total_participants bigint, answered_count integer, finished_at timestamptz)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+STABLE
+AS $$
+  SELECT p.score, r.rnk, r.total, p.answered_count, p.finished_at
+  FROM public.participants p
+  JOIN (
+    SELECT id,
+           rank() OVER (ORDER BY score DESC, finished_at ASC NULLS LAST) AS rnk,
+           count(*) OVER () AS total
+    FROM public.participants p2
+    WHERE p2.session_id = (SELECT session_id FROM public.participants WHERE join_token = p_join_token)
+  ) r ON r.id = p.id
+  WHERE p.join_token = p_join_token;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_participant_standing(text) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_participant_standing(text) TO anon, authenticated;
+
+-- get_quiz_review: correct answers, but only once the host has closed the quiz.
+CREATE OR REPLACE FUNCTION public.get_quiz_review(p_join_token text)
+RETURNS TABLE (
+  review_question_id uuid,
+  review_question_text text,
+  chosen_option_id uuid,
+  chosen_option_text text,
+  correct_option_id uuid,
+  correct_option_text text,
+  review_awarded_points integer
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+STABLE
+AS $$
+  SELECT q.id, q.text, v.option_id, o.text, k.option_id, co.text, v.awarded_points
+  FROM public.participants p
+  JOIN public.sessions s ON s.id = p.session_id
+  JOIN public.questions q ON q.session_id = s.id
+  LEFT JOIN public.votes v ON v.question_id = q.id AND v.participant_id = p.id
+  LEFT JOIN public.options o ON o.id = v.option_id
+  LEFT JOIN public.question_keys k ON k.question_id = q.id
+  LEFT JOIN public.options co ON co.id = k.option_id
+  WHERE p.join_token = p_join_token
+    AND s.scored_closed = true
+  ORDER BY q.order_index;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_quiz_review(text) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_quiz_review(text) TO anon, authenticated;

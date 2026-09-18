@@ -22,7 +22,13 @@ export default function SessionResultsPage() {
   // unlike completion-rate/average-time which the schema has no basis for.
   const [uniqueVoters, setUniqueVoters] = useState(0)
   const [lastUpdated, setLastUpdated] = useState(null)
+  // Identified sessions: the roster and each participant's answers.
+  const [participants, setParticipants] = useState([])
+  const [participantAnswers, setParticipantAnswers] = useState({})
   const supabase = createClient()
+
+  const isIdentified = session?.participation_mode === 'identified'
+  const isScored = Boolean(session?.is_scored && isIdentified)
 
   const sessionId = params.sessionId
 
@@ -53,8 +59,27 @@ export default function SessionResultsPage() {
 
       if (error) throw error
       setSession(data)
+
+      if (data.participation_mode === 'identified') {
+        await loadParticipants()
+      }
     } catch (error) {
       console.error('Error loading session:', error)
+    }
+  }
+
+  const loadParticipants = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('participants')
+        .select('id, name, external_id, created_at, score, answered_count, started_at, finished_at')
+        .eq('session_id', sessionId)
+        .order('created_at')
+
+      if (error) throw error
+      setParticipants(data || [])
+    } catch (error) {
+      console.error('Error loading participants:', error)
     }
   }
 
@@ -104,24 +129,31 @@ export default function SessionResultsPage() {
       if (questionIds.length === 0) {
         setVoteCounts({})
         setUniqueVoters(0)
+        setParticipantAnswers({})
         return
       }
 
       const { data, error } = await supabase
         .from('votes')
-        .select('option_id, voter_token')
+        .select('option_id, voter_token, question_id, participant_id')
         .in('question_id', questionIds)
 
       if (error) throw error
 
       const counts = {}
       const voters = new Set()
+      const answers = {}
       for (const v of data || []) {
         counts[v.option_id] = (counts[v.option_id] || 0) + 1
         voters.add(v.voter_token)
+        if (v.participant_id) {
+          if (!answers[v.participant_id]) answers[v.participant_id] = {}
+          answers[v.participant_id][v.question_id] = v.option_id
+        }
       }
       setVoteCounts(counts)
       setUniqueVoters(voters.size)
+      setParticipantAnswers(answers)
       setLastUpdated(new Date().toISOString())
     } catch (error) {
       console.error('Error loading votes:', error)
@@ -142,10 +174,36 @@ export default function SessionResultsPage() {
     const totalVotes = Object.values(voteCounts).reduce((a, b) => a + b, 0)
     return {
       totalVotes,
-      uniqueVoters,
+      uniqueVoters: isIdentified ? participants.length : uniqueVoters,
       questionsAnswered: questions.length
     }
   }
+
+  const optionLabel = (questionId, optionId) => {
+    const opts = optionsByQuestion[questionId] || []
+    const idx = opts.findIndex((o) => o.id === optionId)
+    if (idx === -1) return null
+    return `${String.fromCharCode(65 + idx)}. ${opts[idx].text}`
+  }
+
+  const elapsedSeconds = (p) =>
+    p.finished_at && p.started_at
+      ? Math.max(0, Math.round((new Date(p.finished_at).getTime() - new Date(p.started_at).getTime()) / 1000))
+      : null
+
+  const formatDuration = (seconds) => {
+    if (seconds == null) return '—'
+    const minutes = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${minutes}:${String(secs).padStart(2, '0')}`
+  }
+
+  const rankedParticipants = [...participants].sort((a, b) => {
+    if ((b.score || 0) !== (a.score || 0)) return (b.score || 0) - (a.score || 0)
+    const at = a.finished_at ? new Date(a.finished_at).getTime() : Infinity
+    const bt = b.finished_at ? new Date(b.finished_at).getTime() : Infinity
+    return at - bt
+  })
 
   const exportResults = () => {
     const data = {
@@ -158,6 +216,22 @@ export default function SessionResultsPage() {
         }))
       })),
       stats: getVoteStats(),
+      participants: isIdentified
+        ? participants.map((p) => ({
+            name: p.name,
+            external_id: p.external_id,
+            joinedAt: p.created_at,
+            score: p.score ?? 0,
+            answered: p.answered_count ?? 0,
+            finishedAt: p.finished_at,
+            elapsedSeconds: elapsedSeconds(p),
+            answers: questions.reduce((acc, q) => {
+              const optId = participantAnswers[p.id]?.[q.id]
+              if (optId) acc[q.text] = optionLabel(q.id, optId) || optId
+              return acc
+            }, {})
+          }))
+        : undefined,
       exportedAt: new Date().toISOString()
     }
 
@@ -189,6 +263,39 @@ export default function SessionResultsPage() {
     const csv = rows.map((r) => r.join(',')).join('\n')
     const dataUri = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv)
     const exportFileDefaultName = `poll-results-${session?.slug || 'session'}-${new Date().toISOString().slice(0, 10)}.csv`
+
+    const linkElement = document.createElement('a')
+    linkElement.setAttribute('href', dataUri)
+    linkElement.setAttribute('download', exportFileDefaultName)
+    linkElement.click()
+  }
+
+  // Identity-aware matrix export: one row per participant, one column per
+  // question. Only meaningful for identified sessions.
+  const exportParticipantsCSV = () => {
+    const escape = (v) => `"${String(v).replace(/"/g, '""')}"`
+    const header = [
+      'Participant',
+      'ID',
+      ...(isScored ? ['Score', 'Time'] : []),
+      ...questions.map((q, i) => `Q${i + 1}: ${q.text}`)
+    ]
+    const rows = [header.map(escape)]
+    for (const p of participants) {
+      const row = [
+        p.name || '',
+        p.external_id || '',
+        ...(isScored ? [String(p.score || 0), formatDuration(elapsedSeconds(p))] : [])
+      ]
+      for (const q of questions) {
+        const optId = participantAnswers[p.id]?.[q.id]
+        row.push(optId ? (optionLabel(q.id, optId) || optId) : '')
+      }
+      rows.push(row.map(escape))
+    }
+    const csv = rows.map((r) => r.join(',')).join('\n')
+    const dataUri = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv)
+    const exportFileDefaultName = `participant-responses-${session?.slug || 'session'}-${new Date().toISOString().slice(0, 10)}.csv`
 
     const linkElement = document.createElement('a')
     linkElement.setAttribute('href', dataUri)
@@ -234,6 +341,10 @@ export default function SessionResultsPage() {
   const stats = getVoteStats()
   const topQuestion = getTopQuestion()
   const topOptions = getTopOptions()
+  const respondedCount = participants.filter(
+    (p) => participantAnswers[p.id] && Object.keys(participantAnswers[p.id]).length > 0
+  ).length
+  const hasParticipantIds = participants.some((p) => p.external_id)
 
   return (
     <SessionTheme theme={session.theme} className="my-8 rounded-2xl px-6 py-8">
@@ -313,6 +424,36 @@ export default function SessionResultsPage() {
             </svg>
             All Questions ({questions.length})
           </button>
+          {isIdentified && (
+            <button
+              onClick={() => setActiveTab('participants')}
+              className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
+                activeTab === 'participants'
+                  ? 'border-ring text-accent'
+                  : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
+              }`}
+            >
+              <svg className="mr-2 h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Participants ({participants.length})
+            </button>
+          )}
+          {isScored && (
+            <button
+              onClick={() => setActiveTab('scores')}
+              className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
+                activeTab === 'scores'
+                  ? 'border-ring text-accent'
+                  : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
+              }`}
+            >
+              <svg className="mr-2 h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              Scores ({participants.length})
+            </button>
+          )}
           <button
             onClick={() => setActiveTab('export')}
             className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
@@ -347,9 +488,9 @@ export default function SessionResultsPage() {
 
             <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
               <div className="text-3xl font-bold text-foreground">{stats.uniqueVoters}</div>
-              <div className="text-sm text-muted-foreground">Unique Voters</div>
+              <div className="text-sm text-muted-foreground">{isIdentified ? 'Participants' : 'Unique Voters'}</div>
               <div className="mt-2 text-xs text-muted-foreground">
-                Distinct voter tokens
+                {isIdentified ? 'Joined this session' : 'Distinct voter tokens'}
               </div>
             </div>
 
@@ -495,6 +636,146 @@ export default function SessionResultsPage() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {activeTab === 'participants' && isIdentified && (
+        <div className="space-y-8">
+          <div className="rounded-2xl border border-border bg-card p-8 shadow-lg">
+            <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="font-display text-2xl font-bold text-foreground">Participants</h2>
+                <p className="mt-1 text-muted-foreground">
+                  {participants.length} joined • {respondedCount} responded
+                </p>
+              </div>
+              {participants.length > 0 && (
+                <button
+                  onClick={exportParticipantsCSV}
+                  className="inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors"
+                >
+                  <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Download responses CSV
+                </button>
+              )}
+            </div>
+
+            {participants.length === 0 ? (
+              <p className="text-muted-foreground">No one has joined yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-border">
+                  <thead>
+                    <tr>
+                      <th className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">Participant</th>
+                      {hasParticipantIds && (
+                        <th className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">ID</th>
+                      )}
+                      {isScored && (
+                        <th className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">Score</th>
+                      )}
+                      {questions.map((question, index) => (
+                        <th key={question.id} className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">
+                          Q{index + 1}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {participants.map((p) => (
+                      <tr key={p.id}>
+                        <td className="px-4 py-4 text-sm text-foreground">
+                          {p.name || <span className="text-muted-foreground">(no name)</span>}
+                        </td>
+                        {hasParticipantIds && (
+                          <td className="px-4 py-4 text-sm text-muted-foreground">{p.external_id || '—'}</td>
+                        )}
+                        {isScored && (
+                          <td className="px-4 py-4 text-sm font-bold text-accent">{p.score || 0}</td>
+                        )}
+                        {questions.map((question) => {
+                          const optId = participantAnswers[p.id]?.[question.id]
+                          const label = optId ? optionLabel(question.id, optId) : null
+                          return (
+                            <td key={question.id} className="px-4 py-4 text-sm text-foreground">
+                              {label || <span className="text-muted-foreground">—</span>}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'scores' && isScored && (
+        <div className="space-y-8">
+          <div className="rounded-2xl border border-border bg-card p-8 shadow-lg">
+            <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="font-display text-2xl font-bold text-foreground">Scoreboard</h2>
+                <p className="mt-1 text-muted-foreground">
+                  Ranked by score, ties broken by fastest completion. {session?.scored_closed ? 'Final.' : 'Live.'}
+                </p>
+              </div>
+              {participants.length > 0 && (
+                <button
+                  onClick={exportParticipantsCSV}
+                  className="inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors"
+                >
+                  <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Download CSV
+                </button>
+              )}
+            </div>
+
+            {participants.length === 0 ? (
+              <p className="text-muted-foreground">No one has joined yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-border">
+                  <thead>
+                    <tr>
+                      <th className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">#</th>
+                      <th className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">Participant</th>
+                      {hasParticipantIds && (
+                        <th className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">ID</th>
+                      )}
+                      <th className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">Score</th>
+                      <th className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">Answered</th>
+                      <th className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">Time</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {rankedParticipants.map((p, index) => (
+                      <tr key={p.id} className={index === 0 ? 'bg-amber-400/5' : ''}>
+                        <td className="px-4 py-4 text-sm font-bold text-accent">{index + 1}</td>
+                        <td className="px-4 py-4 text-sm text-foreground">
+                          {p.name || <span className="text-muted-foreground">(no name)</span>}
+                        </td>
+                        {hasParticipantIds && (
+                          <td className="px-4 py-4 text-sm text-muted-foreground">{p.external_id || '—'}</td>
+                        )}
+                        <td className="px-4 py-4 text-sm font-bold text-foreground">{p.score || 0}</td>
+                        <td className="px-4 py-4 text-sm text-muted-foreground">
+                          {p.answered_count || 0}/{questions.length}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-muted-foreground">{formatDuration(elapsedSeconds(p))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

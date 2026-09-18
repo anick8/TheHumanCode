@@ -7,6 +7,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import PollQuestion from '@/components/PollQuestion'
 import ResultsChart from '@/components/ResultsChart'
+import JoinGate from '@/components/JoinGate'
 import { generateVoterToken } from '@/lib/utils'
 
 export default function VotingPage() {
@@ -23,7 +24,19 @@ export default function VotingPage() {
   const [voterToken, setVoterToken] = useState(null)
   const [submittingVote, setSubmittingVote] = useState(false)
   const [showResults, setShowResults] = useState(false)
+  // Identified sessions: { id, name, external_id, join_token } from localStorage.
+  const [participant, setParticipant] = useState(null)
+  const [identityReady, setIdentityReady] = useState(false)
+  // Scored quizzes.
+  const [quizState, setQuizState] = useState(null)
+  const [nowTick, setNowTick] = useState(Date.now())
+  const [standing, setStanding] = useState(null)
+  const [lastAward, setLastAward] = useState(null)
+  const [timeUp, setTimeUp] = useState(false)
+  const [review, setReview] = useState(null)
   const supabase = createClient()
+
+  const isScored = Boolean(session?.is_scored && session?.participation_mode === 'identified')
 
   const slug = params.slug
 
@@ -88,7 +101,7 @@ export default function VotingPage() {
     const refresh = async () => {
       const { data } = await supabase
         .from('sessions')
-        .select('current_question_index, results_revealed, theme')
+        .select('current_question_index, results_revealed, theme, scored_closed, is_scored')
         .eq('id', sessionRowId)
         .maybeSingle()
       if (data) setSession((prev) => (prev ? { ...prev, ...data } : prev))
@@ -107,6 +120,67 @@ export default function VotingPage() {
     }
   }, [sessionRowId])
 
+  // Scored sessions: resume the stopwatch if this device already started, and
+  // fetch the participant's own standing.
+  useEffect(() => {
+    if (!isScored || !participant) return
+    let started = false
+    try {
+      started = localStorage.getItem(`quiz_started_${slug}`) === '1'
+    } catch { /* ignore */ }
+
+    const load = async () => {
+      if (started && !quizState) {
+        const { data, error } = await supabase.rpc('start_scored_session', {
+          p_join_token: participant.join_token
+        })
+        if (!error && data?.[0]) {
+          setQuizState({ started_at: data[0].started_at, deadline: data[0].deadline })
+        }
+      }
+      await loadStanding(participant.join_token)
+    }
+    load()
+  }, [isScored, participant, slug])
+
+  // Countdown ticker for a timed quiz.
+  useEffect(() => {
+    if (!quizState?.deadline) return
+    const timer = setInterval(() => setNowTick(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [quizState?.deadline])
+
+  // Keep the participant's own rank current without a public leaderboard feed.
+  useEffect(() => {
+    if (!isScored || !participant) return
+    const timer = setInterval(() => loadStanding(participant.join_token), 5000)
+    return () => clearInterval(timer)
+  }, [isScored, participant])
+
+  // Resume at the first unanswered question once, after standings load.
+  const resumedRef = useRef(false)
+  useEffect(() => {
+    if (!isScored || resumedRef.current) return
+    if (typeof standing?.answered_count === 'number' && questions.length > 0) {
+      resumedRef.current = true
+      setCurrentQuestionIndex(Math.min(standing.answered_count, questions.length - 1))
+    }
+  }, [isScored, standing?.answered_count, questions.length])
+
+  // Correct answers are released only when the host closes the quiz.
+  useEffect(() => {
+    if (!isScored || !participant || !session?.scored_closed) return
+    let cancelled = false
+    const load = async () => {
+      const { data, error } = await supabase.rpc('get_quiz_review', {
+        p_join_token: participant.join_token
+      })
+      if (!error && !cancelled) setReview(data || [])
+    }
+    load()
+    return () => { cancelled = true }
+  }, [isScored, participant, session?.scored_closed])
+
   const loadSession = async () => {
     try {
       const { data, error } = await supabase
@@ -119,6 +193,12 @@ export default function VotingPage() {
       if (error) throw error
       setSession(data)
 
+      // Identified sessions resume a stored participant (and their answers)
+      // before the join gate renders.
+      if (data.participation_mode === 'identified') {
+        await restoreParticipant()
+      }
+
       // Load questions and options
       await loadQuestionsAndOptions(data.id)
       await loadVoteCounts(data.id)
@@ -126,8 +206,73 @@ export default function VotingPage() {
       console.error('Error loading session:', error)
       // Session might not exist or be inactive
     } finally {
+      setIdentityReady(true)
       setLoading(false)
     }
+  }
+
+  const restoreParticipant = async () => {
+    try {
+      const stored = localStorage.getItem(`participant_${slug}`)
+      if (!stored) return
+      const parsed = JSON.parse(stored)
+      if (!parsed?.join_token) return
+      setParticipant(parsed)
+      await restoreAnswers(parsed.join_token)
+    } catch (error) {
+      console.error('Error restoring participant:', error)
+    }
+  }
+
+  const restoreAnswers = async (joinToken) => {
+    try {
+      const { data, error } = await supabase.rpc('get_participant_answers', {
+        p_join_token: joinToken
+      })
+      if (error) throw error
+      const restored = {}
+      for (const row of data || []) {
+        restored[row.answer_question_id] = row.answer_option_id
+      }
+      setVotes(restored)
+    } catch (error) {
+      console.error('Error restoring answers:', error)
+    }
+  }
+
+  const handleJoined = async (joined) => {
+    try {
+      localStorage.setItem(`participant_${slug}`, JSON.stringify(joined))
+      // A new identity starts fresh: don't inherit the previous player's clock.
+      localStorage.removeItem(`quiz_started_${slug}`)
+    } catch (error) {
+      console.error('Error saving participant:', error)
+    }
+    setParticipant(joined)
+    setQuizState(null)
+    setStanding(null)
+    setLastAward(null)
+    setTimeUp(false)
+    setReview(null)
+    resumedRef.current = false
+    await restoreAnswers(joined.join_token)
+  }
+
+  const switchParticipant = () => {
+    try {
+      localStorage.removeItem(`participant_${slug}`)
+      localStorage.removeItem(`quiz_started_${slug}`)
+    } catch (error) {
+      console.error('Error clearing participant:', error)
+    }
+    setParticipant(null)
+    setVotes({})
+    setQuizState(null)
+    setStanding(null)
+    setLastAward(null)
+    setTimeUp(false)
+    setReview(null)
+    resumedRef.current = false
   }
 
   const loadQuestionsAndOptions = async (sessionId) => {
@@ -207,8 +352,40 @@ export default function VotingPage() {
     }
   }
 
+  const loadStanding = async (joinToken) => {
+    try {
+      const { data, error } = await supabase.rpc('get_participant_standing', {
+        p_join_token: joinToken
+      })
+      if (!error && data?.[0]) setStanding(data[0])
+    } catch (error) {
+      console.error('Error loading standing:', error)
+    }
+  }
+
+  const beginQuiz = async () => {
+    if (!participant) return
+    setVoteError(null)
+    try {
+      const { data, error } = await supabase.rpc('start_scored_session', {
+        p_join_token: participant.join_token
+      })
+      if (error) throw error
+      const row = data?.[0]
+      if (row) setQuizState({ started_at: row.started_at, deadline: row.deadline })
+      try {
+        localStorage.setItem(`quiz_started_${slug}`, '1')
+      } catch { /* ignore */ }
+      await loadStanding(participant.join_token)
+    } catch (error) {
+      console.error('Error starting quiz:', error)
+      setVoteError(error.message || 'Could not start the quiz. Please try again.')
+    }
+  }
+
   const handleVote = async (optionId) => {
-    if (!session || !voterToken) return
+    const identified = session?.participation_mode === 'identified'
+    if (!session || (identified ? !participant : !voterToken)) return
 
     const currentQuestion = questions[currentQuestionIndex]
     if (!currentQuestion) return
@@ -217,20 +394,51 @@ export default function VotingPage() {
     setVoteError(null)
 
     try {
-      const { error } = await supabase.from('votes').insert({
-        option_id: optionId,
-        question_id: currentQuestion.id,
-        voter_token: voterToken
-      })
+      if (identified) {
+        // Validated server-side against the join token; a repeat on the same
+        // question returns the existing choice instead of erroring.
+        const { data, error } = await supabase.rpc('submit_identified_vote', {
+          p_join_token: participant.join_token,
+          p_question_id: currentQuestion.id,
+          p_option_id: optionId
+        })
+        if (error) throw error
+        const row = data?.[0]
+        const recorded = row?.recorded_option_id || optionId
+        setVotes(prev => ({
+          ...prev,
+          [currentQuestion.id]: recorded
+        }))
 
-      // 23505 = unique(question_id, voter_token): this browser already voted on
-      // this question. Treat as success so the UI reflects the existing vote.
-      if (error && error.code !== '23505') throw error
+        if (isScored && row) {
+          setLastAward({ questionId: currentQuestion.id, points: row.awarded_points || 0 })
+          setStanding((prev) => ({
+            ...(prev || {}),
+            total_score: row.total_score,
+            answered_count: row.answered_count,
+            finished_at: row.finished_at,
+          }))
+          if (row.time_up) setTimeUp(true)
+        }
+      } else {
+        const { error } = await supabase.from('votes').insert({
+          option_id: optionId,
+          question_id: currentQuestion.id,
+          voter_token: voterToken
+        })
 
-      setVotes(prev => ({
-        ...prev,
-        [currentQuestion.id]: optionId
-      }))
+        // 23505 = unique(question_id, voter_token): this browser already voted on
+        // this question. Treat as success so the UI reflects the existing vote.
+        if (error && error.code !== '23505') throw error
+
+        setVotes(prev => ({
+          ...prev,
+          [currentQuestion.id]: optionId
+        }))
+      }
+
+      // Scored quizzes never show live vote counts and never auto-advance.
+      if (isScored) return
 
       // In host mode the presenter decides when to move on. Self-paced Live
       // voters stay put to see this question's results; After All voters
@@ -375,6 +583,218 @@ export default function VotingPage() {
     )
   }
 
+  const identified = session.participation_mode === 'identified'
+
+  // Identified sessions need an identity before any voting UI renders. The
+  // identityReady guard avoids flashing the gate while a stored participant is
+  // being restored.
+  if (identified && identityReady && !participant) {
+    return (
+      <SessionTheme theme={session.theme} className="min-h-screen bg-gradient-to-br from-background to-muted">
+        <main className="container mx-auto px-4">
+          <JoinGate session={session} onJoined={handleJoined} />
+        </main>
+      </SessionTheme>
+    )
+  }
+
+  // Scored quizzes get their own self-paced surface: a start gate, a
+  // countdown, live personal score/rank, and an end screen with a review.
+  if (isScored) {
+    const remaining = quizState?.deadline
+      ? Math.max(0, Math.floor((new Date(quizState.deadline).getTime() - nowTick) / 1000))
+      : null
+    const timeExpired = remaining === 0
+    const totalQuestions = questions.length
+    const answeredCount = standing?.answered_count ?? 0
+    const finished = Boolean(standing?.finished_at)
+    const done = finished || timeUp || timeExpired || (totalQuestions > 0 && answeredCount >= totalQuestions)
+    const closed = Boolean(session.scored_closed)
+    const scoredQuestion = questions[currentQuestionIndex]
+    const scoredOptions = scoredQuestion ? (optionsByQuestion[scoredQuestion.id] || []) : []
+    const elapsed = quizState?.started_at && standing?.finished_at
+      ? Math.max(0, Math.round((new Date(standing.finished_at).getTime() - new Date(quizState.started_at).getTime()) / 1000))
+      : null
+    const fmt = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+
+    return (
+      <SessionTheme theme={session.theme} className="min-h-screen bg-gradient-to-br from-background to-muted">
+        <header className="border-b border-border bg-card">
+          <div className="container mx-auto px-4 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex min-w-0 items-center gap-4">
+                <SessionLogo theme={session.theme} className="h-10 shrink-0" />
+                <div className="min-w-0">
+                  <h1 className="font-display truncate text-xl font-bold text-foreground">{session.title}</h1>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {participant?.name || participant?.external_id || 'Player'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="rounded-full bg-muted px-3 py-1 text-sm text-foreground">
+                  {standing?.total_score ?? 0} pts
+                </div>
+                {standing?.participant_rank && (
+                  <div className="rounded-full bg-primary/15 px-3 py-1 text-sm font-medium text-accent">
+                    #{standing.participant_rank}
+                  </div>
+                )}
+                {remaining != null && !done && (
+                  <div className={`rounded-full px-3 py-1 font-mono text-sm ${
+                    remaining <= 30 ? 'bg-destructive/15 text-destructive' : 'bg-muted text-foreground'
+                  }`}>
+                    {fmt(remaining)}
+                  </div>
+                )}
+                <button onClick={switchParticipant} className="text-sm font-medium text-accent hover:underline">
+                  Switch
+                </button>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <main className="container mx-auto px-4 py-8">
+          {done || closed ? (
+            <div className="mx-auto max-w-2xl py-6">
+              <div className="rounded-2xl border border-border bg-card p-8 text-center shadow-lg">
+                <p className="text-sm font-semibold uppercase tracking-widest text-accent">
+                  {timeUp || timeExpired ? "Time's up" : finished ? 'Quiz complete' : 'Quiz closed'}
+                </p>
+                <h1 className="font-display mt-3 text-4xl font-bold text-foreground">
+                  {standing?.total_score ?? 0} points
+                </h1>
+                <p className="mt-2 text-muted-foreground">
+                  {standing?.participant_rank
+                    ? `Rank #${standing.participant_rank} of ${standing.total_participants}`
+                    : ''}
+                  {elapsed != null ? ` • ${fmt(elapsed)}` : ''}
+                </p>
+                <p className="mt-4 text-sm text-muted-foreground">
+                  {closed
+                    ? 'The host has closed the quiz.'
+                    : 'Waiting for the host to close the quiz and reveal the correct answers.'}
+                </p>
+              </div>
+
+              {closed && review && review.length > 0 && (
+                <div className="mt-6 rounded-2xl border border-border bg-card p-6 shadow-lg">
+                  <h2 className="font-display mb-4 text-xl font-bold text-foreground">Review</h2>
+                  <div className="space-y-4">
+                    {review.map((r, i) => (
+                      <div key={r.review_question_id} className="rounded-lg border border-border p-4">
+                        <p className="font-medium text-foreground">Q{i + 1}: {r.review_question_text}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Your answer: {r.chosen_option_text || '—'}
+                        </p>
+                        <p className={`mt-1 text-sm font-medium ${
+                          r.chosen_option_id && r.chosen_option_id === r.correct_option_id
+                            ? 'text-emerald-300'
+                            : 'text-destructive'
+                        }`}>
+                          Correct: {r.correct_option_text || '—'} • {r.review_awarded_points ?? 0} pts
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : !quizState ? (
+            <div className="mx-auto max-w-xl py-10">
+              <div className="rounded-2xl border border-border bg-card p-8 text-center shadow-lg">
+                <p className="text-sm font-semibold uppercase tracking-widest text-accent">Scored quiz</p>
+                <h1 className="font-display mt-3 text-3xl font-bold text-foreground">{session.title}</h1>
+                <p className="mt-2 text-muted-foreground">
+                  Hi {participant?.name || participant?.external_id}. Ready to play?
+                </p>
+                <dl className="mt-6 grid grid-cols-2 gap-4 text-left text-sm">
+                  <div className="rounded-lg bg-muted p-4">
+                    <dt className="text-muted-foreground">Questions</dt>
+                    <dd className="mt-1 text-2xl font-bold text-foreground">{totalQuestions}</dd>
+                  </div>
+                  <div className="rounded-lg bg-muted p-4">
+                    <dt className="text-muted-foreground">Time limit</dt>
+                    <dd className="mt-1 text-2xl font-bold text-foreground">
+                      {session.score_time_limit_seconds
+                        ? `${Math.round(session.score_time_limit_seconds / 60)} min`
+                        : 'None'}
+                    </dd>
+                  </div>
+                </dl>
+                <p className="mt-6 text-sm text-muted-foreground">
+                  Your clock starts when you press Start. Points grow with each question; only your first
+                  answer counts. Correct answers are revealed when the host closes the quiz.
+                </p>
+                {voteError && (
+                  <p className="mt-4 text-sm font-medium text-destructive">{voteError}</p>
+                )}
+                <button
+                  onClick={beginQuiz}
+                  className="mt-6 inline-flex w-full items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+                >
+                  Start quiz
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="mx-auto max-w-3xl">
+              {totalQuestions > 1 && (
+                <div className="mb-6">
+                  <div className="mb-2 flex justify-between text-sm text-muted-foreground">
+                    <span>Question {currentQuestionIndex + 1} of {totalQuestions}</span>
+                    <span>{answeredCount} answered</span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-primary to-accent transition-all duration-500"
+                      style={{ width: `${(answeredCount / totalQuestions) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {lastAward && lastAward.questionId === scoredQuestion?.id && (
+                <div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-300">
+                  +{lastAward.points} point{lastAward.points !== 1 ? 's' : ''}
+                </div>
+              )}
+
+              {scoredQuestion ? (
+                <PollQuestion
+                  question={scoredQuestion}
+                  options={scoredOptions}
+                  onVote={handleVote}
+                  loading={submittingVote}
+                  selectedOptionId={votes[scoredQuestion.id]}
+                  showResults={false}
+                  resultsData={null}
+                  voterName={participant?.name || participant?.external_id || null}
+                  lockAfterVote
+                />
+              ) : (
+                <p className="text-center text-muted-foreground">No questions yet.</p>
+              )}
+
+              <div className="mt-6 flex justify-end">
+                {scoredQuestion && currentQuestionIndex < totalQuestions - 1 && (
+                  <button
+                    onClick={() => setCurrentQuestionIndex((i) => i + 1)}
+                    disabled={!votes[scoredQuestion.id] || submittingVote}
+                    className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Next question
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </main>
+      </SessionTheme>
+    )
+  }
+
   const currentQuestion = getCurrentQuestion()
   const currentOptions = getCurrentOptions()
   const totalQuestions = questions.length
@@ -397,10 +817,18 @@ export default function VotingPage() {
               </div>
             </div>
             </div>
-            <div className="flex items-center">
+            <div className="flex items-center gap-3">
               <div className="text-sm text-muted-foreground bg-muted px-3 py-1 rounded-full">
-                Anonymous Vote
+                {identified ? (participant?.name || participant?.external_id || 'Identified') : 'Anonymous Vote'}
               </div>
+              {identified && (
+                <button
+                  onClick={switchParticipant}
+                  className="text-sm font-medium text-accent hover:underline"
+                >
+                  Switch
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -459,7 +887,7 @@ export default function VotingPage() {
                     <p className="mt-2 text-muted-foreground">
                       {index === currentQuestionIndex && votes[question.id]
                         ? `You voted: "${optionsByQuestion[question.id]?.find(o => o.id === votes[question.id])?.text}"`
-                        : 'Your vote is anonymous'}
+                        : identified ? 'No response recorded' : 'Your vote is anonymous'}
                     </p>
                   </div>
 
@@ -551,6 +979,7 @@ export default function VotingPage() {
                 selectedOptionId={votes[currentQuestion.id]}
                 showResults={questionResultsShown}
                 resultsData={getResultsData()}
+                voterName={identified ? (participant?.name || participant?.external_id || null) : null}
               />
             )}
 
@@ -610,7 +1039,11 @@ export default function VotingPage() {
                 </li>
                 <li className="flex items-start">
                   <span className="mr-2">✅</span>
-                  <span>Your vote is anonymous and cannot be changed after submission</span>
+                  <span>
+                    {identified
+                      ? 'Your answers are recorded against your name/ID and visible to the organizer'
+                      : 'Your vote is anonymous and cannot be changed after submission'}
+                  </span>
                 </li>
                 <li className="flex items-start">
                   <span className="mr-2">📊</span>
@@ -632,7 +1065,7 @@ export default function VotingPage() {
       <footer className="mt-12 border-t border-border bg-card py-8">
         <div className="container mx-auto px-4 text-center">
           <p className="text-sm text-muted-foreground">
-            Powered by LivePolls • Your vote is anonymous and secure
+            Powered by LivePolls • {identified ? 'Your answers are visible to the organizer' : 'Your vote is anonymous and secure'}
           </p>
           <p className="mt-2 text-xs text-muted-foreground">
             Need help? Contact the event organizer.

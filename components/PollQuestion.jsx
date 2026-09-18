@@ -9,7 +9,9 @@ export default function PollQuestion({
   loading = false,
   selectedOptionId = null,
   showResults = false,
-  resultsData = null
+  resultsData = null,
+  voterName = null,
+  lockAfterVote = false
 }) {
   const [selected, setSelected] = useState(selectedOptionId)
   const [submitting, setSubmitting] = useState(false)
@@ -75,7 +77,7 @@ export default function PollQuestion({
             <button
               key={option.id}
               onClick={() => handleVote(option.id)}
-              disabled={loading || submitting || showResults}
+              disabled={loading || submitting || showResults || (lockAfterVote && Boolean(selectedOptionId))}
               className={`w-full text-left rounded-xl border transition-all duration-200 ${
                 showResults
                   ? 'cursor-default'
@@ -157,8 +159,9 @@ export default function PollQuestion({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span>
-              Your vote is anonymous. You can't change your vote after submitting,
-              but you can continue to next question.
+              {voterName
+                ? `Your answer is recorded as ${voterName} and visible to the organizer. Only your first answer is recorded, but you can continue to the next question.`
+                : "Your vote is anonymous. You can't change your vote after submitting, but you can continue to next question."}
             </span>
           </div>
         </div>

@@ -20,6 +20,8 @@ export default function SessionDetailPage() {
   const [saveError, setSaveError] = useState(null)
   const [saveMessage, setSaveMessage] = useState(null)
   const [userId, setUserId] = useState(null)
+  const [hasVotes, setHasVotes] = useState(false)
+  const [questionKeys, setQuestionKeys] = useState({})
   const supabase = createClient()
 
   const sessionId = params.sessionId
@@ -80,6 +82,34 @@ export default function SessionDetailPage() {
 
       setQuestions(loadedQuestions)
       setOptionsByQuestion(optionsMap)
+
+      const questionIds = loadedQuestions.map((q) => q.id)
+
+      // Answer keys are owner-only; the select returns nothing for non-owners.
+      if (questionIds.length > 0) {
+        const { data: keysData, error: keysError } = await supabase
+          .from('question_keys')
+          .select('question_id, option_id')
+          .in('question_id', questionIds)
+        if (keysError && !keysError.message.includes('does not exist')) throw keysError
+        const keyMap = {}
+        for (const key of keysData || []) keyMap[key.question_id] = key.option_id
+        setQuestionKeys(keyMap)
+      } else {
+        setQuestionKeys({})
+      }
+
+      // The session type is locked once voting has started (the DB trigger is
+      // the real guard; this drives the disabled form state).
+      if (questionIds.length > 0) {
+        const { count } = await supabase
+          .from('votes')
+          .select('id', { count: 'exact', head: true })
+          .in('question_id', questionIds)
+        setHasVotes((count || 0) > 0)
+      } else {
+        setHasVotes(false)
+      }
     } catch (error) {
       console.error('Error loading questions:', error)
       // Tables might not exist yet - that's ok
@@ -117,6 +147,11 @@ export default function SessionDetailPage() {
     setSaveMessage(null)
   }
 
+  const updateQuestionKey = (questionId, optionId) => {
+    setQuestionKeys((prev) => ({ ...prev, [questionId]: optionId }))
+    setSaveMessage(null)
+  }
+
   // Persist the editor's current state to Supabase. New rows carry temp ids
   // (temp_/opt_ prefixes) and are inserted; existing uuids are updated; rows
   // removed in the editor are deleted. Deleting a question cascades to its
@@ -136,6 +171,21 @@ export default function SessionDetailPage() {
       )
       setSaveMessage(null)
       return
+    }
+
+    if (session?.is_scored) {
+      const invalidIndex = questions.findIndex((q) => {
+        const opts = (optionsByQuestion[q.id] || []).filter((o) => (o.text || '').trim())
+        const correctId = questionKeys[q.id]
+        return opts.length < 2 || !correctId || !opts.some((o) => o.id === correctId)
+      })
+      if (invalidIndex !== -1) {
+        setSaveError(
+          `Question ${invalidIndex + 1} needs at least 2 options and a marked correct answer before saving.`
+        )
+        setSaveMessage(null)
+        return
+      }
     }
 
     setSaving(true)
@@ -175,11 +225,14 @@ export default function SessionDetailPage() {
       const questionIdMap = {}
       for (const [index, question] of questions.entries()) {
         const text = question.text.trim()
+        const points = Number.isFinite(Number(question.points))
+          ? Math.max(0, Math.round(Number(question.points)))
+          : 10
 
         if (String(question.id).startsWith('temp_')) {
           const { data, error } = await supabase
             .from('questions')
-            .insert({ session_id: sessionId, text, order_index: index })
+            .insert({ session_id: sessionId, text, order_index: index, points })
             .select('id')
             .single()
           if (error) throw error
@@ -187,17 +240,21 @@ export default function SessionDetailPage() {
         } else {
           const { error } = await supabase
             .from('questions')
-            .update({ text, order_index: index })
+            .update({ text, order_index: index, points })
             .eq('id', question.id)
           if (error) throw error
           questionIdMap[question.id] = question.id
         }
       }
 
-      // Same insert/update/delete pass for each question's options
+      // Same insert/update/delete pass for each question's options. Inserted rows
+      // are captured so a correct-answer key on a brand-new option can be mapped
+      // from its temp opt_ id to the real uuid.
+      const optionIdMap = {}
       for (const question of questions) {
         const realQuestionId = questionIdMap[question.id]
         if (!realQuestionId) continue
+        optionIdMap[question.id] = {}
 
         const editorOptions = (optionsByQuestion[question.id] || []).filter((o) =>
           (o.text || '').trim()
@@ -234,10 +291,40 @@ export default function SessionDetailPage() {
               .update({ text, order_index: index })
               .eq('id', option.id)
             if (error) throw error
+            optionIdMap[question.id][option.id] = option.id
           } else {
-            const { error } = await supabase
+            const { data: inserted, error } = await supabase
               .from('options')
               .insert({ question_id: realQuestionId, text, order_index: index })
+              .select('id')
+              .single()
+            if (error) throw error
+            optionIdMap[question.id][option.id] = inserted.id
+          }
+        }
+      }
+
+      // Reconcile answer keys for scored sessions (owner-only table).
+      if (session?.is_scored) {
+        for (const question of questions) {
+          const realQuestionId = questionIdMap[question.id]
+          if (!realQuestionId) continue
+          const desired = questionKeys[question.id]
+          const realOptionId = desired ? optionIdMap[question.id]?.[desired] : null
+
+          if (realOptionId) {
+            const { error } = await supabase
+              .from('question_keys')
+              .upsert(
+                { question_id: realQuestionId, option_id: realOptionId },
+                { onConflict: 'question_id' }
+              )
+            if (error) throw error
+          } else {
+            const { error } = await supabase
+              .from('question_keys')
+              .delete()
+              .eq('question_id', realQuestionId)
             if (error) throw error
           }
         }
@@ -456,6 +543,10 @@ export default function SessionDetailPage() {
             questions={questions}
             optionsByQuestion={optionsByQuestion}
             onQuestionsChange={updateQuestions}
+            questionKeys={questionKeys}
+            onQuestionKeysChange={updateQuestionKey}
+            isScored={Boolean(session?.is_scored)}
+            locked={hasVotes && Boolean(session?.is_scored)}
             loading={loading}
           />
 
@@ -506,6 +597,7 @@ export default function SessionDetailPage() {
             initialData={session}
             onSubmit={updateSession}
             loading={loading}
+            lockParticipation={hasVotes}
           />
 
           {/* Voting URL */}

@@ -1,0 +1,18 @@
+graph TD
+  U["auth.users<br/>Supabase Auth"]
+  S["sessions<br/>id uuid PK<br/>owner_id uuid FK (auth.users)<br/>title text<br/>slug text UNIQUE<br/>is_active bool<br/>results_mode live / after_all<br/>current_question_index int<br/>results_revealed bool<br/>theme jsonb<br/>created_at, updated_at"]
+  Q["questions<br/>id uuid PK<br/>session_id uuid FK (sessions)<br/>text text<br/>order_index int<br/>created_at"]
+  O["options<br/>id uuid PK<br/>question_id uuid FK (questions)<br/>text text<br/>order_index int<br/>created_at"]
+  V["votes<br/>id uuid PK<br/>option_id uuid FK (options)<br/>question_id uuid FK (questions)<br/>voter_token text<br/>UNIQUE (question_id, voter_token)<br/>created_at"]
+  VC["vote_counts (view)<br/>security_invoker = on"]
+  SS["session_stats (view)<br/>security_invoker = on"]
+  FN["get_vote_counts(session_id)<br/>SECURITY DEFINER"]
+
+  U -->|"1 owns *"| S
+  S -->|"1 has *"| Q
+  Q -->|"1 has *"| O
+  O -->|"1 receives *"| V
+  Q -.->|"also referenced"| V
+  S -.->|"aggregated by"| VC
+  S -.->|"aggregated by"| SS
+  S -.->|"public aggregate read"| FN
