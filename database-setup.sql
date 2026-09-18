@@ -417,7 +417,14 @@ CREATE POLICY "Users can view participants in their sessions" ON participants
 DROP POLICY IF EXISTS "Anyone can vote" ON votes;
 DROP POLICY IF EXISTS "Anyone can vote anonymously" ON votes;
 CREATE POLICY "Anyone can vote anonymously" ON votes FOR INSERT TO anon, authenticated
-  WITH CHECK (participant_id IS NULL);
+  WITH CHECK (
+    participant_id IS NULL
+    AND EXISTS (
+      SELECT 1 FROM questions q
+      JOIN sessions s ON s.id = q.session_id
+      WHERE q.id = votes.question_id AND s.is_active = true
+    )
+  );
 
 -- Lock the session type once voting has started: existing rows may be
 -- anonymous (no identity), and switching mid-flight would silently strand them.
@@ -484,11 +491,23 @@ BEGIN
   END IF;
 
   IF v_external IS NOT NULL THEN
+    -- A rejoin with the SAME external_id must also present the SAME
+    -- join_token to be treated as the same participant (e.g. a page
+    -- reload replaying the token already in localStorage). Without this,
+    -- anyone who merely learns another participant's external_id could
+    -- call join_session with their own chosen token and silently steal
+    -- that participant's identity, since join_token was otherwise
+    -- unconditionally overwritten on conflict.
     INSERT INTO public.participants (session_id, name, external_id, join_token)
     VALUES (p_session_id, v_name, v_external, p_join_token)
     ON CONFLICT (session_id, external_id) WHERE external_id IS NOT NULL
-    DO UPDATE SET name = EXCLUDED.name, join_token = EXCLUDED.join_token
+    DO UPDATE SET name = EXCLUDED.name
+      WHERE public.participants.join_token = EXCLUDED.join_token
     RETURNING id INTO v_id;
+
+    IF v_id IS NULL THEN
+      RAISE EXCEPTION 'This ID has already joined this session from a different device';
+    END IF;
   ELSE
     INSERT INTO public.participants (session_id, name, external_id, join_token)
     VALUES (p_session_id, v_name, NULL, p_join_token)
@@ -975,3 +994,225 @@ $$;
 
 REVOKE ALL ON FUNCTION public.get_quiz_review(text) FROM public;
 GRANT EXECUTE ON FUNCTION public.get_quiz_review(text) TO anon, authenticated;
+
+-- 17. Session types
+-- The organizer-facing "session type" is a thin label over the existing
+-- participation_mode/is_scored flags, kept so every RPC, RLS policy and
+-- constraint written above keeps working unchanged:
+--   poll     -> participation_mode='anonymous', is_scored=false
+--   quiz     -> participation_mode='identified' (is_scored optional)
+--   comments -> participation_mode='identified', is_scored=false
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS session_type text NOT NULL DEFAULT 'poll'
+  CHECK (session_type IN ('poll', 'quiz', 'comments'));
+
+-- Backfill existing rows from their current flags before the consistency
+-- constraint below would otherwise reject them.
+UPDATE sessions SET session_type =
+  CASE WHEN participation_mode = 'identified' THEN 'quiz' ELSE 'poll' END
+WHERE session_type = 'poll' AND participation_mode = 'identified';
+
+ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_type_consistency;
+ALTER TABLE sessions ADD CONSTRAINT sessions_type_consistency CHECK (
+     (session_type = 'poll'     AND participation_mode = 'anonymous'  AND NOT is_scored)
+  OR (session_type = 'quiz'     AND participation_mode = 'identified')
+  OR (session_type = 'comments' AND participation_mode = 'identified' AND NOT is_scored)
+);
+
+-- An image + prompt for a 'comments' session's question row. Unused by poll
+-- and quiz questions.
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS image_url text;
+
+-- Image uploads for comments sessions: public-read bucket, owners write only
+-- under <their uid>/, same shape as session-logos above.
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES ('session-images', 'session-images', true, 5242880,
+        ARRAY['image/png','image/jpeg','image/webp','image/gif'])
+ON CONFLICT (id) DO UPDATE SET public = true, file_size_limit = EXCLUDED.file_size_limit,
+  allowed_mime_types = EXCLUDED.allowed_mime_types;
+
+DROP POLICY IF EXISTS "session_images_owner_insert" ON storage.objects;
+CREATE POLICY "session_images_owner_insert" ON storage.objects FOR INSERT TO authenticated
+  WITH CHECK (bucket_id = 'session-images' AND (storage.foldername(name))[1] = (select auth.uid())::text);
+DROP POLICY IF EXISTS "session_images_owner_update" ON storage.objects;
+CREATE POLICY "session_images_owner_update" ON storage.objects FOR UPDATE TO authenticated
+  USING (bucket_id = 'session-images' AND (storage.foldername(name))[1] = (select auth.uid())::text);
+DROP POLICY IF EXISTS "session_images_owner_delete" ON storage.objects;
+CREATE POLICY "session_images_owner_delete" ON storage.objects FOR DELETE TO authenticated
+  USING (bucket_id = 'session-images' AND (storage.foldername(name))[1] = (select auth.uid())::text);
+
+-- Comments: free-text responses to an image+prompt question, from named
+-- (identified) participants only. Like votes, this table is never read
+-- directly by attendees - it holds participant_id, and a direct SELECT policy
+-- would let anyone correlate a named person's comments. All attendee access
+-- goes through the two SECURITY DEFINER functions below.
+CREATE TABLE IF NOT EXISTS comments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  question_id uuid NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+  participant_id uuid NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+  body text NOT NULL CHECK (char_length(btrim(body)) BETWEEN 1 AND 500),
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_comments_question ON comments(question_id, created_at DESC);
+
+ALTER TABLE comments ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can manage comments in their sessions" ON comments;
+CREATE POLICY "Users can manage comments in their sessions" ON comments
+  FOR ALL USING (
+    EXISTS (
+      SELECT 1 FROM questions q
+      JOIN sessions s ON s.id = q.session_id
+      WHERE q.id = comments.question_id
+      AND s.owner_id = auth.uid()
+    )
+  );
+
+-- submit_comment: validates the participant's token, that the question
+-- belongs to their own session, the body length, and - when the presenter is
+-- driving the session - that this question is the one currently on screen.
+-- That last check is stricter than the plain "Anyone can vote" insert path:
+-- a comment cannot be backdated onto a question the room has moved past.
+CREATE OR REPLACE FUNCTION public.submit_comment(
+  p_join_token text,
+  p_question_id uuid,
+  p_body text
+)
+RETURNS TABLE (comment_id uuid, created_at timestamptz)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_participant public.participants%ROWTYPE;
+  v_session public.sessions%ROWTYPE;
+  v_question public.questions%ROWTYPE;
+  v_body text := btrim(coalesce(p_body, ''));
+  v_index integer;
+  v_id uuid;
+  v_created timestamptz;
+BEGIN
+  SELECT * INTO v_participant FROM public.participants WHERE join_token = p_join_token;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Unknown participant';
+  END IF;
+
+  SELECT * INTO v_session FROM public.sessions WHERE id = v_participant.session_id;
+  IF NOT FOUND OR v_session.is_active = false THEN
+    RAISE EXCEPTION 'This session is not active';
+  END IF;
+  IF v_session.session_type <> 'comments' THEN
+    RAISE EXCEPTION 'This session does not accept comments';
+  END IF;
+
+  SELECT * INTO v_question FROM public.questions
+   WHERE id = p_question_id AND session_id = v_session.id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'That image does not belong to this session';
+  END IF;
+
+  IF char_length(v_body) < 1 OR char_length(v_body) > 500 THEN
+    RAISE EXCEPTION 'A comment must be between 1 and 500 characters';
+  END IF;
+
+  -- Presenter-driven session: only the question currently on screen accepts
+  -- comments. Self-paced sessions (current_question_index IS NULL) accept a
+  -- comment on any of the session's own questions.
+  --
+  -- The position must be computed over ALL of the session's questions before
+  -- filtering to p_question_id - filtering first would leave a one-row set,
+  -- where row_number() always returns 1 (index 0) regardless of the
+  -- question's real order, making every image past the first fail this check.
+  IF v_session.current_question_index IS NOT NULL THEN
+    SELECT sub.idx INTO v_index FROM (
+      SELECT id, (row_number() OVER (ORDER BY order_index) - 1) AS idx
+      FROM public.questions WHERE session_id = v_session.id
+    ) sub WHERE sub.id = p_question_id;
+
+    IF v_index IS DISTINCT FROM v_session.current_question_index THEN
+      RAISE EXCEPTION 'This image is not currently open for comments';
+    END IF;
+  END IF;
+
+  INSERT INTO public.comments (question_id, participant_id, body)
+  VALUES (p_question_id, v_participant.id, v_body)
+  RETURNING id, comments.created_at INTO v_id, v_created;
+
+  RETURN QUERY SELECT v_id, v_created;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.submit_comment(text, uuid, text) FROM public;
+GRANT EXECUTE ON FUNCTION public.submit_comment(text, uuid, text) TO anon, authenticated;
+
+-- get_comments: the session owner's live wall, with each comment attributed
+-- to its author's display name. Unlike get_vote_counts (a public aggregate),
+-- this returns attributed text, so it is owner-only - the DB, not just the
+-- protected /present route, is what actually stops another attendee from
+-- calling this RPC directly and dumping everyone's comments.
+CREATE OR REPLACE FUNCTION public.get_comments(p_session_id uuid, p_question_id uuid DEFAULT NULL)
+RETURNS TABLE (
+  comment_id uuid,
+  comment_question_id uuid,
+  comment_body text,
+  author_name text,
+  comment_created_at timestamptz
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+STABLE
+AS $$
+  SELECT c.id, c.question_id, c.body,
+         coalesce(p.name, p.external_id, 'Anonymous'), c.created_at
+  FROM public.comments c
+  JOIN public.questions q ON q.id = c.question_id
+  JOIN public.participants p ON p.id = c.participant_id
+  WHERE q.session_id = p_session_id
+    AND (p_question_id IS NULL OR c.question_id = p_question_id)
+    AND EXISTS (
+      SELECT 1 FROM public.sessions s
+      WHERE s.id = p_session_id AND s.owner_id = auth.uid()
+    )
+  ORDER BY c.created_at DESC;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_comments(uuid, uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_comments(uuid, uuid) TO anon, authenticated;
+
+-- get_own_comments: a participant's own comments on one image, keyed by their
+-- join token - the attendee-facing counterpart to get_comments, exposing no
+-- other participant's name or text.
+CREATE OR REPLACE FUNCTION public.get_own_comments(p_join_token text, p_question_id uuid)
+RETURNS TABLE (comment_id uuid, comment_body text, comment_created_at timestamptz)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+STABLE
+AS $$
+  SELECT c.id, c.body, c.created_at
+  FROM public.comments c
+  JOIN public.participants p ON p.id = c.participant_id
+  WHERE p.join_token = p_join_token
+    AND c.question_id = p_question_id
+  ORDER BY c.created_at DESC;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_own_comments(text, uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_own_comments(text, uuid) TO anon, authenticated;
+
+-- Presenter's comment wall subscribes live; realtime respects RLS, and
+-- comments has no attendee SELECT policy, so only the owner receives events.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime')
+     AND NOT EXISTS (
+       SELECT 1 FROM pg_publication_tables
+       WHERE pubname = 'supabase_realtime'
+         AND schemaname = 'public'
+         AND tablename = 'comments'
+     )
+  THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE comments;
+  END IF;
+END $$;

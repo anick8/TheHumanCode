@@ -8,6 +8,7 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
     title: initialData?.title || '',
     slug: initialData?.slug || generateSlug(),
     results_mode: initialData?.results_mode || 'live',
+    session_type: initialData?.session_type || 'poll',
     participation_mode: initialData?.participation_mode || 'anonymous',
     identity_requires_name: initialData?.identity_requires_name ?? true,
     identity_requires_id: initialData?.identity_requires_id ?? false,
@@ -21,15 +22,16 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
     setFormData(prev => ({ ...prev, [field]: value }))
   }
 
-  // Anonymous sessions cannot be scored (enforced by a DB constraint too), so
-  // switching back clears the scoring configuration.
-  const setParticipationMode = (mode) => {
+  // A session type is a preset over participation_mode/is_scored (both a DB
+  // constraint and this UI keep them in sync): poll = anonymous, never scored;
+  // quiz = identified, scoring stays an optional toggle; comments = identified,
+  // never scored. Switching types resets whichever flags the new type forbids.
+  const setSessionType = (type) => {
     setFormData(prev => ({
       ...prev,
-      participation_mode: mode,
-      ...(mode === 'anonymous'
-        ? { is_scored: false, score_time_limit_seconds: null }
-        : {}),
+      session_type: type,
+      participation_mode: type === 'poll' ? 'anonymous' : 'identified',
+      ...(type !== 'quiz' ? { is_scored: false, score_time_limit_seconds: null } : {}),
     }))
   }
 
@@ -117,51 +119,6 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
           </p>
         </div>
 
-        {/* Results Display */}
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-2">
-            Results Display
-          </label>
-          <div
-            role="radiogroup"
-            aria-label="Results Display"
-            className="inline-flex rounded-lg border border-border bg-muted p-1"
-          >
-            <button
-              type="button"
-              role="radio"
-              aria-checked={formData.results_mode === 'live'}
-              onClick={() => updateField('results_mode', 'live')}
-              className={`rounded-md px-4 py-2 text-sm font-semibold transition-colors ${
-                formData.results_mode === 'live'
-                  ? 'bg-gradient-to-r from-primary to-accent text-white shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              Live Results
-            </button>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={formData.results_mode === 'after_all'}
-              onClick={() => updateField('results_mode', 'after_all')}
-              className={`rounded-md px-4 py-2 text-sm font-semibold transition-colors ${
-                formData.results_mode === 'after_all'
-                  ? 'bg-gradient-to-r from-primary to-accent text-white shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              After All Questions
-            </button>
-          </div>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {formData.results_mode === 'live'
-              ? 'A results page shows after each question.'
-              : 'Results are shown once, after the last question.'}
-            {' '}You can change this later.
-          </p>
-        </div>
-
         {/* Session Type */}
         <div>
           <div className="mb-2 flex items-center justify-between">
@@ -170,20 +127,20 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
               <span className="text-xs text-muted-foreground">Locked after the first vote</span>
             )}
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <label className={`relative rounded-lg border p-4 transition-colors ${
               lockParticipation ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'
             } ${
-              formData.participation_mode === 'anonymous'
+              formData.session_type === 'poll'
                 ? 'border-ring bg-muted ring-2 ring-primary/20'
                 : 'border-border hover:bg-muted'
             }`}>
               <input
                 type="radio"
-                name="participation_mode"
-                value="anonymous"
-                checked={formData.participation_mode === 'anonymous'}
-                onChange={(e) => setParticipationMode(e.target.value)}
+                name="session_type"
+                value="poll"
+                checked={formData.session_type === 'poll'}
+                onChange={(e) => setSessionType(e.target.value)}
                 disabled={lockParticipation}
                 className="sr-only"
               />
@@ -191,12 +148,12 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
                 <div className="flex-shrink-0">
                   <div className="h-5 w-5 rounded-full border flex items-center justify-center">
                     <div className={`h-2.5 w-2.5 rounded-full ${
-                      formData.participation_mode === 'anonymous' ? 'bg-primary' : 'bg-transparent'
+                      formData.session_type === 'poll' ? 'bg-primary' : 'bg-transparent'
                     }`} />
                   </div>
                 </div>
                 <div className="ml-3">
-                  <span className="block text-sm font-semibold text-foreground">Anonymous</span>
+                  <span className="block text-sm font-semibold text-foreground">Voting poll</span>
                   <span className="block mt-1 text-sm text-muted-foreground">
                     Attendees vote with a device token. No names or IDs are collected.
                   </span>
@@ -207,16 +164,16 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
             <label className={`relative rounded-lg border p-4 transition-colors ${
               lockParticipation ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'
             } ${
-              formData.participation_mode === 'identified'
+              formData.session_type === 'quiz'
                 ? 'border-ring bg-muted ring-2 ring-primary/20'
                 : 'border-border hover:bg-muted'
             }`}>
               <input
                 type="radio"
-                name="participation_mode"
-                value="identified"
-                checked={formData.participation_mode === 'identified'}
-                onChange={(e) => setParticipationMode(e.target.value)}
+                name="session_type"
+                value="quiz"
+                checked={formData.session_type === 'quiz'}
+                onChange={(e) => setSessionType(e.target.value)}
                 disabled={lockParticipation}
                 className="sr-only"
               />
@@ -224,21 +181,54 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
                 <div className="flex-shrink-0">
                   <div className="h-5 w-5 rounded-full border flex items-center justify-center">
                     <div className={`h-2.5 w-2.5 rounded-full ${
-                      formData.participation_mode === 'identified' ? 'bg-primary' : 'bg-transparent'
+                      formData.session_type === 'quiz' ? 'bg-primary' : 'bg-transparent'
                     }`} />
                   </div>
                 </div>
                 <div className="ml-3">
-                  <span className="block text-sm font-semibold text-foreground">Identified</span>
+                  <span className="block text-sm font-semibold text-foreground">Quiz</span>
                   <span className="block mt-1 text-sm text-muted-foreground">
-                    Attendees join with a name and/or ID, and you see who answered what.
+                    Attendees join with a name and/or ID, and you see who answered what. Scoring is optional.
+                  </span>
+                </div>
+              </div>
+            </label>
+
+            <label className={`relative rounded-lg border p-4 transition-colors ${
+              lockParticipation ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'
+            } ${
+              formData.session_type === 'comments'
+                ? 'border-ring bg-muted ring-2 ring-primary/20'
+                : 'border-border hover:bg-muted'
+            }`}>
+              <input
+                type="radio"
+                name="session_type"
+                value="comments"
+                checked={formData.session_type === 'comments'}
+                onChange={(e) => setSessionType(e.target.value)}
+                disabled={lockParticipation}
+                className="sr-only"
+              />
+              <div className="flex items-start">
+                <div className="flex-shrink-0">
+                  <div className="h-5 w-5 rounded-full border flex items-center justify-center">
+                    <div className={`h-2.5 w-2.5 rounded-full ${
+                      formData.session_type === 'comments' ? 'bg-primary' : 'bg-transparent'
+                    }`} />
+                  </div>
+                </div>
+                <div className="ml-3">
+                  <span className="block text-sm font-semibold text-foreground">Image &amp; comments</span>
+                  <span className="block mt-1 text-sm text-muted-foreground">
+                    Upload images; named attendees send free-text comments on each one.
                   </span>
                 </div>
               </div>
             </label>
           </div>
 
-          {formData.participation_mode === 'identified' && (
+          {formData.session_type !== 'poll' && (
             <div className="mt-4 space-y-3 rounded-lg border border-border bg-muted/60 p-4">
               <label className={`flex items-start gap-3 ${lockParticipation ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}>
                 <input
@@ -251,7 +241,7 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
                 <span>
                   <span className="block text-sm font-medium text-foreground">Require name</span>
                   <span className="block text-sm text-muted-foreground">
-                    Participants enter their name before voting.
+                    Participants enter their name before {formData.session_type === 'comments' ? 'commenting' : 'voting'}.
                   </span>
                 </span>
               </label>
@@ -276,64 +266,114 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
                 </p>
               )}
 
-              <div className="mt-4 space-y-3 border-t border-border pt-4">
-                <label className={`flex items-start gap-3 ${lockParticipation ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}>
-                  <input
-                    type="checkbox"
-                    checked={formData.is_scored}
-                    onChange={(e) => updateField('is_scored', e.target.checked)}
-                    disabled={lockParticipation}
-                    className="mt-1 h-4 w-4 rounded border-border text-accent focus:ring-ring"
-                  />
-                  <span>
-                    <span className="block text-sm font-medium text-foreground">Scored quiz</span>
-                    <span className="block text-sm text-muted-foreground">
-                      Mark one correct option and points per question. Participants get a running score, a
-                      leaderboard, and a final ranking.
-                    </span>
-                  </span>
-                </label>
-
-                {formData.is_scored && (
-                  <div>
-                    <label htmlFor="score_time_limit" className="block text-sm font-medium text-foreground mb-2">
-                      Time limit (minutes, optional)
-                    </label>
+              {formData.session_type === 'quiz' && (
+                <div className="mt-4 space-y-3 border-t border-border pt-4">
+                  <label className={`flex items-start gap-3 ${lockParticipation ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}>
                     <input
-                      id="score_time_limit"
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={formData.score_time_limit_seconds ? String(formData.score_time_limit_seconds / 60) : ''}
-                      onChange={(e) => {
-                        const minutes = e.target.value
-                        updateField(
-                          'score_time_limit_seconds',
-                          minutes === '' ? null : Math.max(1, Math.round(Number(minutes))) * 60
-                        )
-                      }}
+                      type="checkbox"
+                      checked={formData.is_scored}
+                      onChange={(e) => updateField('is_scored', e.target.checked)}
                       disabled={lockParticipation}
-                      placeholder="No limit"
-                      className="block w-full max-w-xs rounded-lg border border-border px-4 py-3 text-foreground shadow-sm focus:border-ring focus:ring-2 focus:ring-ring focus:ring-opacity-20 disabled:opacity-70"
+                      className="mt-1 h-4 w-4 rounded border-border text-accent focus:ring-ring"
                     />
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Each participant's clock starts when they press Start. Leave empty for a stopwatch only
-                      (still used to break ties).
-                    </p>
-                  </div>
-                )}
-              </div>
+                    <span>
+                      <span className="block text-sm font-medium text-foreground">Scored quiz</span>
+                      <span className="block text-sm text-muted-foreground">
+                        Mark one correct option and points per question. Participants get a running score, a
+                        leaderboard, and a final ranking.
+                      </span>
+                    </span>
+                  </label>
+
+                  {formData.is_scored && (
+                    <div>
+                      <label htmlFor="score_time_limit" className="block text-sm font-medium text-foreground mb-2">
+                        Time limit (minutes, optional)
+                      </label>
+                      <input
+                        id="score_time_limit"
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={formData.score_time_limit_seconds ? String(formData.score_time_limit_seconds / 60) : ''}
+                        onChange={(e) => {
+                          const minutes = e.target.value
+                          updateField(
+                            'score_time_limit_seconds',
+                            minutes === '' ? null : Math.max(1, Math.round(Number(minutes))) * 60
+                          )
+                        }}
+                        disabled={lockParticipation}
+                        placeholder="No limit"
+                        className="block w-full max-w-xs rounded-lg border border-border px-4 py-3 text-foreground shadow-sm focus:border-ring focus:ring-2 focus:ring-ring focus:ring-opacity-20 disabled:opacity-70"
+                      />
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Each participant's clock starts when they press Start. Leave empty for a stopwatch only
+                        (still used to break ties).
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
           <p className="mt-2 text-sm text-muted-foreground">
-            Identified sessions attach answers to a name and/or ID so you can see who responded. Participants
-            are not authenticated, so an ID only prevents double voting - it is not verified.
+            {formData.session_type === 'poll'
+              ? 'Voting polls collect no names or IDs - only aggregate results.'
+              : 'Quiz and comments sessions attach answers to a name and/or ID so you can see who responded. Participants are not authenticated, so an ID only prevents double voting - it is not verified.'}
           </p>
           {formError && (
             <p className="mt-2 text-sm font-medium text-destructive">{formError}</p>
           )}
         </div>
+
+        {/* Results Display */}
+        {formData.session_type !== 'comments' && (
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-2">
+              Results Display
+            </label>
+            <div
+              role="radiogroup"
+              aria-label="Results Display"
+              className="inline-flex rounded-lg border border-border bg-muted p-1"
+            >
+              <button
+                type="button"
+                role="radio"
+                aria-checked={formData.results_mode === 'live'}
+                onClick={() => updateField('results_mode', 'live')}
+                className={`rounded-md px-4 py-2 text-sm font-semibold transition-colors ${
+                  formData.results_mode === 'live'
+                    ? 'bg-gradient-to-r from-primary to-accent text-white shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Live Results
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={formData.results_mode === 'after_all'}
+                onClick={() => updateField('results_mode', 'after_all')}
+                className={`rounded-md px-4 py-2 text-sm font-semibold transition-colors ${
+                  formData.results_mode === 'after_all'
+                    ? 'bg-gradient-to-r from-primary to-accent text-white shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                After All Questions
+              </button>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {formData.results_mode === 'live'
+                ? 'A results page shows after each question.'
+                : 'Results are shown once, after the last question.'}
+              {' '}You can change this later.
+            </p>
+          </div>
+        )}
 
         {/* Active Status */}
         <div className="flex items-start">

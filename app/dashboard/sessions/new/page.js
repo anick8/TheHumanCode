@@ -23,6 +23,7 @@ export default function NewSessionPage() {
             title: formData.title,
             slug: formData.slug,
             results_mode: formData.results_mode,
+            session_type: formData.session_type,
             participation_mode: formData.participation_mode,
             identity_requires_name: formData.identity_requires_name,
             identity_requires_id: formData.identity_requires_id,

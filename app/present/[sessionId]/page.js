@@ -35,6 +35,8 @@ export default function PresentPage() {
   const [participantCount, setParticipantCount] = useState(0)
   const [participantNames, setParticipantNames] = useState([])
   const [leaderboard, setLeaderboard] = useState([])
+  const [commentCounts, setCommentCounts] = useState({}) // {questionId: count}
+  const [commentWall, setCommentWall] = useState([]) // owner-only, current image
 
   useEffect(() => {
     if (!sessionId) return
@@ -130,6 +132,53 @@ export default function PresentPage() {
     return () => clearInterval(interval)
   }, [inQuestion, sessionId])
 
+  // Image & comments: the owner's live comment wall for the open image, plus a
+  // count per image so the footer/stage pill can show "N comments" like votes.
+  const isComments = session?.session_type === 'comments'
+  useEffect(() => {
+    if (!isComments || !inQuestion || !sessionId) return
+    const questionId = questions[session.current_question_index]?.id
+    if (!questionId) return
+    const loadWall = async () => {
+      const { data, error: rpcError } = await supabase.rpc('get_comments', {
+        p_session_id: sessionId,
+        p_question_id: questionId,
+      })
+      if (rpcError) return
+      setCommentWall(data || [])
+      setCommentCounts((prev) => ({ ...prev, [questionId]: (data || []).length }))
+    }
+    loadWall()
+    const interval = setInterval(loadWall, 3000)
+    return () => clearInterval(interval)
+  }, [isComments, inQuestion, sessionId, session?.current_question_index, questions])
+
+  // Owner-only realtime push so a new comment appears without waiting for the
+  // next poll; comments has no attendee SELECT policy, so only the owner's
+  // subscription receives these events.
+  useEffect(() => {
+    if (!isComments || !sessionId) return
+    const channel = supabase
+      .channel(`present-comments-${sessionId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'comments' },
+        () => {
+          const questionId = questions[session?.current_question_index]?.id
+          if (!questionId) return
+          supabase.rpc('get_comments', { p_session_id: sessionId, p_question_id: questionId })
+            .then(({ data }) => {
+              setCommentWall(data || [])
+              setCommentCounts((prev) => ({ ...prev, [questionId]: (data || []).length }))
+            })
+        }
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [isComments, sessionId, session?.current_question_index, questions])
+
   // Lobby for identified sessions: a public join count via the aggregate RPC,
   // plus the live name wall for the owner (RLS keeps participant rows private
   // to everyone else).
@@ -211,7 +260,8 @@ export default function PresentPage() {
   const index = session?.current_question_index ?? -1
   const total = questions.length
   const isOwner = Boolean(userId && session && userId === session.owner_id)
-  const showBetween = session?.results_mode === 'live'
+  // Comments sessions have no results reveal step - each image is one Next.
+  const showBetween = !isComments && session?.results_mode === 'live'
   const canAdvance = isOwner && total > 0 && index < total && !advancing
   // In Live Results mode, a question's first Next reveals its results.
   const revealStep = showBetween && !revealed && index >= 0 && index < total
@@ -264,16 +314,19 @@ export default function PresentPage() {
   const currentQuestion = index >= 0 && index < total ? questions[index] : null
   const currentOptions = currentQuestion ? optionsByQuestion[currentQuestion.id] || [] : []
   const questionVotes = currentOptions.reduce((sum, o) => sum + (voteCounts[o.id] || 0), 0)
-  const votesLabel = `${questionVotes} vote${questionVotes !== 1 ? 's' : ''}`
+  const questionComments = currentQuestion ? commentCounts[currentQuestion.id] || 0 : 0
+  const votesLabel = isComments
+    ? `${questionComments} comment${questionComments !== 1 ? 's' : ''}`
+    : `${questionVotes} vote${questionVotes !== 1 ? 's' : ''}`
 
   const nextLabel =
     index < 0
-      ? 'Start first question'
+      ? (isComments ? 'Show first image' : 'Start first question')
       : revealStep
         ? 'Show results'
         : index < total - 1
-          ? 'Next question'
-          : 'End poll'
+          ? (isComments ? 'Next image' : 'Next question')
+          : (isComments ? 'End session' : 'End poll')
 
   return (
     <SessionTheme theme={session.theme} className="min-h-screen flex flex-col">
@@ -289,8 +342,10 @@ export default function PresentPage() {
               : index < 0
                 ? 'Waiting room'
                 : index < total
-                  ? `Question ${index + 1} of ${total}${revealed ? ' · Results' : ''}`
-                  : 'Poll ended'}
+                  ? isComments
+                    ? `Image ${index + 1} of ${total}`
+                    : `Question ${index + 1} of ${total}${revealed ? ' · Results' : ''}`
+                  : isComments ? 'Session ended' : 'Poll ended'}
           </p>
         </div>
         </div>
@@ -410,6 +465,46 @@ export default function PresentPage() {
               </div>
             )}
           </div>
+        ) : currentQuestion && isComments ? (
+          <div className="grid w-full max-w-6xl gap-8 lg:grid-cols-[3fr_2fr]">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-widest text-accent">
+                Image {index + 1} of {total}
+              </p>
+              <h1 className="mt-4 font-display text-3xl font-bold leading-tight text-foreground md:text-4xl">
+                {currentQuestion.text}
+              </h1>
+              <img
+                src={currentQuestion.image_url}
+                alt=""
+                className="mt-6 max-h-[28rem] w-full rounded-2xl border border-border object-contain bg-card"
+              />
+              <div className="mt-6 flex justify-center">
+                <span className="inline-flex items-center gap-3 rounded-full border border-border bg-card px-6 py-3 text-2xl font-semibold text-foreground">
+                  <span className="relative flex h-3 w-3">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75"></span>
+                    <span className="relative inline-flex h-3 w-3 rounded-full bg-primary"></span>
+                  </span>
+                  {votesLabel}
+                </span>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-border bg-card p-6">
+              <h2 className="font-display mb-4 text-xl font-bold text-foreground">Comments</h2>
+              {commentWall.length === 0 ? (
+                <p className="text-muted-foreground">Waiting for the first comment…</p>
+              ) : (
+                <ul className="max-h-[28rem] space-y-3 overflow-y-auto">
+                  {commentWall.map((c) => (
+                    <li key={c.comment_id} className="rounded-lg bg-muted p-3">
+                      <p className="text-sm font-medium text-accent">{c.author_name}</p>
+                      <p className="mt-1 text-sm text-foreground">{c.comment_body}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
         ) : currentQuestion ? (
           <div className="w-full max-w-5xl">
             <p className="text-sm font-semibold uppercase tracking-widest text-accent">
@@ -451,15 +546,19 @@ export default function PresentPage() {
           </div>
         ) : (
           <div className="text-center">
-            <h1 className="font-display text-4xl font-bold text-foreground md:text-6xl">Thanks for voting!</h1>
-            <p className="mt-4 text-lg text-muted-foreground">Attendees are now seeing the results.</p>
+            <h1 className="font-display text-4xl font-bold text-foreground md:text-6xl">
+              {isComments ? 'Thanks for commenting!' : 'Thanks for voting!'}
+            </h1>
+            <p className="mt-4 text-lg text-muted-foreground">
+              {isComments ? 'The session has ended.' : 'Attendees are now seeing the results.'}
+            </p>
             {isOwner && (
               <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
                 <Link
                   href={`/dashboard/sessions/${sessionId}/results`}
                   className="rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 font-semibold text-white hover:opacity-90 transition-opacity"
                 >
-                  View full results
+                  {isComments ? 'View comments' : 'View full results'}
                 </Link>
                 <button
                   onClick={() => updateSession({ current_question_index: -1, results_revealed: false })}
@@ -504,7 +603,9 @@ export default function PresentPage() {
           {isOwner ? (
             <>
               <p className="text-sm text-muted-foreground">
-                {showBetween ? 'Live results: shown after each question' : 'Results shown after the last question'}
+                {isComments
+                  ? 'Attendees comment on the open image only'
+                  : showBetween ? 'Live results: shown after each question' : 'Results shown after the last question'}
                 {' · '}
                 <Link href={`/dashboard/sessions/${sessionId}`} className="text-accent hover:underline">
                   Change

@@ -13,9 +13,14 @@ export default function QuestionEditor({
   questionKeys = {},
   onQuestionKeysChange,
   isScored = false,
+  sessionType = 'poll',
+  onImageUpload,
   locked = false,
   loading = false
 }) {
+  const isComments = sessionType === 'comments'
+  const [uploadingImage, setUploadingImage] = useState(null) // questionId currently uploading
+  const [imageError, setImageError] = useState(null)
   const [editingQuestion, setEditingQuestion] = useState(null)
   const [expandedQuestion, setExpandedQuestion] = useState(null)
   const [exitingQuestions, setExitingQuestions] = useState(() => new Set())
@@ -177,6 +182,7 @@ export default function QuestionEditor({
       text: '',
       order_index: questions.length,
       options: [],
+      image_url: isComments ? null : undefined,
       // A default ramp makes "compounding" scores one step; editable per question.
       points: isScored ? (questions.length + 1) * 10 : 10
     }
@@ -187,6 +193,22 @@ export default function QuestionEditor({
     onQuestionsChange(updatedQuestions, optionsByQuestion)
     setEditingQuestion(newQuestion.id)
     setExpandedQuestion(newQuestion.id)
+  }
+
+  const handleImageChange = async (questionId, e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !onImageUpload) return
+    setImageError(null)
+    setUploadingImage(questionId)
+    try {
+      const url = await onImageUpload(file, questionId)
+      updateQuestion(questionId, 'image_url', url)
+    } catch (err) {
+      setImageError(err.message || 'Image upload failed.')
+    } finally {
+      setUploadingImage(null)
+    }
   }
 
   const setCorrectOption = (questionId, optionId) => {
@@ -391,8 +413,9 @@ export default function QuestionEditor({
                                   {question.text || 'Untitled Question'}
                                 </h3>
                                 <p className="mt-1 text-sm text-muted-foreground">
-                                  {questionOptions.length} option{questionOptions.length !== 1 ? 's' : ''}
-                                  {questionOptions.length === 0 && 'Add options below'}
+                                  {isComments
+                                    ? (question.image_url ? 'Image added' : 'No image yet - add one below')
+                                    : `${questionOptions.length} option${questionOptions.length !== 1 ? 's' : ''}${questionOptions.length === 0 ? ' - Add options below' : ''}`}
                                 </p>
                                 {isScored && (
                                   <div
@@ -508,21 +531,61 @@ export default function QuestionEditor({
                             {isEditing && (
                               <div className="mb-6">
                                 <label className="block text-sm font-medium text-foreground mb-2">
-                                  Question Text
+                                  {isComments ? 'Prompt' : 'Question Text'}
                                 </label>
                                 <textarea
                                   value={question.text}
                                   onChange={(e) => updateQuestion(question.id, 'text', e.target.value)}
                                   className="block w-full rounded-lg border border-border px-4 py-3 text-foreground shadow-sm focus:border-ring focus:ring-2 focus:ring-ring focus:ring-opacity-20 resize-none"
                                   rows="2"
-                                  placeholder="Enter your question here..."
+                                  placeholder={isComments ? 'What should attendees react to?' : 'Enter your question here...'}
                                 />
                                 <p className="mt-2 text-sm text-muted-foreground">
-                                  What do you want to ask your audience?
+                                  {isComments
+                                    ? 'Shown under the image while attendees comment.'
+                                    : 'What do you want to ask your audience?'}
                                 </p>
                               </div>
                             )}
 
+                            {isComments ? (
+                              /* Image upload */
+                              <div>
+                                <h4 className="text-lg font-semibold text-foreground mb-4">Image</h4>
+                                {question.image_url && (
+                                  <img
+                                    src={question.image_url}
+                                    alt=""
+                                    className="mb-4 max-h-64 w-full rounded-lg border border-border object-contain bg-muted"
+                                  />
+                                )}
+                                <label className={`inline-flex items-center rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground shadow-sm hover:bg-muted transition-colors ${
+                                  uploadingImage === question.id ? 'opacity-60 cursor-wait' : 'cursor-pointer'
+                                }`}>
+                                  <input
+                                    type="file"
+                                    accept="image/png,image/jpeg,image/webp,image/gif"
+                                    className="sr-only"
+                                    disabled={uploadingImage === question.id || locked}
+                                    onChange={(e) => handleImageChange(question.id, e)}
+                                  />
+                                  {uploadingImage === question.id
+                                    ? 'Uploading…'
+                                    : question.image_url ? 'Replace image' : 'Upload image'}
+                                </label>
+                                {imageError && (
+                                  <p className="mt-2 text-sm font-medium text-destructive">{imageError}</p>
+                                )}
+                                <div className="mt-4 rounded-lg bg-muted p-4">
+                                  <p className="text-sm text-muted-foreground">
+                                    {question.image_url
+                                      ? 'Attendees will see this image with the prompt above, and can send free-text comments on it.'
+                                      : 'Add an image (PNG, JPG, WebP or GIF, up to 5 MB) for attendees to comment on.'}
+                                  </p>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
                             {/* Options Header */}
                             <div className="flex items-center justify-between mb-4">
                               <h4 className="text-lg font-semibold text-foreground">Answer Options</h4>
@@ -628,6 +691,8 @@ export default function QuestionEditor({
                                       : 'Add at least 2 options for a meaningful poll.')}
                               </p>
                             </div>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>

@@ -8,6 +8,8 @@ import SessionForm from '@/components/SessionForm'
 import QuestionEditor from '@/components/QuestionEditor'
 import { formatDateTime, getAppUrl } from '@/lib/utils'
 
+const SESSION_TYPE_LABELS = { poll: 'Voting poll', quiz: 'Quiz', comments: 'Image & comments' }
+
 export default function SessionDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -26,6 +28,7 @@ export default function SessionDetailPage() {
 
   const sessionId = params.sessionId
   const isOwner = Boolean(userId && session && userId === session.owner_id)
+  const isComments = session?.session_type === 'comments'
 
   useEffect(() => {
     if (sessionId) {
@@ -120,6 +123,29 @@ export default function SessionDetailPage() {
     }
   }
 
+  // Image upload for comments-session questions, same pattern as the design
+  // page's logo upload: storage RLS only allows writes under the uploader's
+  // own uid folder, so the path is keyed by userId, not the question.
+  const uploadQuestionImage = async (file, questionId) => {
+    const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
+    const IMAGE_MAX_BYTES = 5 * 1024 * 1024
+    if (!IMAGE_TYPES.includes(file.type)) {
+      throw new Error('Image must be a PNG, JPG, WebP or GIF.')
+    }
+    if (file.size > IMAGE_MAX_BYTES) {
+      throw new Error('Image must be 5 MB or smaller.')
+    }
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'png'
+    const path = `${userId}/${sessionId}-${questionId}-${Date.now()}.${ext}`
+    const { error } = await supabase.storage.from('session-images').upload(path, file, {
+      contentType: file.type,
+      cacheControl: '31536000',
+    })
+    if (error) throw new Error(error.message)
+    const { data } = supabase.storage.from('session-images').getPublicUrl(path)
+    return data.publicUrl
+  }
+
   const updateSession = async (formData) => {
     try {
       const { data, error } = await supabase
@@ -188,6 +214,15 @@ export default function SessionDetailPage() {
       }
     }
 
+    if (isComments) {
+      const missingImage = questions.findIndex((q) => !q.image_url)
+      if (missingImage !== -1) {
+        setSaveError(`Question ${missingImage + 1} has no image. Upload one or delete it before saving.`)
+        setSaveMessage(null)
+        return
+      }
+    }
+
     setSaving(true)
     setSaveError(null)
     setSaveMessage(null)
@@ -229,10 +264,15 @@ export default function SessionDetailPage() {
           ? Math.max(0, Math.round(Number(question.points)))
           : 10
 
+        // image_url only applies to comments-session questions; undefined for
+        // poll/quiz rows leaves the column untouched.
+        const fields = { text, order_index: index, points }
+        if (isComments) fields.image_url = question.image_url || null
+
         if (String(question.id).startsWith('temp_')) {
           const { data, error } = await supabase
             .from('questions')
-            .insert({ session_id: sessionId, text, order_index: index, points })
+            .insert({ session_id: sessionId, ...fields })
             .select('id')
             .single()
           if (error) throw error
@@ -240,18 +280,17 @@ export default function SessionDetailPage() {
         } else {
           const { error } = await supabase
             .from('questions')
-            .update({ text, order_index: index, points })
+            .update(fields)
             .eq('id', question.id)
           if (error) throw error
           questionIdMap[question.id] = question.id
         }
       }
 
-      // Same insert/update/delete pass for each question's options. Inserted rows
-      // are captured so a correct-answer key on a brand-new option can be mapped
-      // from its temp opt_ id to the real uuid.
+      // Comments sessions have no options or answer key - each question is
+      // just an image + prompt, so skip both passes below entirely.
       const optionIdMap = {}
-      for (const question of questions) {
+      for (const question of isComments ? [] : questions) {
         const realQuestionId = questionIdMap[question.id]
         if (!realQuestionId) continue
         optionIdMap[question.id] = {}
@@ -441,8 +480,13 @@ export default function SessionDetailPage() {
                 {session.is_active ? 'Active' : 'Inactive'}
               </span>
               <span className="inline-flex items-center rounded-full bg-primary/15 px-3 py-1 text-xs font-medium text-accent capitalize">
-                {session.results_mode} results
+                {SESSION_TYPE_LABELS[session.session_type] || session.session_type}
               </span>
+              {!isComments && (
+                <span className="inline-flex items-center rounded-full bg-primary/15 px-3 py-1 text-xs font-medium text-accent capitalize">
+                  {session.results_mode} results
+                </span>
+              )}
             </div>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -546,6 +590,8 @@ export default function SessionDetailPage() {
             questionKeys={questionKeys}
             onQuestionKeysChange={updateQuestionKey}
             isScored={Boolean(session?.is_scored)}
+            sessionType={session?.session_type}
+            onImageUpload={uploadQuestionImage}
             locked={hasVotes && Boolean(session?.is_scored)}
             loading={loading}
           />

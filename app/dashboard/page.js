@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { formatDateTime } from '@/lib/utils'
+
+const SESSION_TYPE_LABELS = { poll: 'Voting poll', quiz: 'Quiz', comments: 'Image & comments' }
 import { createClient } from '@/lib/supabase/client'
 
 export default function DashboardHome() {
@@ -134,8 +136,10 @@ export default function DashboardHome() {
 
               <div className="mt-4 grid grid-cols-2 gap-4 text-xs">
                 <div>
-                  <div className="text-muted-foreground">Results Mode</div>
-                  <div className="font-medium text-foreground capitalize mt-0.5">{session.results_mode}</div>
+                  <div className="text-muted-foreground">Type</div>
+                  <div className="font-medium text-foreground mt-0.5">
+                    {SESSION_TYPE_LABELS[session.session_type] || session.session_type}
+                  </div>
                 </div>
                 <div>
                   <div className="text-muted-foreground">Created</div>

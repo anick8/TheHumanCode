@@ -34,9 +34,15 @@ export default function VotingPage() {
   const [lastAward, setLastAward] = useState(null)
   const [timeUp, setTimeUp] = useState(false)
   const [review, setReview] = useState(null)
+  // Image & comments sessions: { [questionId]: [{comment_id, comment_body, author_name, comment_created_at}] }.
+  const [comments, setComments] = useState({})
+  const [commentDraft, setCommentDraft] = useState('')
+  const [submittingComment, setSubmittingComment] = useState(false)
+  const [commentError, setCommentError] = useState(null)
   const supabase = createClient()
 
   const isScored = Boolean(session?.is_scored && session?.participation_mode === 'identified')
+  const isComments = session?.session_type === 'comments'
 
   const slug = params.slug
 
@@ -64,6 +70,18 @@ export default function VotingPage() {
       if (hostIndex >= 0) setCurrentQuestionIndex(hostIndex)
     }
   }, [hostMode, hostIndex, questions.length])
+
+  // Image & comments sessions: reload this attendee's own comments whenever
+  // the current image changes (host-driven or self-paced).
+  const commentsQuestionId = isComments
+    ? (hostMode
+        ? (hostIndex >= 0 && hostIndex < questions.length ? questions[hostIndex]?.id : null)
+        : questions[currentQuestionIndex]?.id)
+    : null
+  useEffect(() => {
+    if (!isComments || !participant || !commentsQuestionId) return
+    loadOwnComments(commentsQuestionId)
+  }, [isComments, participant, commentsQuestionId])
 
   // The host revealed this question's results: fetch the latest counts now
   // rather than waiting for the next poll. PollQuestion then shows results
@@ -380,6 +398,46 @@ export default function VotingPage() {
     } catch (error) {
       console.error('Error starting quiz:', error)
       setVoteError(error.message || 'Could not start the quiz. Please try again.')
+    }
+  }
+
+  // Attendees only ever see their own comments, via the join-token-scoped
+  // get_own_comments - get_comments (every comment, attributed by name) is
+  // owner-only, so another attendee's text is never fetched to this device.
+  const loadOwnComments = async (questionId) => {
+    if (!participant || !questionId) return
+    try {
+      const { data, error } = await supabase.rpc('get_own_comments', {
+        p_join_token: participant.join_token,
+        p_question_id: questionId,
+      })
+      if (error) throw error
+      setComments((prev) => ({ ...prev, [questionId]: data || [] }))
+    } catch (error) {
+      console.error('Error loading comments:', error)
+    }
+  }
+
+  const submitComment = async (questionId) => {
+    if (!participant || !questionId) return
+    const body = commentDraft.trim()
+    if (!body) return
+    setSubmittingComment(true)
+    setCommentError(null)
+    try {
+      const { error } = await supabase.rpc('submit_comment', {
+        p_join_token: participant.join_token,
+        p_question_id: questionId,
+        p_body: body,
+      })
+      if (error) throw error
+      setCommentDraft('')
+      await loadOwnComments(questionId)
+    } catch (error) {
+      console.error('Error submitting comment:', error)
+      setCommentError(error.message || 'Could not send your comment. Please try again.')
+    } finally {
+      setSubmittingComment(false)
     }
   }
 
@@ -790,6 +848,149 @@ export default function VotingPage() {
               </div>
             </div>
           )}
+        </main>
+      </SessionTheme>
+    )
+  }
+
+  // Image & comments sessions get their own surface: an image + prompt, and a
+  // free-text box that sends through submit_comment. No options, no vote
+  // counts - the comment wall itself lives on the presenter screen.
+  if (isComments) {
+    const commentsTotalQuestions = questions.length
+    const inLobby = hostMode && hostIndex < 0
+    const hostFinished = hostMode && hostIndex >= commentsTotalQuestions
+    const commentsQuestion = hostMode
+      ? (hostIndex >= 0 && hostIndex < commentsTotalQuestions ? questions[hostIndex] : null)
+      : questions[currentQuestionIndex]
+    const ownComments = commentsQuestion ? (comments[commentsQuestion.id] || []) : []
+
+    return (
+      <SessionTheme theme={session.theme} className="min-h-screen bg-gradient-to-br from-background to-muted">
+        <header className="border-b border-border bg-card">
+          <div className="container mx-auto px-4 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex min-w-0 items-center gap-4">
+                <SessionLogo theme={session.theme} className="h-10 shrink-0" />
+                <div className="min-w-0">
+                  <h1 className="font-display truncate text-xl font-bold text-foreground">{session.title}</h1>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {participant?.name || participant?.external_id || 'Guest'}
+                    {commentsTotalQuestions > 0 && !inLobby && !hostFinished &&
+                      ` • Image ${(hostMode ? hostIndex : currentQuestionIndex) + 1} of ${commentsTotalQuestions}`}
+                  </p>
+                </div>
+              </div>
+              <button onClick={switchParticipant} className="text-sm font-medium text-accent hover:underline">
+                Switch
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <main className="container mx-auto px-4 py-8">
+          {commentsTotalQuestions === 0 ? (
+            <div className="mx-auto max-w-2xl py-10 text-center">
+              <h2 className="font-display text-2xl font-bold text-foreground">No images yet</h2>
+              <p className="mt-2 text-muted-foreground">
+                The organizer hasn't added any images to this session yet.
+              </p>
+            </div>
+          ) : inLobby ? (
+            <div className="mx-auto max-w-2xl py-10 text-center">
+              <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
+              <h2 className="font-display mt-6 text-2xl font-bold text-foreground">You're in!</h2>
+              <p className="mt-2 text-muted-foreground">
+                Waiting for the host to show the first image.
+              </p>
+            </div>
+          ) : hostFinished ? (
+            <div className="mx-auto max-w-2xl py-10 text-center">
+              <h2 className="font-display text-2xl font-bold text-foreground">Thanks for your comments!</h2>
+              <p className="mt-2 text-muted-foreground">The session has ended.</p>
+            </div>
+          ) : commentsQuestion ? (
+            <div className="mx-auto max-w-2xl">
+              <div className="rounded-2xl border border-border bg-card shadow-lg overflow-hidden">
+                <img
+                  src={commentsQuestion.image_url}
+                  alt=""
+                  className="w-full max-h-96 object-contain bg-muted"
+                />
+                <div className="p-6">
+                  <p className="text-lg font-medium text-foreground">{commentsQuestion.text}</p>
+
+                  {commentError && (
+                    <p className="mt-4 text-sm font-medium text-destructive">{commentError}</p>
+                  )}
+
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      submitComment(commentsQuestion.id)
+                    }}
+                    className="mt-4"
+                  >
+                    <textarea
+                      value={commentDraft}
+                      onChange={(e) => setCommentDraft(e.target.value.slice(0, 500))}
+                      rows="3"
+                      maxLength={500}
+                      placeholder="Share your thoughts on this image…"
+                      className="block w-full rounded-lg border border-border px-4 py-3 text-foreground shadow-sm focus:border-ring focus:ring-2 focus:ring-ring focus:ring-opacity-20 resize-none"
+                    />
+                    <div className="mt-2 flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">{commentDraft.length}/500</span>
+                      <button
+                        type="submit"
+                        disabled={submittingComment || !commentDraft.trim()}
+                        className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {submittingComment ? 'Sending…' : 'Send comment'}
+                      </button>
+                    </div>
+                  </form>
+
+                  {ownComments.length > 0 && (
+                    <div className="mt-6 space-y-3 border-t border-border pt-4">
+                      <p className="text-sm font-medium text-foreground">Your comments</p>
+                      {ownComments.map((c) => (
+                        <div key={c.comment_id} className="rounded-lg bg-muted p-3 text-sm text-foreground">
+                          {c.comment_body}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {!hostMode && (
+                <div className="mt-6 flex justify-between">
+                  <button
+                    onClick={() => setCurrentQuestionIndex((i) => Math.max(0, i - 1))}
+                    disabled={currentQuestionIndex === 0}
+                    className="inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  {currentQuestionIndex < commentsTotalQuestions - 1 && (
+                    <button
+                      onClick={() => setCurrentQuestionIndex((i) => i + 1)}
+                      className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
+                    >
+                      Next image
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {hostMode && (
+                <p className="mt-6 text-center text-sm text-muted-foreground">
+                  The next image will appear when the host moves on.
+                </p>
+              )}
+            </div>
+          ) : null}
         </main>
       </SessionTheme>
     )

@@ -25,10 +25,14 @@ export default function SessionResultsPage() {
   // Identified sessions: the roster and each participant's answers.
   const [participants, setParticipants] = useState([])
   const [participantAnswers, setParticipantAnswers] = useState({})
+  // Comments sessions: [{id, body, created_at, question_id, author}], loaded
+  // via a direct read (the owner has RLS SELECT on comments and participants).
+  const [sessionComments, setSessionComments] = useState([])
   const supabase = createClient()
 
   const isIdentified = session?.participation_mode === 'identified'
   const isScored = Boolean(session?.is_scored && isIdentified)
+  const isComments = session?.session_type === 'comments'
 
   const sessionId = params.sessionId
 
@@ -45,9 +49,12 @@ export default function SessionResultsPage() {
   // votes table's realtime publication isn't otherwise consumed anywhere.
   useEffect(() => {
     if (!realtimeEnabled || questions.length === 0) return
-    const interval = setInterval(() => loadVotes(questions), 5000)
+    const interval = setInterval(() => {
+      loadVotes(questions)
+      if (isComments) loadComments(questions.map((q) => q.id))
+    }, 5000)
     return () => clearInterval(interval)
-  }, [realtimeEnabled, questions])
+  }, [realtimeEnabled, questions, isComments])
 
   const loadSession = async () => {
     try {
@@ -63,8 +70,36 @@ export default function SessionResultsPage() {
       if (data.participation_mode === 'identified') {
         await loadParticipants()
       }
+      if (data.session_type === 'comments') {
+        setActiveTab('comments')
+      }
     } catch (error) {
       console.error('Error loading session:', error)
+    }
+  }
+
+  // Filtered by this session's own question ids - RLS alone would return
+  // every session the owner has, not just this one.
+  const loadComments = async (questionIds) => {
+    if (!questionIds || questionIds.length === 0) {
+      setSessionComments([])
+      return
+    }
+    try {
+      const { data, error } = await supabase
+        .from('comments')
+        .select('id, body, created_at, question_id, participants(name, external_id)')
+        .in('question_id', questionIds)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      setSessionComments(
+        (data || []).map((c) => ({
+          ...c,
+          author: c.participants?.name || c.participants?.external_id || 'Anonymous',
+        }))
+      )
+    } catch (error) {
+      console.error('Error loading comments:', error)
     }
   }
 
@@ -109,6 +144,7 @@ export default function SessionResultsPage() {
       setQuestions(loadedQuestions)
       setOptionsByQuestion(optionsMap)
       await loadVotes(loadedQuestions)
+      await loadComments(loadedQuestions.map((q) => q.id))
     } catch (error) {
       console.error('Error loading questions:', error)
       setQuestions([])
@@ -230,6 +266,14 @@ export default function SessionResultsPage() {
               if (optId) acc[q.text] = optionLabel(q.id, optId) || optId
               return acc
             }, {})
+          }))
+        : undefined,
+      comments: isComments
+        ? sessionComments.map((c) => ({
+            question: questions.find((q) => q.id === c.question_id)?.text,
+            author: c.author,
+            body: c.body,
+            createdAt: c.created_at,
           }))
         : undefined,
       exportedAt: new Date().toISOString()
@@ -355,7 +399,7 @@ export default function SessionResultsPage() {
             <SessionLogo theme={session.theme} className="mb-4 h-12" />
             <h1 className="font-display text-3xl font-bold text-foreground">Results: {session.title}</h1>
             <div className="mt-2 text-muted-foreground">
-              <span className="capitalize">{session.results_mode} results • </span>
+              {!isComments && <span className="capitalize">{session.results_mode} results • </span>}
               <span>{lastUpdated ? `Updated ${formatDateTime(lastUpdated)}` : 'Loading…'}</span>
             </div>
           </div>
@@ -398,32 +442,51 @@ export default function SessionResultsPage() {
       {/* Tabs */}
       <div className="mb-8 border-b border-border">
         <nav className="-mb-px flex space-x-8">
-          <button
-            onClick={() => setActiveTab('overview')}
-            className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
-              activeTab === 'overview'
-                ? 'border-ring text-accent'
-                : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
-            }`}
-          >
-            <svg className="mr-2 h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-            Overview
-          </button>
-          <button
-            onClick={() => setActiveTab('questions')}
-            className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
-              activeTab === 'questions'
-                ? 'border-ring text-accent'
-                : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
-            }`}
-          >
-            <svg className="mr-2 h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            All Questions ({questions.length})
-          </button>
+          {!isComments && (
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
+                activeTab === 'overview'
+                  ? 'border-ring text-accent'
+                  : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
+              }`}
+            >
+              <svg className="mr-2 h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              Overview
+            </button>
+          )}
+          {!isComments && (
+            <button
+              onClick={() => setActiveTab('questions')}
+              className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
+                activeTab === 'questions'
+                  ? 'border-ring text-accent'
+                  : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
+              }`}
+            >
+              <svg className="mr-2 h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              All Questions ({questions.length})
+            </button>
+          )}
+          {isComments && (
+            <button
+              onClick={() => setActiveTab('comments')}
+              className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
+                activeTab === 'comments'
+                  ? 'border-ring text-accent'
+                  : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
+              }`}
+            >
+              <svg className="mr-2 h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              Comments ({sessionComments.length})
+            </button>
+          )}
           {isIdentified && (
             <button
               onClick={() => setActiveTab('participants')}
@@ -471,7 +534,7 @@ export default function SessionResultsPage() {
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'overview' && (
+      {activeTab === 'overview' && !isComments && (
         <div className="space-y-8">
           {/* Stats Cards - only stats the schema can actually support.
               Completion rate and average time were removed rather than
@@ -557,7 +620,7 @@ export default function SessionResultsPage() {
         </div>
       )}
 
-      {activeTab === 'questions' && (
+      {activeTab === 'questions' && !isComments && (
         <div className="space-y-8">
           {questions.map((question, index) => (
             <div key={question.id} className="rounded-2xl border border-border bg-card p-8 shadow-lg">
@@ -636,6 +699,53 @@ export default function SessionResultsPage() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {activeTab === 'comments' && isComments && (
+        <div className="space-y-8">
+          {questions.map((question, index) => {
+            const qComments = sessionComments.filter((c) => c.question_id === question.id)
+            return (
+              <div key={question.id} className="rounded-2xl border border-border bg-card p-8 shadow-lg">
+                <div className="flex flex-col gap-4 sm:flex-row">
+                  {question.image_url && (
+                    <img
+                      src={question.image_url}
+                      alt=""
+                      className="h-40 w-full shrink-0 rounded-lg border border-border object-cover sm:w-56"
+                    />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-xl font-semibold text-foreground">
+                      <span className="text-accent">{index + 1}.</span> {question.text}
+                    </h3>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {qComments.length} comment{qComments.length !== 1 ? 's' : ''}
+                    </p>
+                    {qComments.length === 0 ? (
+                      <p className="mt-4 text-muted-foreground">No comments yet.</p>
+                    ) : (
+                      <div className="mt-4 space-y-3">
+                        {qComments.map((c) => (
+                          <div key={c.id} className="rounded-lg bg-muted p-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium text-accent">{c.author}</span>
+                              <span className="text-xs text-muted-foreground">{formatDateTime(c.created_at)}</span>
+                            </div>
+                            <p className="mt-1 text-sm text-foreground">{c.body}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+          {questions.length === 0 && (
+            <p className="text-muted-foreground">No images in this session yet.</p>
+          )}
         </div>
       )}
 
