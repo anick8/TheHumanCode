@@ -6,7 +6,7 @@ A real-time polling application for events and gatherings. Create poll sessions 
 
 ## Features
 
-- ✅ **Google OAuth** - Product owner authentication only
+- ✅ **Email/password auth** - Product owner authentication only
 - ✅ **Session Management** - Create, edit, delete poll sessions  
 - ✅ **QR Code Generation** - Unique QR codes per session with PNG download
 - ✅ **Real-time Voting** - Anonymous voting with localStorage tokens
@@ -20,7 +20,7 @@ A real-time polling application for events and gatherings. Create poll sessions 
 ```
 TheHumanCode/
 ├── app/
-│   ├── auth/callback/          # Google OAuth callback
+│   ├── auth/callback/          # Email confirmation / password reset callback
 │   ├── dashboard/              # Owner dashboard (protected)
 │   │   ├── [sessionId]/        # Session management
 │   │   └── [sessionId]/results # Session analytics
@@ -62,13 +62,13 @@ App runs at http://localhost:3000
    NEXT_PUBLIC_APP_URL=http://localhost:3000
    ```
 
-### 4. Enable Google OAuth (Optional)
-In Supabase Dashboard → Authentication → Providers → Google OAuth
+### 4. Enable email/password auth
+In Supabase Dashboard → Authentication → Providers → Email
 
 ## Usage Guide
 
 ### Product Owner Flow
-1. **Login** → Sign in with Google on the landing page
+1. **Login** → Sign in with your email and password on the landing page
 2. **Create Session** → Click "New Session" in dashboard
 3. **Add Questions** → Add questions and options in the session editor
 4. **Share QR Code** → Display QR code at your event or download PNG
@@ -196,7 +196,7 @@ The `poll-dashboard.html` file provides a standalone artifact dashboard that can
 ## Testing
 
 ### Manual Testing Scenarios
-1. **Landing Page** → Check Google OAuth button works
+1. **Landing Page** → Check email/password sign-in works
 2. **Dashboard** → Create a new session
 3. **QR Code** → Generate and download QR code
 4. **Voting Page** → Test voting flow (/vote/{slug})
@@ -222,10 +222,10 @@ echo $NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 curl "$NEXT_PUBLIC_SUPABASE_URL/rest/v1/"
 ```
 
-**2. Google OAuth Not Working**
-- Ensure Google provider is enabled in Supabase
-- Add `http://localhost:3000/auth/callback` to allowed redirect URLs
-- Check Google OAuth client ID in environment
+**2. Sign-in Not Working**
+- Ensure the Email provider is enabled in Supabase
+- Add `http://localhost:3000/auth/callback` to allowed redirect URLs (used by email confirmation and password reset)
+- If sign-in reports an unconfirmed email, confirm the account or disable email confirmation in Supabase
 
 **3. QR Code Not Downloading**
 - Modern browsers require same-origin for canvas toDataURL
@@ -245,7 +245,7 @@ curl "$NEXT_PUBLIC_SUPABASE_URL/rest/v1/"
 - `POST /rest/v1/votes` - Submit vote (anonymous)
 
 ### Application Routes
-- `/` - Landing page with Google OAuth
+- `/` - Landing page with email/password sign-in
 - `/dashboard` - Session management dashboard
 - `/dashboard/sessions/{id}` - Session editor with QR code
 - `/vote/{slug}` - Public voting page
@@ -272,7 +272,7 @@ MIT License - see LICENSE file for details
 
 **Next Steps:**
 1. Set up Supabase with the provided SQL schema
-2. Configure Google OAuth for production
+2. Configure email auth redirect URLs for production
 3. Deploy to Vercel for public access
 4. Test with real users at an event
 

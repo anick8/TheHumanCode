@@ -12,6 +12,94 @@
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+-- ============================================================================
+-- 0. ORGANIZER ALLOWLIST & LEAD CAPTURE
+-- ============================================================================
+-- Only emails in allowed_emails may hold organizer capabilities (own
+-- sessions, spend AI credits, upload to storage, read attributed comments).
+-- Anyone else who signs up gets a plain authenticated account that owns
+-- nothing, and is recorded in `leads`. Enforced in RLS, not just app
+-- redirects, since the browser talks to Supabase's REST API directly with
+-- the user's JWT - a middleware-only gate would be bypassable.
+
+CREATE TABLE IF NOT EXISTS allowed_emails (
+  email text PRIMARY KEY CHECK (email = lower(email)),
+  note text,
+  created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE allowed_emails ENABLE ROW LEVEL SECURITY;
+-- Deliberately no policies: invisible and unwritable from anon/authenticated.
+-- Managed from the Supabase SQL editor / table editor (service role, bypasses RLS).
+
+CREATE TABLE IF NOT EXISTS leads (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  email text NOT NULL,
+  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+  created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE leads ENABLE ROW LEVEL SECURITY;
+-- Deliberately no policies: only readable via the Supabase dashboard.
+
+-- is_organizer(): true when the signed-in user's email is on the allowlist.
+-- SECURITY DEFINER because a policy subquery runs as the invoker, who cannot
+-- read allowed_emails (no policies) or auth.users (not selectable directly).
+CREATE OR REPLACE FUNCTION public.is_organizer()
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.allowed_emails a
+    JOIN auth.users u ON lower(u.email) = a.email
+    WHERE u.id = auth.uid()
+  );
+$$;
+
+REVOKE ALL ON FUNCTION public.is_organizer() FROM public;
+GRANT EXECUTE ON FUNCTION public.is_organizer() TO anon, authenticated;
+
+-- capture_lead(): fires after every new auth.users row. Records non-
+-- allowlisted signups as leads. Runs in the database so it can't be skipped
+-- by calling Supabase's auth API directly instead of going through the app.
+CREATE OR REPLACE FUNCTION public.capture_lead()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.allowed_emails WHERE email = lower(NEW.email)
+  ) THEN
+    INSERT INTO public.leads (email, user_id) VALUES (lower(NEW.email), NEW.id);
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_auth_user_created_capture_lead ON auth.users;
+CREATE TRIGGER on_auth_user_created_capture_lead
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.capture_lead();
+
+-- Seed the allowlist. Add further organizers from the Supabase SQL editor:
+--   INSERT INTO allowed_emails (email, note) VALUES ('friend@example.com', 'friend') ON CONFLICT DO NOTHING;
+INSERT INTO allowed_emails (email, note) VALUES
+  ('anick8ak@gmail.com', 'owner')
+ON CONFLICT (email) DO NOTHING;
+
+-- Backfill: capture existing non-allowlisted accounts as leads too, since the
+-- trigger above only fires on new signups from this point forward.
+INSERT INTO leads (email, user_id)
+SELECT lower(u.email), u.id
+FROM auth.users u
+WHERE NOT EXISTS (SELECT 1 FROM allowed_emails a WHERE a.email = lower(u.email))
+  AND NOT EXISTS (SELECT 1 FROM leads l WHERE l.user_id = u.id);
+
 -- 1. SESSIONS table (one per poll session)
 CREATE TABLE IF NOT EXISTS sessions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -53,13 +141,13 @@ ON CONFLICT (id) DO UPDATE SET public = true, file_size_limit = EXCLUDED.file_si
 
 DROP POLICY IF EXISTS "session_logos_owner_insert" ON storage.objects;
 CREATE POLICY "session_logos_owner_insert" ON storage.objects FOR INSERT TO authenticated
-  WITH CHECK (bucket_id = 'session-logos' AND (storage.foldername(name))[1] = (select auth.uid())::text);
+  WITH CHECK ((select public.is_organizer()) AND bucket_id = 'session-logos' AND (storage.foldername(name))[1] = (select auth.uid())::text);
 DROP POLICY IF EXISTS "session_logos_owner_update" ON storage.objects;
 CREATE POLICY "session_logos_owner_update" ON storage.objects FOR UPDATE TO authenticated
-  USING (bucket_id = 'session-logos' AND (storage.foldername(name))[1] = (select auth.uid())::text);
+  USING ((select public.is_organizer()) AND bucket_id = 'session-logos' AND (storage.foldername(name))[1] = (select auth.uid())::text);
 DROP POLICY IF EXISTS "session_logos_owner_delete" ON storage.objects;
 CREATE POLICY "session_logos_owner_delete" ON storage.objects FOR DELETE TO authenticated
-  USING (bucket_id = 'session-logos' AND (storage.foldername(name))[1] = (select auth.uid())::text);
+  USING ((select public.is_organizer()) AND bucket_id = 'session-logos' AND (storage.foldername(name))[1] = (select auth.uid())::text);
 
 -- 2. QUESTIONS table (questions within a session)
 CREATE TABLE IF NOT EXISTS questions (
@@ -114,7 +202,8 @@ ALTER TABLE votes ENABLE ROW LEVEL SECURITY;
 -- Sessions policies
 DROP POLICY IF EXISTS "Users can manage their own sessions" ON sessions;
 CREATE POLICY "Users can manage their own sessions" ON sessions
-  FOR ALL USING (auth.uid() = owner_id);
+  FOR ALL USING ((select public.is_organizer()) AND auth.uid() = owner_id)
+  WITH CHECK ((select public.is_organizer()) AND auth.uid() = owner_id);
 
 DROP POLICY IF EXISTS "Anyone can view active sessions by slug" ON sessions;
 CREATE POLICY "Anyone can view active sessions by slug" ON sessions
@@ -1032,13 +1121,13 @@ ON CONFLICT (id) DO UPDATE SET public = true, file_size_limit = EXCLUDED.file_si
 
 DROP POLICY IF EXISTS "session_images_owner_insert" ON storage.objects;
 CREATE POLICY "session_images_owner_insert" ON storage.objects FOR INSERT TO authenticated
-  WITH CHECK (bucket_id = 'session-images' AND (storage.foldername(name))[1] = (select auth.uid())::text);
+  WITH CHECK ((select public.is_organizer()) AND bucket_id = 'session-images' AND (storage.foldername(name))[1] = (select auth.uid())::text);
 DROP POLICY IF EXISTS "session_images_owner_update" ON storage.objects;
 CREATE POLICY "session_images_owner_update" ON storage.objects FOR UPDATE TO authenticated
-  USING (bucket_id = 'session-images' AND (storage.foldername(name))[1] = (select auth.uid())::text);
+  USING ((select public.is_organizer()) AND bucket_id = 'session-images' AND (storage.foldername(name))[1] = (select auth.uid())::text);
 DROP POLICY IF EXISTS "session_images_owner_delete" ON storage.objects;
 CREATE POLICY "session_images_owner_delete" ON storage.objects FOR DELETE TO authenticated
-  USING (bucket_id = 'session-images' AND (storage.foldername(name))[1] = (select auth.uid())::text);
+  USING ((select public.is_organizer()) AND bucket_id = 'session-images' AND (storage.foldername(name))[1] = (select auth.uid())::text);
 
 -- Comments: free-text responses to an image+prompt question, from named
 -- (identified) participants only. Like votes, this table is never read
@@ -1170,6 +1259,7 @@ AS $$
   JOIN public.participants p ON p.id = c.participant_id
   WHERE q.session_id = p_session_id
     AND (p_question_id IS NULL OR c.question_id = p_question_id)
+    AND public.is_organizer()
     AND EXISTS (
       SELECT 1 FROM public.sessions s
       WHERE s.id = p_session_id AND s.owner_id = auth.uid()
@@ -1240,8 +1330,8 @@ ALTER TABLE ai_usage ENABLE ROW LEVEL SECURITY;
 -- limit cannot be evaded by writing rows as someone else.
 DROP POLICY IF EXISTS "Users can view their own AI usage" ON ai_usage;
 CREATE POLICY "Users can view their own AI usage" ON ai_usage FOR SELECT
-  TO authenticated USING ((select auth.uid()) = user_id);
+  TO authenticated USING ((select public.is_organizer()) AND (select auth.uid()) = user_id);
 
 DROP POLICY IF EXISTS "Users can record their own AI usage" ON ai_usage;
 CREATE POLICY "Users can record their own AI usage" ON ai_usage FOR INSERT
-  TO authenticated WITH CHECK ((select auth.uid()) = user_id);
+  TO authenticated WITH CHECK ((select public.is_organizer()) AND (select auth.uid()) = user_id);

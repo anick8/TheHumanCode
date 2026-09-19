@@ -9,10 +9,8 @@ const AuthContext = createContext({
   loading: true,
   signInWithEmail: async () => {},
   signUpWithEmail: async () => {},
-  signInWithGoogle: async () => {},
   resetPassword: async () => {},
   signOut: async () => {},
-  signIn: async () => {},
 })
 
 export function AuthProvider({ children }) {
@@ -85,15 +83,6 @@ export function AuthProvider({ children }) {
     return response
   }
 
-  const signInWithGoogle = async () => {
-    return await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${typeof window !== 'undefined' ? window.location.origin : ''}/auth/callback`,
-      },
-    })
-  }
-
   const resetPassword = async (email) => {
     return await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${typeof window !== 'undefined' ? window.location.origin : ''}/auth/callback?next=/dashboard`,
@@ -106,9 +95,6 @@ export function AuthProvider({ children }) {
     setUser(null)
   }
 
-  // Backward compatibility: alias signIn to signInWithGoogle
-  const signIn = signInWithGoogle
-
   return (
     <AuthContext.Provider
       value={{
@@ -117,10 +103,8 @@ export function AuthProvider({ children }) {
         loading,
         signInWithEmail,
         signUpWithEmail,
-        signInWithGoogle,
         resetPassword,
         signOut,
-        signIn,
       }}
     >
       {children}

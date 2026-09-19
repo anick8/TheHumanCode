@@ -34,6 +34,16 @@ export async function POST(request) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // This route spends real money per call, so being merely authenticated
+  // isn't enough - the caller must be on the organizer allowlist enforced by
+  // is_organizer() (see database-setup.sql). RLS also blocks a non-organizer
+  // from recording ai_usage rows, but that would surface as a confusing
+  // insert failure rather than a clean 403, so it's checked explicitly here.
+  const { data: isOrganizer } = await supabase.rpc('is_organizer')
+  if (!isOrganizer) {
+    return Response.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
   let body
   try {
     body = await request.json()

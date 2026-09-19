@@ -16,6 +16,14 @@ export async function POST(request) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // Same organizer gate as /api/assistant - this route also spends money and
+  // has no rate limit of its own, so it must not be reachable by every
+  // authenticated account.
+  const { data: isOrganizer } = await supabase.rpc('is_organizer')
+  if (!isOrganizer) {
+    return Response.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
   let body
   try {
     body = await request.json()

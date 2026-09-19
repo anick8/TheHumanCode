@@ -22,7 +22,7 @@ The mechanism worth protecting is presenter-driven live pacing: the presenter's 
 
 - **Presenter/projector:** `/present/[sessionId]`, full-screen, keyboard-clicker friendly (ArrowRight/PageDown advance). Shows a QR code lobby, then one question at a time, then results.
 - **Attendee's phone:** `/vote/[slug]`, mobile-first, scanned from the QR code, anonymous voting via a browser-stored voter token.
-- **Organizer dashboard:** `/dashboard`, authenticated via Google OAuth (owner-only), for creating/editing sessions, questions, and per-session design (colors, fonts, logo).
+- **Organizer dashboard:** `/dashboard`, authenticated via email/password (owner-only), for creating/editing sessions, questions, and per-session design (colors, fonts, logo).
 - Two results modes exist: Live (a results page after each question) and After All Questions (one summary at the end) — both work in presenter-led and self-paced (no presenter) sessions.
 
 ## Capabilities and Constraints
