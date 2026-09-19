@@ -8,6 +8,8 @@ import { formatDateTime } from '@/lib/utils'
 import SessionTheme from '@/components/SessionTheme'
 import SessionLogo from '@/components/SessionLogo'
 
+const RESULTS_MODE_LABELS = { live: 'Live results', after_all: 'After all questions' }
+
 export default function SessionResultsPage() {
   const params = useParams()
   const [session, setSession] = useState(null)
@@ -399,7 +401,7 @@ export default function SessionResultsPage() {
             <SessionLogo theme={session.theme} className="mb-4 h-12" />
             <h1 className="font-display text-3xl font-bold text-foreground">Results: {session.title}</h1>
             <div className="mt-2 text-muted-foreground">
-              {!isComments && <span className="capitalize">{session.results_mode} results • </span>}
+              {!isComments && <span>{RESULTS_MODE_LABELS[session.results_mode] || session.results_mode} • </span>}
               <span>{lastUpdated ? `Updated ${formatDateTime(lastUpdated)}` : 'Loading…'}</span>
             </div>
           </div>

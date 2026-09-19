@@ -10,6 +10,8 @@ import ResultsChart from '@/components/ResultsChart'
 import JoinGate from '@/components/JoinGate'
 import { generateVoterToken } from '@/lib/utils'
 
+const RESULTS_MODE_LABELS = { live: 'Live results', after_all: 'After all questions' }
+
 export default function VotingPage() {
   const params = useParams()
   const router = useRouter()
@@ -1011,7 +1013,7 @@ export default function VotingPage() {
             <div className="min-w-0">
               <h1 className="font-display text-xl font-bold text-foreground">{session.title}</h1>
               <div className="mt-1 text-sm text-muted-foreground">
-                <span className="capitalize">{session.results_mode} results</span>
+                <span>{RESULTS_MODE_LABELS[session.results_mode] || session.results_mode}</span>
                 {totalQuestions > 0 && !(hostMode && (hostIndex < 0 || hostIndex >= totalQuestions)) && (
                   <span className="ml-4">Question {currentQuestionIndex + 1} of {totalQuestions}</span>
                 )}

@@ -10,6 +10,7 @@ import AssistantPanel from '@/components/AssistantPanel'
 import { formatDateTime, getAppUrl } from '@/lib/utils'
 
 const SESSION_TYPE_LABELS = { poll: 'Voting poll', quiz: 'Quiz', comments: 'Image & comments' }
+const RESULTS_MODE_LABELS = { live: 'Live results', after_all: 'After all questions' }
 
 export default function SessionDetailPage() {
   const params = useParams()
@@ -550,8 +551,8 @@ export default function SessionDetailPage() {
       )}
       {/* Header */}
       <div className="mb-8">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
             {editingTitle ? (
               <input
                 type="text"
@@ -581,13 +582,15 @@ export default function SessionDetailPage() {
                 )}
               </div>
             )}
-            <div className="mt-2 flex items-center space-x-4 text-muted-foreground">
+            <div className="mt-2 flex items-center text-muted-foreground">
               <span className="flex items-center">
                 <svg className="h-4 w-4 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
                 </svg>
                 Created {formatDateTime(session.created_at)}
               </span>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
               <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
                 session.is_active
                   ? 'bg-emerald-500/15 text-emerald-300'
@@ -599,8 +602,8 @@ export default function SessionDetailPage() {
                 {SESSION_TYPE_LABELS[session.session_type] || session.session_type}
               </span>
               {!isComments && (
-                <span className="inline-flex items-center rounded-full bg-primary/15 px-3 py-1 text-xs font-medium text-accent capitalize">
-                  {session.results_mode} results
+                <span className="inline-flex items-center rounded-full bg-primary/15 px-3 py-1 text-xs font-medium text-accent">
+                  {RESULTS_MODE_LABELS[session.results_mode] || session.results_mode}
                 </span>
               )}
             </div>
