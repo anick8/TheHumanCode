@@ -79,6 +79,44 @@ In Supabase Dashboard → Authentication → Providers → Google OAuth
 2. **Vote** → Answer questions anonymously
 3. **See Results** → Results appear based on session settings
 
+### Using the AI assistant
+
+The assistant drafts questions so you don't have to type every one. Two ways in:
+
+- **From the dashboard** — describe what you want in the "Create with AI" box. It starts a session and
+  opens the assistant with your request.
+- **Inside a session** — press **AI Assistant** in the session header to add to or rework what's
+  already there.
+
+**Nothing it produces is saved until you save it.** The assistant proposes a draft; you press *Apply
+to editor* to load it into the question editor, change anything you like, then press **Save** as
+usual. *Discard* throws the draft away.
+
+What it's good at:
+
+- Drafting a set of questions on a topic, at a difficulty you specify
+- Rewriting existing questions — shorter, harder, different tone
+- Answering questions about a past session: how people voted, what the comments said, which quiz
+  questions were hardest
+
+Prompting tips:
+
+- Say the **topic**, the **audience**, and **how many questions** — "6 questions on renewable energy
+  for a non-technical audience" beats "make a quiz".
+- For a scored quiz, say so, and it will mark a correct answer on every question.
+- Ask for changes conversationally: "make questions 2 and 4 harder", "add three more in the same style".
+
+Limits worth knowing:
+
+- It **can't upload images**, so for an image-and-comments session it writes the prompts and you add
+  the pictures.
+- Once a session has votes, its type and scoring are locked and questions can't be added or removed —
+  the assistant will tell you rather than propose something that won't save.
+- Web search is only available if a search API key is configured, and it costs per search.
+- There's an hourly cap per account to keep API costs predictable.
+
+Setup and architecture: see [`docs/ai-assistant.md`](docs/ai-assistant.md).
+
 ## Database Schema
 
 The app uses a complete Supabase PostgreSQL schema with:
@@ -107,10 +145,16 @@ npm run lint        # Run ESLint
 ```
 
 ### Environment Variables
-See `.env.local.example` for required variables:
+Copy `.env.example` to `.env.local` and fill it in:
 - `NEXT_PUBLIC_SUPABASE_URL` - Your Supabase project URL
-- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` - Your Supabase anon key
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Your Supabase anon key
 - `NEXT_PUBLIC_APP_URL` - App URL for QR codes (default: localhost:3000)
+- `OPENROUTER_API_KEY` - Required for the AI assistant
+- `TAVILY_API_KEY` - Optional; enables the assistant's web search
+
+The two AI keys are **server-only** and must not carry the `NEXT_PUBLIC_` prefix — that prefix inlines
+a value into the browser bundle, which is correct for the Supabase anon key (public by design,
+guarded by RLS) and would leak a billing credential for these. Set both in Vercel as well as locally.
 
 ## Deployment
 

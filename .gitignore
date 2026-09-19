@@ -38,4 +38,6 @@ yarn-error.log*
 # tooling output
 /graphify-out/
 .env*
+# ...but the template carries variable names only, never values.
+!.env.example
 .gstack/

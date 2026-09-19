@@ -1216,3 +1216,32 @@ BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE comments;
   END IF;
 END $$;
+
+-- ============================================================================
+-- 18. AI assistant usage metering
+-- ============================================================================
+
+-- The /api/assistant endpoint spends real money per call, and any signed-up
+-- user can reach it, so usage is metered per user. There is no Redis and no
+-- service-role key in this project, so the counter lives in Postgres and is
+-- read through the caller's own RLS-bound client.
+CREATE TABLE IF NOT EXISTS ai_usage (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_usage_user_time ON ai_usage(user_id, created_at DESC);
+
+ALTER TABLE ai_usage ENABLE ROW LEVEL SECURITY;
+
+-- Users may only see and record their own usage. A user cannot read anyone
+-- else's counter, and cannot insert a row attributed to another user, so the
+-- limit cannot be evaded by writing rows as someone else.
+DROP POLICY IF EXISTS "Users can view their own AI usage" ON ai_usage;
+CREATE POLICY "Users can view their own AI usage" ON ai_usage FOR SELECT
+  TO authenticated USING ((select auth.uid()) = user_id);
+
+DROP POLICY IF EXISTS "Users can record their own AI usage" ON ai_usage;
+CREATE POLICY "Users can record their own AI usage" ON ai_usage FOR INSERT
+  TO authenticated WITH CHECK ((select auth.uid()) = user_id);

@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import QRCodeDisplay from '@/components/QRCodeDisplay'
 import SessionForm from '@/components/SessionForm'
 import QuestionEditor from '@/components/QuestionEditor'
+import AssistantPanel from '@/components/AssistantPanel'
 import { formatDateTime, getAppUrl } from '@/lib/utils'
 
 const SESSION_TYPE_LABELS = { poll: 'Voting poll', quiz: 'Quiz', comments: 'Image & comments' }
@@ -24,9 +25,15 @@ export default function SessionDetailPage() {
   const [userId, setUserId] = useState(null)
   const [hasVotes, setHasVotes] = useState(false)
   const [questionKeys, setQuestionKeys] = useState({})
+  const [assistantOpen, setAssistantOpen] = useState(false)
+  const [appliedSettings, setAppliedSettings] = useState(null)
   const supabase = createClient()
+  const searchParams = useSearchParams()
 
   const sessionId = params.sessionId
+  // Handed over by the dashboard's "Create with AI" composer, which creates the
+  // session row and then sends the organizer straight here with their prompt.
+  const seedPrompt = searchParams.get('prompt')
   const isOwner = Boolean(userId && session && userId === session.owner_id)
   const isComments = session?.session_type === 'comments'
 
@@ -36,6 +43,10 @@ export default function SessionDetailPage() {
       loadQuestions()
     }
   }, [sessionId])
+
+  useEffect(() => {
+    if (searchParams.get('assistant') === '1') setAssistantOpen(true)
+  }, [searchParams])
 
   const loadSession = async () => {
     try {
@@ -176,6 +187,62 @@ export default function SessionDetailPage() {
   const updateQuestionKey = (questionId, optionId) => {
     setQuestionKeys((prev) => ({ ...prev, [questionId]: optionId }))
     setSaveMessage(null)
+  }
+
+  // Apply an assistant draft to the editor. This writes nothing to the
+  // database - it produces the same temp-id shapes QuestionEditor creates by
+  // hand, so the existing saveQuestions() persists them unchanged once the
+  // organizer has reviewed the draft and pressed Save.
+  const applyProposal = (kind, input) => {
+    if (kind === 'settings') {
+      // Merged into SessionForm's own state, not written. The organizer still
+      // presses Save there, exactly as if they had changed the fields by hand.
+      setAppliedSettings({ nonce: Date.now(), values: input?.settings ?? {} })
+      setActiveTab('settings')
+      setSaveMessage('Draft settings applied below — review them, then press Save.')
+      return
+    }
+
+    const stamp = Date.now()
+    const newQuestions = []
+    const newOptions = {}
+    const newKeys = {}
+
+    ;(input?.questions ?? []).forEach((question, index) => {
+      const questionId = `temp_${stamp}_${index}`
+      newQuestions.push({
+        id: questionId,
+        text: question.text,
+        order_index: index,
+        points: Number.isInteger(question.points) ? question.points : 10,
+        options: [],
+      })
+      newOptions[questionId] = (question.options ?? []).map((option, optionIndex) => ({
+        id: `opt_${questionId}_${optionIndex}`,
+        text: option.text,
+        order_index: optionIndex,
+      }))
+      const correct = question.correct_option_index
+      if (Number.isInteger(correct) && newOptions[questionId][correct]) {
+        newKeys[questionId] = newOptions[questionId][correct].id
+      }
+    })
+
+    if (input?.mode === 'replace') {
+      const reindexed = newQuestions.map((question, index) => ({ ...question, order_index: index }))
+      updateQuestions(reindexed, newOptions)
+      setQuestionKeys(newKeys)
+    } else {
+      const offset = questions.length
+      const appended = newQuestions.map((question, index) => ({
+        ...question,
+        order_index: offset + index,
+      }))
+      updateQuestions([...questions, ...appended], { ...optionsByQuestion, ...newOptions })
+      setQuestionKeys((prev) => ({ ...prev, ...newKeys }))
+    }
+
+    setActiveTab('questions')
   }
 
   // Persist the editor's current state to Supabase. New rows carry temp ids
@@ -503,6 +570,17 @@ export default function SessionDetailPage() {
                 ? 'Resume'
                 : 'Start'}
             </button>
+            {isOwner && (
+              <button
+                onClick={() => setAssistantOpen(true)}
+                className="inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors"
+              >
+                <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                </svg>
+                AI Assistant
+              </button>
+            )}
             <button
               onClick={() => router.push(`/dashboard/sessions/${sessionId}/design`)}
               className="inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors"
@@ -644,6 +722,7 @@ export default function SessionDetailPage() {
             onSubmit={updateSession}
             loading={loading}
             lockParticipation={hasVotes}
+            appliedSettings={appliedSettings}
           />
 
           {/* Voting URL */}
@@ -679,6 +758,18 @@ export default function SessionDetailPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {isOwner && (
+        <AssistantPanel
+          open={assistantOpen}
+          onClose={() => setAssistantOpen(false)}
+          sessionId={sessionId}
+          seedPrompt={seedPrompt}
+          onApplyProposal={applyProposal}
+          hasVotes={hasVotes}
+          isScored={Boolean(session?.is_scored)}
+        />
       )}
     </div>
   )

@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { generateSlug } from '@/lib/utils'
 
-export default function SessionForm({ onSubmit, initialData = null, loading = false, lockParticipation = false }) {
+export default function SessionForm({ onSubmit, initialData = null, loading = false, lockParticipation = false, appliedSettings = null }) {
   const [formData, setFormData] = useState({
     title: initialData?.title || '',
     slug: initialData?.slug || generateSlug(),
@@ -34,6 +34,46 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
       ...(type !== 'quiz' ? { is_scored: false, score_time_limit_seconds: null } : {}),
     }))
   }
+
+  // Settings applied from an assistant draft. Only the fields the draft
+  // actually proposed are merged, so anything already typed into this form
+  // survives. Keyed on `nonce` rather than the values so applying the same
+  // draft twice still takes effect.
+  useEffect(() => {
+    const values = appliedSettings?.values
+    if (!values) return
+
+    setFormData(prev => {
+      const next = { ...prev }
+
+      // session_type is a preset: applying it has to carry the derived flags
+      // with it, or the row violates sessions_type_consistency on save.
+      if (values.session_type) {
+        next.session_type = values.session_type
+        next.participation_mode = values.session_type === 'poll' ? 'anonymous' : 'identified'
+        if (values.session_type !== 'quiz') {
+          next.is_scored = false
+          next.score_time_limit_seconds = null
+        }
+      }
+
+      for (const key of [
+        'title', 'results_mode', 'identity_requires_name',
+        'identity_requires_id', 'is_scored', 'score_time_limit_seconds',
+      ]) {
+        if (values[key] !== undefined) next[key] = values[key]
+      }
+
+      // Scoring only exists on an identified quiz, so a draft that turns
+      // scoring on without naming a type has to pull the type along.
+      if (next.is_scored) {
+        next.session_type = 'quiz'
+        next.participation_mode = 'identified'
+      }
+
+      return next
+    })
+  }, [appliedSettings?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSubmit = (e) => {
     e.preventDefault()
