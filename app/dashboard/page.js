@@ -30,10 +30,30 @@ export default function DashboardHome() {
     setCreateError(null)
     try {
       const { data: { user } } = await supabase.auth.getUser()
+
+      // A quick, cheap non-streaming call - separate from the chat assistant,
+      // which is a full tool-calling conversation. Never blocks creation: any
+      // failure here (missing key, network, bad response) falls back to the
+      // same placeholder the route itself falls back to.
+      let title = 'Untitled Session'
+      try {
+        const titleRes = await fetch('/api/assistant/title', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ prompt }),
+        })
+        if (titleRes.ok) {
+          const titleData = await titleRes.json()
+          if (titleData.title) title = titleData.title
+        }
+      } catch {
+        // Network failure - keep the placeholder.
+      }
+
       const { data, error } = await supabase
         .from('sessions')
         .insert([{
-          title: 'Untitled Session',
+          title,
           slug: generateSlug(),
           results_mode: 'live',
           // The chosen type decides participation_mode, and the pair has to

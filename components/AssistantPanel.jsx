@@ -66,7 +66,7 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
   const [reduceMotion, setReduceMotion] = useState(true)
   const scrollRef = useRef(null)
 
-  const { messages, sendMessage, addToolOutput, status, error } = useChat({
+  const { messages, setMessages, sendMessage, addToolOutput, status, error } = useChat({
     transport: new DefaultChatTransport({
       api: '/api/assistant',
       prepareSendMessagesRequest: ({ messages: outgoing }) => ({
@@ -103,6 +103,15 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
   }, [open, onClose])
 
   const busy = status === 'submitted' || status === 'streaming'
+
+  // The server rejects a conversation once it grows past MAX_MESSAGES /
+  // MAX_TOTAL_CHARS (app/api/assistant/route.js). This is the only way to
+  // recover from that without a full page reload.
+  const resetChat = () => {
+    setMessages([])
+    setResolved({})
+    setInput('')
+  }
 
   const submit = (event) => {
     event.preventDefault()
@@ -149,16 +158,32 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
             <h2 className="font-display text-lg font-bold text-foreground">AI Assistant</h2>
             <p className="text-xs text-muted-foreground">Drafts questions. You review and save.</p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close assistant"
-            className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-          >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-1">
+            {messages.length > 0 && (
+              <button
+                type="button"
+                onClick={resetChat}
+                disabled={busy}
+                aria-label="New chat"
+                title="New chat"
+                className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-40"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close assistant"
+              className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </header>
 
         <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-5 py-4">

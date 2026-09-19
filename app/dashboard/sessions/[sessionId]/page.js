@@ -27,6 +27,8 @@ export default function SessionDetailPage() {
   const [questionKeys, setQuestionKeys] = useState({})
   const [assistantOpen, setAssistantOpen] = useState(false)
   const [appliedSettings, setAppliedSettings] = useState(null)
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [titleDraft, setTitleDraft] = useState('')
   const supabase = createClient()
   const searchParams = useSearchParams()
 
@@ -174,6 +176,25 @@ export default function SessionDetailPage() {
       console.error('Error updating session:', error)
       alert('Failed to update session. Please try again.')
     }
+  }
+
+  // Inline title edit in the header, separate from the full Settings form.
+  // Reuses updateSession's generic sessions.update() with just the one field.
+  const startEditingTitle = () => {
+    setTitleDraft(session.title)
+    setEditingTitle(true)
+  }
+
+  const commitTitleEdit = async () => {
+    setEditingTitle(false)
+    const next = titleDraft.trim()
+    if (next && next !== session.title) {
+      await updateSession({ title: next })
+    }
+  }
+
+  const cancelTitleEdit = () => {
+    setEditingTitle(false)
   }
 
   // Editor state only. QuestionEditor fires this on every keystroke, so writes
@@ -531,7 +552,35 @@ export default function SessionDetailPage() {
       <div className="mb-8">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="font-display text-3xl font-bold text-foreground">{session.title}</h1>
+            {editingTitle ? (
+              <input
+                type="text"
+                value={titleDraft}
+                autoFocus
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onBlur={commitTitleEdit}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); e.target.blur() }
+                  if (e.key === 'Escape') { e.preventDefault(); cancelTitleEdit() }
+                }}
+                className="font-display text-3xl font-bold text-foreground bg-transparent border-b-2 border-ring focus:outline-none w-full max-w-xl"
+              />
+            ) : (
+              <div className="group flex items-center gap-2">
+                <h1 className="font-display text-3xl font-bold text-foreground">{session.title}</h1>
+                {isOwner && (
+                  <button
+                    onClick={startEditingTitle}
+                    className="inline-flex items-center p-1.5 text-muted-foreground hover:text-accent hover:bg-muted rounded-lg opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                    title="Edit title"
+                  >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            )}
             <div className="mt-2 flex items-center space-x-4 text-muted-foreground">
               <span className="flex items-center">
                 <svg className="h-4 w-4 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
