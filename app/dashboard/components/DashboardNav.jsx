@@ -47,7 +47,7 @@ export default function DashboardNav({ session, user: propUser }) {
                   <span className="text-xl font-black text-white">⚡</span>
                 </div>
                 <span className="ml-3 text-xl font-bold text-foreground">TheHumanCode</span>
-                <span className="ml-2 text-xs font-semibold bg-primary/15 text-accent px-2 py-0.5 rounded-full">
+                <span className="ml-2 hidden md:inline-block text-xs font-semibold bg-primary/15 text-accent px-2 py-0.5 rounded-full">
                   Dashboard
                 </span>
               </Link>
@@ -74,7 +74,7 @@ export default function DashboardNav({ session, user: propUser }) {
               <div className="h-8 w-8 rounded-full bg-gradient-to-r from-primary to-accent flex items-center justify-center text-white text-xs font-bold shadow-xs">
                 {userInitial}
               </div>
-              <span className="ml-2.5 text-xs sm:text-sm font-medium text-foreground max-w-[140px] sm:max-w-[200px] truncate hidden xs:inline-block">
+              <span className="ml-2.5 text-sm font-medium text-foreground max-w-[200px] truncate hidden lg:inline-block">
                 {userEmail}
               </span>
             </div>

@@ -265,6 +265,7 @@ export default function SessionDetailPage() {
     }
 
     setActiveTab('questions')
+    setSaveMessage('Draft questions applied below — review them, then press Save.')
   }
 
   // Persist the editor's current state to Supabase. New rows carry temp ids
@@ -769,6 +770,12 @@ export default function SessionDetailPage() {
 
       {activeTab === 'settings' && (
         <div className="space-y-8">
+          {saveMessage && (
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
+              <p className="text-sm font-medium text-emerald-300">{saveMessage}</p>
+            </div>
+          )}
+
           <SessionForm
             initialData={session}
             onSubmit={updateSession}

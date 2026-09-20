@@ -336,10 +336,10 @@ export default function QuestionEditor({
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
+    <div className="rounded-2xl border border-border bg-card p-5 sm:p-8 shadow-sm">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-8">
+        <div className="min-w-0">
           <h2 className="font-display text-2xl font-semibold text-foreground">Questions & Options</h2>
           <p className="mt-2 text-muted-foreground">
             Add questions and answer choices for your poll. Attendees will see them in this order.
@@ -399,16 +399,16 @@ export default function QuestionEditor({
                     >
                       {/* Question Header */}
                       <div
-                        className="p-6 cursor-pointer"
+                        className="p-4 sm:p-6 cursor-pointer"
                         onClick={() => setExpandedQuestion(isExpanded ? null : question.id)}
                       >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0 flex-1">
                             <div className="flex items-center">
-                              <span className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-gradient-to-r from-primary to-accent text-white font-medium text-sm mr-4">
+                              <span className="inline-flex flex-shrink-0 items-center justify-center h-8 w-8 rounded-full bg-gradient-to-r from-primary to-accent text-white font-medium text-sm mr-3 sm:mr-4">
                                 {index + 1}
                               </span>
-                              <div>
+                              <div className="min-w-0">
                                 <h3 className="text-lg font-semibold text-foreground">
                                   {question.text || 'Untitled Question'}
                                 </h3>
@@ -448,7 +448,7 @@ export default function QuestionEditor({
                               </div>
                             </div>
                           </div>
-                          <div className="flex items-center space-x-2">
+                          <div className="flex flex-shrink-0 items-center justify-end space-x-2">
                             {index > 0 && (
                               <button
                                 onClick={(e) => {

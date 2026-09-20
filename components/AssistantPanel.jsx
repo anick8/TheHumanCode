@@ -65,6 +65,10 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
   const [resolved, setResolved] = useState({})
   const [reduceMotion, setReduceMotion] = useState(true)
   const scrollRef = useRef(null)
+  // Set right before answering an applied proposal's tool call, so the
+  // resulting tool-output turn doesn't auto-continue into a narrated
+  // "here's a draft" reply the organizer no longer needs to see.
+  const suppressAutoSendRef = useRef(false)
 
   const { messages, setMessages, sendMessage, addToolOutput, status, error } = useChat({
     transport: new DefaultChatTransport({
@@ -73,7 +77,8 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
         body: { messages: outgoing, sessionId },
       }),
     }),
-    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+    sendAutomaticallyWhen: (options) =>
+      !suppressAutoSendRef.current && lastAssistantMessageIsCompleteWithToolCalls(options),
   })
 
   useEffect(() => setReduceMotion(prefersReducedMotion()), [])
@@ -111,12 +116,14 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
     setMessages([])
     setResolved({})
     setInput('')
+    suppressAutoSendRef.current = false
   }
 
   const submit = (event) => {
     event.preventDefault()
     const text = input.trim()
     if (!text || busy) return
+    suppressAutoSendRef.current = false
     setInput('')
     sendMessage({ text })
   }
@@ -124,6 +131,7 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
   // Answering the tool call is what lets the conversation continue. Both Apply
   // and Discard must respond, or the run stays parked forever.
   const respond = (tool, toolCallId, outcome) => {
+    if (outcome === 'applied') suppressAutoSendRef.current = true
     setResolved((previous) => ({ ...previous, [toolCallId]: outcome }))
     addToolOutput({
       tool,
@@ -253,6 +261,7 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
                       onApply={() => {
                         onApplyProposal(kind, part.input)
                         respond(tool, part.toolCallId, 'applied')
+                        onClose()
                       }}
                       onDiscard={() => respond(tool, part.toolCallId, 'discarded')}
                     />

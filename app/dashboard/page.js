@@ -302,7 +302,7 @@ export default function DashboardHome() {
       )}
 
       {/* Setup Instructions Helper */}
-      <div className="mt-12 rounded-xl border border-border bg-muted/70 p-6">
+      {/*<div className="mt-12 rounded-xl border border-border bg-muted/70 p-6">
         <div className="flex items-start">
           <div className="flex-shrink-0">
             <svg className="h-5 w-5 text-accent mt-0.5" fill="currentColor" viewBox="0 0 20 20">
@@ -318,7 +318,7 @@ export default function DashboardHome() {
             </div>
           </div>
         </div>
-      </div>
+      </div>*/}
     </div>
   )
 }
