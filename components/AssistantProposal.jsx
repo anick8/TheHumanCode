@@ -33,13 +33,13 @@ export default function AssistantProposal({ kind, input, resolved, blockedReason
     <div className="rounded-xl border border-border bg-muted/50 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-foreground">
+          <p className="text-sm font-semibold text-foreground break-words">
             {isQuestions
               ? `Draft: ${questions.length} question${questions.length === 1 ? '' : 's'}`
               : 'Draft: session settings'}
           </p>
           {input?.summary && (
-            <p className="mt-1 text-xs text-muted-foreground">{input.summary}</p>
+            <p className="mt-1 text-xs text-muted-foreground break-words">{input.summary}</p>
           )}
         </div>
         {isQuestions && input?.mode === 'replace' && (
@@ -53,7 +53,7 @@ export default function AssistantProposal({ kind, input, resolved, blockedReason
         <ol className="mt-3 space-y-2">
           {questions.map((question, index) => (
             <li key={index} className="rounded-lg border border-border bg-card p-3">
-              <p className="text-sm font-medium text-foreground">
+              <p className="text-sm font-medium text-foreground break-words">
                 {index + 1}. {question.text}
               </p>
               {question.options?.length > 0 && (
@@ -61,7 +61,7 @@ export default function AssistantProposal({ kind, input, resolved, blockedReason
                   {question.options.map((option, optionIndex) => (
                     <li
                       key={optionIndex}
-                      className={`text-xs ${
+                      className={`text-xs break-words ${
                         question.correct_option_index === optionIndex
                           ? 'font-semibold text-emerald-300'
                           : 'text-muted-foreground'
@@ -81,9 +81,9 @@ export default function AssistantProposal({ kind, input, resolved, blockedReason
       {!isQuestions && (
         <dl className="mt-3 space-y-1.5">
           {Object.entries(settings).map(([key, value]) => (
-            <div key={key} className="flex items-baseline justify-between gap-4 text-xs">
+            <div key={key} className="flex items-baseline justify-between gap-x-4 gap-y-1 text-xs">
               <dt className="text-muted-foreground">{SETTING_LABELS[key] || key}</dt>
-              <dd className="font-medium text-foreground">{formatSettingValue(key, value)}</dd>
+              <dd className="min-w-0 break-words text-right font-medium text-foreground">{formatSettingValue(key, value)}</dd>
             </div>
           ))}
         </dl>
@@ -100,7 +100,7 @@ export default function AssistantProposal({ kind, input, resolved, blockedReason
               Can&apos;t apply this: {blockedReason}
             </p>
           )}
-          <div className="mt-4 flex gap-2">
+          <div className="mt-4 flex flex-wrap gap-2">
             {/* Discard stays available even when Apply is blocked — the draft
                 still has to be answered, or the conversation never resumes. */}
             {!blockedReason && (

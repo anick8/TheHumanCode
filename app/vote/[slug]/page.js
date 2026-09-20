@@ -1268,7 +1268,7 @@ export default function VotingPage() {
       <footer className="mt-12 border-t border-border bg-card py-8">
         <div className="container mx-auto px-4 text-center">
           <p className="text-sm text-muted-foreground">
-            Powered by LivePolls • {identified ? 'Your answers are visible to the organizer' : 'Your vote is anonymous and secure'}
+            Powered by MC Genie • {identified ? 'Your answers are visible to the organizer' : 'Your vote is anonymous and secure'}
           </p>
           <p className="mt-2 text-xs text-muted-foreground">
             Need help? Contact the event organizer.

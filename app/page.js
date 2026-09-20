@@ -45,7 +45,7 @@ export default function Home() {
                 </div>
               </div>
               <div className="ml-3 flex items-center">
-                <span className="text-xl font-bold text-foreground">LivePolls</span>
+                <span className="text-xl font-bold text-foreground">MC Genie</span>
                 <span className="ml-2 text-xs font-semibold bg-primary/15 text-accent px-2 py-0.5 rounded-full">
                   v1.0
                 </span>
@@ -151,7 +151,7 @@ export default function Home() {
           <div className="text-center">
             <h2 className="font-display text-xs font-semibold uppercase tracking-wider text-accent">Simple 3-Step Workflow</h2>
             <p className="mt-2 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-              How LivePolls Works
+              How MC Genie Works
             </p>
           </div>
 
@@ -194,7 +194,7 @@ export default function Home() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row items-center justify-between text-sm text-muted-foreground gap-4">
             <div className="flex items-center">
-              <span className="font-semibold text-foreground">LivePolls</span>
+              <span className="font-semibold text-foreground">MC Genie</span>
               <span className="ml-2">© 2026. All rights reserved.</span>
             </div>
             <div>

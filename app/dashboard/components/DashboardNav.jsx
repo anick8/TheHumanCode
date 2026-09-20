@@ -43,10 +43,8 @@ export default function DashboardNav({ session, user: propUser }) {
           <div className="flex items-center">
             <div className="flex flex-shrink-0 items-center">
               <Link href="/dashboard" className="flex items-center">
-                <div className="h-9 w-9 rounded-xl bg-gradient-to-r from-primary to-accent flex items-center justify-center shadow-xs">
-                  <span className="text-xl font-black text-white">⚡</span>
-                </div>
-                <span className="ml-3 text-xl font-bold text-foreground">TheHumanCode</span>
+                <img src="/mcgenie.png" alt="" className="h-9 w-9 rounded-xl object-cover shadow-xs" />
+                <span className="ml-3 text-xl font-bold text-foreground">MC Genie</span>
                 <span className="ml-2 hidden md:inline-block text-xs font-semibold bg-primary/15 text-accent px-2 py-0.5 rounded-full">
                   Dashboard
                 </span>

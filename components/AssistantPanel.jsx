@@ -64,6 +64,10 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
   const [input, setInput] = useState('')
   const [resolved, setResolved] = useState({})
   const [reduceMotion, setReduceMotion] = useState(true)
+  // Bounds the drawer to the visible area so the composer stays above the
+  // on-screen keyboard. h-dvh alone does not shrink for the keyboard on iOS
+  // Safari, so we read the visual viewport directly and fall back to h-dvh.
+  const [viewportBox, setViewportBox] = useState(null)
   const scrollRef = useRef(null)
   // Set right before answering an applied proposal's tool call, so the
   // resulting tool-output turn doesn't auto-continue into a narrated
@@ -82,6 +86,45 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
   })
 
   useEffect(() => setReduceMotion(prefersReducedMotion()), [])
+
+  // Track the visual viewport while open. When a mobile keyboard appears the
+  // visual viewport shrinks (and may offset); sizing the drawer to it keeps the
+  // textarea and Send button reachable instead of hidden behind the keyboard.
+  useEffect(() => {
+    if (!open || typeof window === 'undefined' || !window.visualViewport) return
+    const vv = window.visualViewport
+    let frame = 0
+    const update = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => setViewportBox({ height: vv.height, offsetTop: vv.offsetTop }))
+    }
+    update()
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    return () => {
+      cancelAnimationFrame(frame)
+      vv.removeEventListener('resize', update)
+      vv.removeEventListener('scroll', update)
+      setViewportBox(null)
+    }
+  }, [open])
+
+  // Lock background scroll while the drawer is open so touch gestures on the
+  // backdrop don't scroll the page underneath. Pad for the removed scrollbar
+  // so desktop doesn't shift.
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') return
+    const { body, documentElement } = document
+    const previousOverflow = body.style.overflow
+    const previousPaddingRight = body.style.paddingRight
+    const scrollbarWidth = window.innerWidth - documentElement.clientWidth
+    body.style.overflow = 'hidden'
+    if (scrollbarWidth > 0) body.style.paddingRight = `${scrollbarWidth}px`
+    return () => {
+      body.style.overflow = previousOverflow
+      body.style.paddingRight = previousPaddingRight
+    }
+  }, [open])
 
   // A prompt handed over from the dashboard "Create with AI" composer is sent
   // once the chat is ready to accept it. Guarded on the conversation still
@@ -158,8 +201,15 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
         role="dialog"
         aria-modal="true"
         aria-label="AI assistant"
-        className="fixed right-0 top-0 z-50 flex h-dvh w-full max-w-md flex-col border-l border-border bg-card shadow-2xl"
-        style={{ transform: open ? 'translateX(0)' : 'translateX(100%)', transition }}
+        aria-hidden={!open}
+        inert={!open}
+        className="fixed right-0 top-0 z-50 flex h-dvh w-full max-w-md flex-col overflow-hidden border-l border-border bg-card shadow-2xl"
+        style={{
+          top: open && viewportBox ? `${viewportBox.offsetTop}px` : undefined,
+          height: open && viewportBox ? `${viewportBox.height}px` : undefined,
+          transform: open ? 'translateX(0)' : 'translateX(100%)',
+          transition,
+        }}
       >
         <header className="flex items-center justify-between border-b border-border px-5 py-4">
           <div>
@@ -194,7 +244,7 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
           </div>
         </header>
 
-        <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+        <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-5 py-4">
           {messages.length === 0 && (
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">
@@ -226,8 +276,8 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
                       key={index}
                       className={
                         message.role === 'user'
-                          ? 'ml-auto w-fit max-w-[85%] rounded-xl bg-primary/15 px-3 py-2 text-sm text-foreground'
-                          : 'text-sm leading-relaxed text-foreground whitespace-pre-wrap'
+                          ? 'ml-auto w-fit max-w-[85%] break-words rounded-xl bg-primary/15 px-3 py-2 text-sm text-foreground'
+                          : 'text-sm leading-relaxed text-foreground whitespace-pre-wrap break-words'
                       }
                     >
                       {part.text}
@@ -284,7 +334,7 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
           )}
         </div>
 
-        <form onSubmit={submit} className="border-t border-border px-5 py-4">
+        <form onSubmit={submit} className="border-t border-border px-5 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
           <div className="flex items-end gap-2">
             <textarea
               value={input}
@@ -299,7 +349,7 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
             <button
               type="submit"
               disabled={busy || !input.trim()}
-              className="rounded-lg bg-gradient-to-r from-primary to-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90 transition-opacity"
+              className="shrink-0 rounded-lg bg-gradient-to-r from-primary to-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-40 hover:opacity-90 transition-opacity"
             >
               Send
             </button>

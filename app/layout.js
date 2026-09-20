@@ -23,16 +23,22 @@ export const metadata = {
   description: "Create real-time polling sessions with unique QR codes for your events",
 };
 
+// viewport-fit=cover exposes the safe-area insets the assistant composer pads
+// against; interactive-widget=resizes-content shrinks the layout viewport when
+// a mobile keyboard opens, so the composer isn't left behind it.
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  interactiveWidget: "resizes-content",
+};
+
 export default function RootLayout({ children }) {
   return (
     <html
       lang="en"
       className={`${montserrat.variable} ${orbitron.variable} h-full`}
     >
-      <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <link rel="icon" href="/favicon.ico" />
-      </head>
       <body className="min-h-full bg-background text-foreground font-sans antialiased">
         <AuthProvider>{children}</AuthProvider>
       </body>

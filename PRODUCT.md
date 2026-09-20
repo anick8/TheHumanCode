@@ -12,11 +12,11 @@ Primary users are conference and meetup organizers/speakers who create poll sess
 
 ## Product Purpose
 
-LivePolls lets an organizer create a poll session (a set of questions with options), generate a QR code for it, and run it live during an event: attendees scan to join and vote, and the presenter controls pacing from a projected screen. Success is a room voting together in real time with results everyone can see, without friction (no attendee accounts, no app).
+MC Genie lets an organizer create a poll session (a set of questions with options), generate a QR code for it, and run it live during an event: attendees scan to join and vote, and the presenter controls pacing from a projected screen. Success is a room voting together in real time with results everyone can see, without friction (no attendee accounts, no app).
 
 ## Positioning
 
-The mechanism worth protecting is presenter-driven live pacing: the presenter's screen (`/present/[sessionId]`) controls which question is open and when results reveal, and every attendee device follows that state live over Supabase Realtime (`sessions.current_question_index`, `results_revealed`). This makes LivePolls a shared-room moment rather than an async survey tool (Google Forms, Typeform) — the room moves together, and nobody sees results before the presenter shows them. This is distinct from per-session branding and from the zero-friction QR join, which are real but secondary strengths.
+The mechanism worth protecting is presenter-driven live pacing: the presenter's screen (`/present/[sessionId]`) controls which question is open and when results reveal, and every attendee device follows that state live over Supabase Realtime (`sessions.current_question_index`, `results_revealed`). This makes MC Genie a shared-room moment rather than an async survey tool (Google Forms, Typeform) — the room moves together, and nobody sees results before the presenter shows them. This is distinct from per-session branding and from the zero-friction QR join, which are real but secondary strengths.
 
 ## Operating Context
 

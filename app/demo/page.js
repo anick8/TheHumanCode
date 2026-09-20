@@ -84,7 +84,7 @@ export default function DemoPage() {
                 <span className="text-white text-sm font-bold">⚡</span>
               </div>
               <div>
-                <h1 className="font-display text-xl font-bold text-foreground">LivePolls Demo</h1>
+                <h1 className="font-display text-xl font-bold text-foreground">MC Genie Demo</h1>
                 <p className="text-sm text-muted-foreground">Demo Mode — Not connected to Supabase</p>
               </div>
             </div>

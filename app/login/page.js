@@ -34,7 +34,7 @@ export default function LoginPage() {
           <div className="h-10 w-10 rounded-xl bg-gradient-to-r from-primary to-accent flex items-center justify-center shadow-md">
             <span className="text-xl font-black text-white">⚡</span>
           </div>
-          <span className="ml-3 text-2xl font-bold text-foreground">LivePolls</span>
+          <span className="ml-3 text-2xl font-bold text-foreground">MC Genie</span>
         </Link>
         <h2 className="font-display mt-4 text-2xl font-extrabold text-foreground tracking-tight">
           Welcome back

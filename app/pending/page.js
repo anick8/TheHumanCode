@@ -24,7 +24,7 @@ export default function PendingPage() {
         <div className="h-10 w-10 rounded-xl bg-gradient-to-r from-primary to-accent flex items-center justify-center shadow-md">
           <span className="text-xl font-black text-white">⚡</span>
         </div>
-        <span className="ml-3 text-2xl font-bold text-foreground">LivePolls</span>
+        <span className="ml-3 text-2xl font-bold text-foreground">MC Genie</span>
       </Link>
 
       <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-xl">
@@ -35,7 +35,7 @@ export default function PendingPage() {
         </div>
         <h2 className="font-display text-xl font-bold text-foreground">You&apos;re on the list</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          LivePolls is invite-only right now. We&apos;ve got your account, and we&apos;ll be in touch if
+          MC Genie is invite-only right now. We&apos;ve got your account, and we&apos;ll be in touch if
           that changes.
         </p>
         <button
