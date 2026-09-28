@@ -834,7 +834,7 @@ export default function VotingPage() {
                 )}
               </div>
 
-              <aside className="rounded-2xl border border-border bg-card p-5 shadow-lg lg:sticky lg:top-6 lg:self-start">
+              {/*<aside className="rounded-2xl border border-border bg-card p-5 shadow-lg lg:sticky lg:top-6 lg:self-start">
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="font-display text-lg font-bold text-foreground">Leaderboard</h2>
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium text-emerald-300">
@@ -847,7 +847,7 @@ export default function VotingPage() {
                   currentId={participant?.id}
                   total={totalQuestions}
                 />
-              </aside>
+              </aside>*/}
             </div>
           )}
         </main>

@@ -58,12 +58,12 @@ export default function DashboardHome() {
           results_mode: 'live',
           // The chosen type decides participation_mode, and the pair has to
           // satisfy sessions_type_consistency. A poll is anonymous; a quiz
-          // names its participants and may be scored later in Settings.
+          // names its participants and is always scored.
           session_type: aiType,
           participation_mode: aiType === 'poll' ? 'anonymous' : 'identified',
           identity_requires_name: true,
           identity_requires_id: false,
-          is_scored: false,
+          is_scored: aiType === 'quiz',
           score_time_limit_seconds: null,
           is_active: true,
           owner_id: user?.id,
