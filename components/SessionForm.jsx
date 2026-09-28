@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { generateSlug } from '@/lib/utils'
-http://localhost:3000/vote/R6J3kanX
+
 
 import { copyFor } from '@/lib/sessionCopy'
 
