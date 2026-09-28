@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { generateSlug } from '@/lib/utils'
+http://localhost:3000/vote/R6J3kanX
+
+import { copyFor } from '@/lib/sessionCopy'
 
 export default function SessionForm({ onSubmit, initialData = null, loading = false, lockParticipation = false, appliedSettings = null }) {
   const [formData, setFormData] = useState({
@@ -17,6 +20,7 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
     is_active: initialData?.is_active ?? true,
   })
   const [formError, setFormError] = useState(null)
+  const typeCopy = copyFor(formData.session_type)
 
   const updateField = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }))
@@ -24,14 +28,15 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
 
   // A session type is a preset over participation_mode/is_scored (both a DB
   // constraint and this UI keep them in sync): poll = anonymous, never scored;
-  // quiz = identified, scoring stays an optional toggle; comments = identified,
-  // never scored. Switching types resets whichever flags the new type forbids.
+  // quiz = identified, always scored; comments = identified, never scored.
+  // Switching types resets whichever flags the new type forbids.
   const setSessionType = (type) => {
     setFormData(prev => ({
       ...prev,
       session_type: type,
       participation_mode: type === 'poll' ? 'anonymous' : 'identified',
-      ...(type !== 'quiz' ? { is_scored: false, score_time_limit_seconds: null } : {}),
+      is_scored: type === 'quiz',
+      ...(type !== 'quiz' ? { score_time_limit_seconds: null } : {}),
     }))
   }
 
@@ -51,24 +56,17 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
       if (values.session_type) {
         next.session_type = values.session_type
         next.participation_mode = values.session_type === 'poll' ? 'anonymous' : 'identified'
+        next.is_scored = values.session_type === 'quiz'
         if (values.session_type !== 'quiz') {
-          next.is_scored = false
           next.score_time_limit_seconds = null
         }
       }
 
       for (const key of [
         'title', 'results_mode', 'identity_requires_name',
-        'identity_requires_id', 'is_scored', 'score_time_limit_seconds',
+        'identity_requires_id', 'score_time_limit_seconds',
       ]) {
         if (values[key] !== undefined) next[key] = values[key]
-      }
-
-      // Scoring only exists on an identified quiz, so a draft that turns
-      // scoring on without naming a type has to pull the type along.
-      if (next.is_scored) {
-        next.session_type = 'quiz'
-        next.participation_mode = 'identified'
       }
 
       return next
@@ -164,7 +162,7 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
           <div className="mb-2 flex items-center justify-between">
             <label className="block text-sm font-medium text-foreground">Session Type</label>
             {lockParticipation && (
-              <span className="text-xs text-muted-foreground">Locked after the first vote</span>
+              <span className="text-xs text-muted-foreground">{typeCopy.lockedLabel}</span>
             )}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -228,7 +226,7 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
                 <div className="ml-3">
                   <span className="block text-sm font-semibold text-foreground">Quiz</span>
                   <span className="block mt-1 text-sm text-muted-foreground">
-                    Attendees join with a name and/or ID, and you see who answered what. Scoring is optional.
+                    Attendees join with a name and/or ID, answer scored questions, and see a leaderboard.
                   </span>
                 </div>
               </div>
@@ -281,7 +279,7 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
                 <span>
                   <span className="block text-sm font-medium text-foreground">Require name</span>
                   <span className="block text-sm text-muted-foreground">
-                    Participants enter their name before {formData.session_type === 'comments' ? 'commenting' : 'voting'}.
+                    Participants enter their name before {typeCopy.verbGerund}.
                   </span>
                 </span>
               </label>
@@ -308,51 +306,11 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
 
               {formData.session_type === 'quiz' && (
                 <div className="mt-4 space-y-3 border-t border-border pt-4">
-                  <label className={`flex items-start gap-3 ${lockParticipation ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}>
-                    <input
-                      type="checkbox"
-                      checked={formData.is_scored}
-                      onChange={(e) => updateField('is_scored', e.target.checked)}
-                      disabled={lockParticipation}
-                      className="mt-1 h-4 w-4 rounded border-border text-accent focus:ring-ring"
-                    />
-                    <span>
-                      <span className="block text-sm font-medium text-foreground">Scored quiz</span>
-                      <span className="block text-sm text-muted-foreground">
-                        Mark one correct option and points per question. Participants get a running score, a
-                        leaderboard, and a final ranking.
-                      </span>
-                    </span>
-                  </label>
-
-                  {formData.is_scored && (
-                    <div>
-                      <label htmlFor="score_time_limit" className="block text-sm font-medium text-foreground mb-2">
-                        Time limit (minutes, optional)
-                      </label>
-                      <input
-                        id="score_time_limit"
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={formData.score_time_limit_seconds ? String(formData.score_time_limit_seconds / 60) : ''}
-                        onChange={(e) => {
-                          const minutes = e.target.value
-                          updateField(
-                            'score_time_limit_seconds',
-                            minutes === '' ? null : Math.max(1, Math.round(Number(minutes))) * 60
-                          )
-                        }}
-                        disabled={lockParticipation}
-                        placeholder="No limit"
-                        className="block w-full max-w-xs rounded-lg border border-border px-4 py-3 text-foreground shadow-sm focus:border-ring focus:ring-2 focus:ring-ring focus:ring-opacity-20 disabled:opacity-70"
-                      />
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        Each participant's clock starts when they press Start. Leave empty for a stopwatch only
-                        (still used to break ties).
-                      </p>
-                    </div>
-                  )}
+                  <p className="text-sm text-muted-foreground">
+                    Every quiz is scored and host-paced: mark one correct option and points per question, then run
+                    it from the presenter screen. Participants pick an answer and lock it in; you reveal each
+                    question when ready, and they see a leaderboard between questions and a final ranking.
+                  </p>
                 </div>
               )}
             </div>
@@ -361,15 +319,15 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
           <p className="mt-2 text-sm text-muted-foreground">
             {formData.session_type === 'poll'
               ? 'Voting polls collect no names or IDs - only aggregate results.'
-              : 'Quiz and comments sessions attach answers to a name and/or ID so you can see who responded. Participants are not authenticated, so an ID only prevents double voting - it is not verified.'}
+              : `Quiz and comments sessions attach ${formData.session_type === 'quiz' ? 'answers' : 'comments'} to a name and/or ID so you can see who responded. Participants are not authenticated, so an ID only prevents duplicate entries - it is not verified.`}
           </p>
           {formError && (
             <p className="mt-2 text-sm font-medium text-destructive">{formError}</p>
           )}
         </div>
 
-        {/* Results Display */}
-        {formData.session_type !== 'comments' && (
+        {/* Results Display - poll only; quiz has its own reveal-on-advance rules */}
+        {formData.session_type === 'poll' && (
           <div>
             <label className="block text-sm font-medium text-foreground mb-2">
               Results Display
@@ -432,7 +390,7 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
               Active Session
             </label>
             <p className="text-sm text-muted-foreground">
-              When active, attendees can scan the QR code and vote. Uncheck to temporarily disable voting.
+              When active, attendees can scan the QR code and {typeCopy.verb}. Uncheck to temporarily disable {typeCopy.verbGerund}.
             </p>
           </div>
         </div>

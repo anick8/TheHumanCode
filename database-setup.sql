@@ -1084,12 +1084,56 @@ $$;
 REVOKE ALL ON FUNCTION public.get_quiz_review(text) FROM public;
 GRANT EXECUTE ON FUNCTION public.get_quiz_review(text) TO anon, authenticated;
 
+-- get_leaderboard: the shareable ranked standings for a scored quiz. Unlike
+-- get_participant_standing (self only), this returns every participant's
+-- display name and score so attendees can see a live competitive board. It is
+-- deliberately coarse-grained: only scores, counts and timestamps, never the
+-- underlying answers or join tokens, and only for a session that is active
+-- and scored.
+CREATE OR REPLACE FUNCTION public.get_leaderboard(p_session_id uuid)
+RETURNS TABLE (
+  participant_id uuid,
+  display_name text,
+  score integer,
+  answered_count integer,
+  finished_at timestamptz,
+  rank bigint
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+STABLE
+AS $$
+  SELECT sub.id, sub.display_name, sub.score, sub.answered_count, sub.finished_at, sub.rnk
+  FROM (
+    SELECT p.id,
+           coalesce(p.name, p.external_id, 'Player') AS display_name,
+           p.score,
+           p.answered_count,
+           p.finished_at,
+           rank() OVER (ORDER BY p.score DESC, p.finished_at ASC NULLS LAST) AS rnk
+    FROM public.participants p
+    WHERE p.session_id = p_session_id
+  ) sub
+  WHERE EXISTS (
+    SELECT 1 FROM public.sessions s
+    WHERE s.id = p_session_id AND s.is_active = true AND s.is_scored = true
+  )
+  ORDER BY sub.rnk;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_leaderboard(uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_leaderboard(uuid) TO anon, authenticated;
+
 -- 17. Session types
 -- The organizer-facing "session type" is a thin label over the existing
 -- participation_mode/is_scored flags, kept so every RPC, RLS policy and
 -- constraint written above keeps working unchanged:
 --   poll     -> participation_mode='anonymous', is_scored=false
---   quiz     -> participation_mode='identified' (is_scored optional)
+--   quiz     -> participation_mode='identified', is_scored=true (see section 19
+--               for the "every quiz is scored" migration; the CHECK below stays
+--               permissive so a legacy unscored quiz that already has votes,
+--               frozen by prevent_points_change_after_votes, remains valid)
 --   comments -> participation_mode='identified', is_scored=false
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS session_type text NOT NULL DEFAULT 'poll'
   CHECK (session_type IN ('poll', 'quiz', 'comments'));
@@ -1335,3 +1379,265 @@ CREATE POLICY "Users can view their own AI usage" ON ai_usage FOR SELECT
 DROP POLICY IF EXISTS "Users can record their own AI usage" ON ai_usage;
 CREATE POLICY "Users can record their own AI usage" ON ai_usage FOR INSERT
   TO authenticated WITH CHECK ((select public.is_organizer()) AND (select auth.uid()) = user_id);
+
+-- ============================================================================
+-- 19. Every quiz is scored
+-- ============================================================================
+
+-- The "Scored quiz" checkbox is gone from the UI: session_type='quiz' now
+-- always implies is_scored=true going forward. A quiz that already has votes
+-- is left untouched (its points/answer key are frozen by
+-- prevent_points_change_after_votes, so it could not be safely turned into a
+-- scored quiz retroactively); the app labels those as legacy unscored quizzes.
+UPDATE sessions SET is_scored = true
+WHERE session_type = 'quiz'
+  AND NOT is_scored
+  AND NOT EXISTS (
+    SELECT 1 FROM votes v
+    JOIN questions q ON q.id = v.question_id
+    WHERE q.session_id = sessions.id
+  );
+
+-- ============================================================================
+-- 20. Host-paced quiz: Lock -> Reveal -> Leaderboard
+-- ============================================================================
+
+-- A scored quiz is no longer self-paced. The presenter screen drives it like
+-- a poll: current_question_index picks the open question, results_revealed
+-- gates the reveal step, and this new flag gates the leaderboard step that
+-- follows it. A participant's "Answer submitted" locks a choice with no
+-- judging; reveal_quiz_question() below judges every locked answer for the
+-- open question at once and adds the points, so nothing about correctness or
+-- score ever leaks before the host reveals.
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS show_leaderboard boolean NOT NULL DEFAULT false;
+
+-- submit_identified_vote: a scored quiz now only accepts a lock for the
+-- question currently open on the presenter screen, before it is revealed,
+-- and never judges it - is_correct/awarded_points stay NULL/0 until
+-- reveal_quiz_question() runs. A legacy unscored quiz (is_scored=false) is
+-- unaffected: it keeps behaving exactly as before this migration.
+DROP FUNCTION IF EXISTS public.submit_identified_vote(text, uuid, uuid);
+
+CREATE OR REPLACE FUNCTION public.submit_identified_vote(
+  p_join_token text,
+  p_question_id uuid,
+  p_option_id uuid
+)
+RETURNS TABLE (
+  recorded_option_id uuid,
+  recorded boolean,
+  is_correct boolean,
+  awarded_points integer,
+  total_score integer,
+  answered_count integer,
+  finished_at timestamptz,
+  time_up boolean,
+  closed boolean
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_participant public.participants%ROWTYPE;
+  v_session public.sessions%ROWTYPE;
+  v_question public.questions%ROWTYPE;
+  v_existing public.votes%ROWTYPE;
+  v_score integer;
+  v_answered integer;
+  v_finished timestamptz;
+BEGIN
+  SELECT * INTO v_participant FROM public.participants WHERE join_token = p_join_token;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Unknown participant';
+  END IF;
+
+  SELECT * INTO v_session FROM public.sessions WHERE id = v_participant.session_id;
+  IF NOT FOUND OR v_session.is_active = false THEN
+    RAISE EXCEPTION 'This session is not active';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.options WHERE id = p_option_id AND question_id = p_question_id
+  ) THEN
+    RAISE EXCEPTION 'That option does not belong to the question';
+  END IF;
+
+  IF v_session.is_scored THEN
+    IF v_session.scored_closed THEN
+      RETURN QUERY SELECT NULL::uuid, false, NULL::boolean, 0, v_participant.score,
+        v_participant.answered_count, v_participant.finished_at, false, true;
+      RETURN;
+    END IF;
+
+    SELECT * INTO v_question FROM public.questions WHERE id = p_question_id;
+    IF v_session.current_question_index IS NULL
+       OR v_question.order_index IS DISTINCT FROM v_session.current_question_index
+       OR v_session.results_revealed THEN
+      RAISE EXCEPTION 'This question is not open for answers';
+    END IF;
+  END IF;
+
+  -- Locked before: return the stored row and never lock twice.
+  SELECT * INTO v_existing FROM public.votes v
+   WHERE v.question_id = p_question_id AND v.participant_id = v_participant.id;
+  IF FOUND THEN
+    RETURN QUERY SELECT v_existing.option_id, false, v_existing.is_correct,
+      v_existing.awarded_points, v_participant.score, v_participant.answered_count,
+      v_participant.finished_at, false, v_session.scored_closed;
+    RETURN;
+  END IF;
+
+  INSERT INTO public.votes (option_id, question_id, voter_token, participant_id, is_correct, awarded_points)
+  VALUES (p_option_id, p_question_id, v_participant.id::text, v_participant.id, NULL, 0);
+
+  UPDATE public.participants p
+     SET answered_count = p.answered_count + 1,
+         finished_at = CASE
+           WHEN p.finished_at IS NOT NULL THEN p.finished_at
+           WHEN p.answered_count + 1 >= (
+             SELECT count(*) FROM public.questions q WHERE q.session_id = v_participant.session_id
+           ) THEN now()
+           ELSE NULL
+         END
+   WHERE p.id = v_participant.id
+  RETURNING p.score, p.answered_count, p.finished_at INTO v_score, v_answered, v_finished;
+
+  RETURN QUERY SELECT p_option_id, true, NULL::boolean, 0, v_score, v_answered, v_finished, false, false;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.submit_identified_vote(text, uuid, uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.submit_identified_vote(text, uuid, uuid) TO anon, authenticated;
+
+-- reveal_quiz_question: the host action that judges every locked (unjudged)
+-- answer for the currently open question against question_keys, awards
+-- points once each, and flips results_revealed. Owner-only. Idempotent - a
+-- second call finds no unjudged votes left and does nothing.
+CREATE OR REPLACE FUNCTION public.reveal_quiz_question(p_session_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_session public.sessions%ROWTYPE;
+  v_question_id uuid;
+BEGIN
+  SELECT * INTO v_session FROM public.sessions WHERE id = p_session_id;
+  IF NOT FOUND OR v_session.owner_id <> auth.uid() THEN
+    RAISE EXCEPTION 'Not authorized';
+  END IF;
+  IF NOT v_session.is_scored THEN
+    RAISE EXCEPTION 'This session is not scored';
+  END IF;
+  IF v_session.current_question_index IS NULL OR v_session.current_question_index < 0 THEN
+    RAISE EXCEPTION 'No question is currently open';
+  END IF;
+
+  SELECT id INTO v_question_id FROM public.questions
+  WHERE session_id = p_session_id AND order_index = v_session.current_question_index;
+  IF v_question_id IS NULL THEN
+    RAISE EXCEPTION 'No question at this position';
+  END IF;
+
+  WITH judged AS (
+    UPDATE public.votes v
+    SET is_correct = (k.option_id IS NOT NULL AND k.option_id = v.option_id),
+        awarded_points = CASE WHEN k.option_id IS NOT NULL AND k.option_id = v.option_id
+                               THEN coalesce(q.points, 0) ELSE 0 END
+    FROM public.questions q
+    LEFT JOIN public.question_keys k ON k.question_id = q.id
+    WHERE v.question_id = v_question_id
+      AND q.id = v_question_id
+      AND v.is_correct IS NULL
+    RETURNING v.participant_id, v.awarded_points
+  )
+  UPDATE public.participants p
+  SET score = p.score + judged.awarded_points,
+      finished_at = CASE
+        WHEN p.finished_at IS NOT NULL THEN p.finished_at
+        WHEN p.answered_count >= (SELECT count(*) FROM public.questions WHERE session_id = p_session_id)
+        THEN now() ELSE p.finished_at END
+  FROM judged
+  WHERE p.id = judged.participant_id;
+
+  UPDATE public.sessions SET results_revealed = true, show_leaderboard = false WHERE id = p_session_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.reveal_quiz_question(uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.reveal_quiz_question(uuid) TO authenticated;
+
+-- get_question_result: a participant's own correct/wrong + points for one
+-- question, visible only once that question has been revealed (its position
+-- is before the current one, or it is current and results_revealed is set).
+-- Before that, returns no rows - there is nothing to leak.
+CREATE OR REPLACE FUNCTION public.get_question_result(p_join_token text, p_question_id uuid)
+RETURNS TABLE (
+  correct_option_id uuid,
+  chosen_option_id uuid,
+  is_correct boolean,
+  awarded_points integer
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+STABLE
+AS $$
+DECLARE
+  v_participant public.participants%ROWTYPE;
+  v_session public.sessions%ROWTYPE;
+  v_question public.questions%ROWTYPE;
+  v_revealed boolean;
+BEGIN
+  SELECT * INTO v_participant FROM public.participants WHERE join_token = p_join_token;
+  IF NOT FOUND THEN RETURN; END IF;
+
+  SELECT * INTO v_session FROM public.sessions WHERE id = v_participant.session_id;
+  SELECT * INTO v_question FROM public.questions WHERE id = p_question_id AND session_id = v_session.id;
+  IF NOT FOUND THEN RETURN; END IF;
+
+  v_revealed := v_session.current_question_index IS NOT NULL AND (
+    v_question.order_index < v_session.current_question_index
+    OR (v_question.order_index = v_session.current_question_index AND v_session.results_revealed)
+  );
+  IF NOT v_revealed THEN RETURN; END IF;
+
+  RETURN QUERY
+  SELECT k.option_id, v.option_id, v.is_correct, coalesce(v.awarded_points, 0)
+  FROM (SELECT 1 AS x) dummy
+  LEFT JOIN public.question_keys k ON k.question_id = p_question_id
+  LEFT JOIN public.votes v ON v.question_id = p_question_id AND v.participant_id = v_participant.id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_question_result(text, uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_question_result(text, uuid) TO anon, authenticated;
+
+-- get_vote_counts: for a scored quiz, an option's count only counts votes
+-- already judged (is_correct IS NOT NULL) - i.e. only once its question has
+-- been revealed - so the split can't hint at the answer beforehand. A poll's
+-- counts (is_scored=false) are unaffected.
+CREATE OR REPLACE FUNCTION public.get_vote_counts(p_session_id uuid)
+RETURNS TABLE (opt_id uuid, q_id uuid, vote_total bigint)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+STABLE
+AS $$
+  SELECT o.id, q.id, count(v.id) FILTER (WHERE NOT s.is_scored OR v.is_correct IS NOT NULL)
+  FROM public.questions q
+  JOIN public.sessions s ON s.id = q.session_id
+  JOIN public.options o ON o.question_id = q.id
+  LEFT JOIN public.votes v ON v.option_id = o.id
+  WHERE q.session_id = p_session_id
+    AND EXISTS (
+      SELECT 1 FROM public.sessions s2
+      WHERE s2.id = p_session_id AND s2.is_active = true
+    )
+  GROUP BY o.id, q.id;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_vote_counts(uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_vote_counts(uuid) TO anon, authenticated;

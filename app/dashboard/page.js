@@ -186,7 +186,7 @@ export default function DashboardHome() {
         <p className="mt-2 text-xs text-muted-foreground">
           {aiType === 'poll'
             ? 'Attendees vote anonymously. You can turn this into a scored quiz later.'
-            : 'Attendees enter a name. Turn on scoring in Settings once the questions are in.'}
+            : 'Attendees enter a name and answer scored questions with a leaderboard.'}
         </p>
 
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
@@ -274,6 +274,11 @@ export default function DashboardHome() {
                   <div className="text-muted-foreground">Type</div>
                   <div className="font-medium text-foreground mt-0.5">
                     {SESSION_TYPE_LABELS[session.session_type] || session.session_type}
+                    {session.session_type === 'quiz' && !session.is_scored && (
+                      <span className="ml-1.5 inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        legacy
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div>

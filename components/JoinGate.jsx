@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { generateJoinToken } from '@/lib/utils'
+import { copyFor } from '@/lib/sessionCopy'
 
 export default function JoinGate({ session, onJoined }) {
   const [name, setName] = useState('')
@@ -14,6 +15,7 @@ export default function JoinGate({ session, onJoined }) {
   const requiresName = session?.identity_requires_name !== false
   const requiresId = Boolean(session?.identity_requires_id)
   const collected = requiresName && requiresId ? 'name and ID' : requiresName ? 'name' : 'ID'
+  const typeCopy = copyFor(session?.session_type)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -109,7 +111,7 @@ export default function JoinGate({ session, onJoined }) {
             disabled={submitting}
             className="inline-flex w-full items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {submitting ? 'Joining…' : 'Join and vote'}
+            {submitting ? 'Joining…' : typeCopy.joinCta}
           </button>
         </form>
 

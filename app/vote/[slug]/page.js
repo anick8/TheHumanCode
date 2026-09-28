@@ -6,8 +6,10 @@ import SessionLogo from '@/components/SessionLogo'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import PollQuestion from '@/components/PollQuestion'
+import QuizQuestion from '@/components/QuizQuestion'
 import ResultsChart from '@/components/ResultsChart'
 import JoinGate from '@/components/JoinGate'
+import Leaderboard from '@/components/Leaderboard'
 import { generateVoterToken } from '@/lib/utils'
 
 const RESULTS_MODE_LABELS = { live: 'Live results', after_all: 'After all questions' }
@@ -29,12 +31,13 @@ export default function VotingPage() {
   // Identified sessions: { id, name, external_id, join_token } from localStorage.
   const [participant, setParticipant] = useState(null)
   const [identityReady, setIdentityReady] = useState(false)
-  // Scored quizzes.
-  const [quizState, setQuizState] = useState(null)
-  const [nowTick, setNowTick] = useState(Date.now())
+  // Scored quizzes: host-paced, so there is no personal clock. standing is
+  // the participant's own score/rank, leaderboard the shared board, and
+  // questionResult the correct/wrong + points for the currently revealed
+  // question (fetched only once the host reveals it - see get_question_result).
   const [standing, setStanding] = useState(null)
-  const [lastAward, setLastAward] = useState(null)
-  const [timeUp, setTimeUp] = useState(false)
+  const [leaderboard, setLeaderboard] = useState([])
+  const [questionResult, setQuestionResult] = useState(null)
   const [review, setReview] = useState(null)
   // Image & comments sessions: { [questionId]: [{comment_id, comment_body, author_name, comment_created_at}] }.
   const [comments, setComments] = useState({})
@@ -121,7 +124,7 @@ export default function VotingPage() {
     const refresh = async () => {
       const { data } = await supabase
         .from('sessions')
-        .select('current_question_index, results_revealed, theme, scored_closed, is_scored')
+        .select('current_question_index, results_revealed, show_leaderboard, theme, scored_closed, is_scored')
         .eq('id', sessionRowId)
         .maybeSingle()
       if (data) setSession((prev) => (prev ? { ...prev, ...data } : prev))
@@ -140,35 +143,12 @@ export default function VotingPage() {
     }
   }, [sessionRowId])
 
-  // Scored sessions: resume the stopwatch if this device already started, and
-  // fetch the participant's own standing.
+  // Scored sessions are host-paced (see hostMode/hostIndex above): fetch the
+  // participant's own standing whenever they've joined.
   useEffect(() => {
     if (!isScored || !participant) return
-    let started = false
-    try {
-      started = localStorage.getItem(`quiz_started_${slug}`) === '1'
-    } catch { /* ignore */ }
-
-    const load = async () => {
-      if (started && !quizState) {
-        const { data, error } = await supabase.rpc('start_scored_session', {
-          p_join_token: participant.join_token
-        })
-        if (!error && data?.[0]) {
-          setQuizState({ started_at: data[0].started_at, deadline: data[0].deadline })
-        }
-      }
-      await loadStanding(participant.join_token)
-    }
-    load()
-  }, [isScored, participant, slug])
-
-  // Countdown ticker for a timed quiz.
-  useEffect(() => {
-    if (!quizState?.deadline) return
-    const timer = setInterval(() => setNowTick(Date.now()), 1000)
-    return () => clearInterval(timer)
-  }, [quizState?.deadline])
+    loadStanding(participant.join_token)
+  }, [isScored, participant])
 
   // Keep the participant's own rank current without a public leaderboard feed.
   useEffect(() => {
@@ -177,15 +157,36 @@ export default function VotingPage() {
     return () => clearInterval(timer)
   }, [isScored, participant])
 
-  // Resume at the first unanswered question once, after standings load.
-  const resumedRef = useRef(false)
+  // Poll the full leaderboard so the board stays competitive without a
+  // realtime feed (rows are owner-only; the RPC returns aggregates only).
   useEffect(() => {
-    if (!isScored || resumedRef.current) return
-    if (typeof standing?.answered_count === 'number' && questions.length > 0) {
-      resumedRef.current = true
-      setCurrentQuestionIndex(Math.min(standing.answered_count, questions.length - 1))
+    if (!isScored || !session?.id) return
+    loadLeaderboard(session.id)
+    const timer = setInterval(() => loadLeaderboard(session.id), 5000)
+    return () => clearInterval(timer)
+  }, [isScored, session?.id])
+
+  // The host revealed the current question: fetch this participant's own
+  // correct/wrong + points for it. Nothing is fetched, and the RPC returns no
+  // rows, until the reveal actually happens server-side.
+  const quizCurrentQuestionId = isScored && hostMode && hostIndex >= 0 && hostIndex < questions.length
+    ? questions[hostIndex]?.id
+    : null
+  const quizRevealed = isScored && hostMode && Boolean(session?.results_revealed)
+  useEffect(() => {
+    setQuestionResult(null)
+    if (!quizRevealed || !participant || !quizCurrentQuestionId) return
+    let cancelled = false
+    const load = async () => {
+      const { data, error } = await supabase.rpc('get_question_result', {
+        p_join_token: participant.join_token,
+        p_question_id: quizCurrentQuestionId,
+      })
+      if (!error && !cancelled) setQuestionResult(data?.[0] || null)
     }
-  }, [isScored, standing?.answered_count, questions.length])
+    load()
+    return () => { cancelled = true }
+  }, [quizRevealed, participant, quizCurrentQuestionId])
 
   // Correct answers are released only when the host closes the quiz.
   useEffect(() => {
@@ -263,36 +264,27 @@ export default function VotingPage() {
   const handleJoined = async (joined) => {
     try {
       localStorage.setItem(`participant_${slug}`, JSON.stringify(joined))
-      // A new identity starts fresh: don't inherit the previous player's clock.
-      localStorage.removeItem(`quiz_started_${slug}`)
     } catch (error) {
       console.error('Error saving participant:', error)
     }
     setParticipant(joined)
-    setQuizState(null)
     setStanding(null)
-    setLastAward(null)
-    setTimeUp(false)
+    setQuestionResult(null)
     setReview(null)
-    resumedRef.current = false
     await restoreAnswers(joined.join_token)
   }
 
   const switchParticipant = () => {
     try {
       localStorage.removeItem(`participant_${slug}`)
-      localStorage.removeItem(`quiz_started_${slug}`)
     } catch (error) {
       console.error('Error clearing participant:', error)
     }
     setParticipant(null)
     setVotes({})
-    setQuizState(null)
     setStanding(null)
-    setLastAward(null)
-    setTimeUp(false)
+    setQuestionResult(null)
     setReview(null)
-    resumedRef.current = false
   }
 
   const loadQuestionsAndOptions = async (sessionId) => {
@@ -383,23 +375,16 @@ export default function VotingPage() {
     }
   }
 
-  const beginQuiz = async () => {
-    if (!participant) return
-    setVoteError(null)
+  // Live leaderboard for the quiz: everyone's rank + score, exposed through a
+  // shareable RPC (participant rows themselves are owner-only under RLS).
+  const loadLeaderboard = async (sessionId) => {
     try {
-      const { data, error } = await supabase.rpc('start_scored_session', {
-        p_join_token: participant.join_token
+      const { data, error } = await supabase.rpc('get_leaderboard', {
+        p_session_id: sessionId
       })
-      if (error) throw error
-      const row = data?.[0]
-      if (row) setQuizState({ started_at: row.started_at, deadline: row.deadline })
-      try {
-        localStorage.setItem(`quiz_started_${slug}`, '1')
-      } catch { /* ignore */ }
-      await loadStanding(participant.join_token)
+      if (!error) setLeaderboard(data || [])
     } catch (error) {
-      console.error('Error starting quiz:', error)
-      setVoteError(error.message || 'Could not start the quiz. Please try again.')
+      console.error('Error loading leaderboard:', error)
     }
   }
 
@@ -471,14 +456,15 @@ export default function VotingPage() {
         }))
 
         if (isScored && row) {
-          setLastAward({ questionId: currentQuestion.id, points: row.awarded_points || 0 })
+          // A lock never carries points or correctness - reveal_quiz_question
+          // judges it later, when the host reveals. Only the answered count
+          // (and closed flag, surfaced via the thrown error path below) move now.
           setStanding((prev) => ({
             ...(prev || {}),
             total_score: row.total_score,
             answered_count: row.answered_count,
             finished_at: row.finished_at,
           }))
-          if (row.time_up) setTimeUp(true)
         }
       } else {
         const { error } = await supabase.from('votes').insert({
@@ -618,8 +604,8 @@ export default function VotingPage() {
       <div className="min-h-screen bg-gradient-to-br from-background to-muted">
         <div className="container mx-auto px-4 py-16 text-center">
           <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
-          <h1 className="font-display mt-6 text-2xl font-bold text-foreground">Loading poll...</h1>
-          <p className="mt-2 text-muted-foreground">Please wait while we prepare your voting experience.</p>
+          <h1 className="font-display mt-6 text-2xl font-bold text-foreground">Loading session...</h1>
+          <p className="mt-2 text-muted-foreground">Please wait while we prepare the session.</p>
         </div>
       </div>
     )
@@ -629,9 +615,9 @@ export default function VotingPage() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background to-muted">
         <div className="container mx-auto px-4 py-16 text-center">
-          <h1 className="font-display text-3xl font-bold text-foreground">Poll Not Found</h1>
+          <h1 className="font-display text-3xl font-bold text-foreground">Session Not Found</h1>
           <p className="mt-2 text-muted-foreground max-w-md mx-auto">
-            This poll session is no longer available. It may have ended or been removed by the organizer.
+            This session is no longer available. It may have ended or been removed by the organizer.
           </p>
           <div className="mt-8">
             <a href="/" className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity">
@@ -661,21 +647,16 @@ export default function VotingPage() {
   // Scored quizzes get their own self-paced surface: a start gate, a
   // countdown, live personal score/rank, and an end screen with a review.
   if (isScored) {
-    const remaining = quizState?.deadline
-      ? Math.max(0, Math.floor((new Date(quizState.deadline).getTime() - nowTick) / 1000))
-      : null
-    const timeExpired = remaining === 0
     const totalQuestions = questions.length
     const answeredCount = standing?.answered_count ?? 0
-    const finished = Boolean(standing?.finished_at)
-    const done = finished || timeUp || timeExpired || (totalQuestions > 0 && answeredCount >= totalQuestions)
     const closed = Boolean(session.scored_closed)
-    const scoredQuestion = questions[currentQuestionIndex]
+    const finished = hostMode && hostIndex >= totalQuestions
+    const lobby = !hostMode || hostIndex < 0
+    const scoredQuestion = hostMode && hostIndex >= 0 && hostIndex < totalQuestions ? questions[hostIndex] : null
     const scoredOptions = scoredQuestion ? (optionsByQuestion[scoredQuestion.id] || []) : []
-    const elapsed = quizState?.started_at && standing?.finished_at
-      ? Math.max(0, Math.round((new Date(standing.finished_at).getTime() - new Date(quizState.started_at).getTime()) / 1000))
-      : null
-    const fmt = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+    const lockedOptionId = scoredQuestion ? votes[scoredQuestion.id] || null : null
+    const revealed = Boolean(scoredQuestion) && quizRevealed
+    const showLeaderboardStep = Boolean(scoredQuestion) && hostMode && Boolean(session?.show_leaderboard)
 
     return (
       <SessionTheme theme={session.theme} className="min-h-screen bg-gradient-to-br from-background to-muted">
@@ -687,7 +668,7 @@ export default function VotingPage() {
                 <div className="min-w-0">
                   <h1 className="font-display truncate text-xl font-bold text-foreground">{session.title}</h1>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {participant?.name || participant?.external_id || 'Player'}
+                    {participant?.name || participant?.external_id || 'Participant'}
                   </p>
                 </div>
               </div>
@@ -700,13 +681,6 @@ export default function VotingPage() {
                     #{standing.participant_rank}
                   </div>
                 )}
-                {remaining != null && !done && (
-                  <div className={`rounded-full px-3 py-1 font-mono text-sm ${
-                    remaining <= 30 ? 'bg-destructive/15 text-destructive' : 'bg-muted text-foreground'
-                  }`}>
-                    {fmt(remaining)}
-                  </div>
-                )}
                 <button onClick={switchParticipant} className="text-sm font-medium text-accent hover:underline">
                   Switch
                 </button>
@@ -716,11 +690,11 @@ export default function VotingPage() {
         </header>
 
         <main className="container mx-auto px-4 py-8">
-          {done || closed ? (
+          {finished || closed ? (
             <div className="mx-auto max-w-2xl py-6">
               <div className="rounded-2xl border border-border bg-card p-8 text-center shadow-lg">
                 <p className="text-sm font-semibold uppercase tracking-widest text-accent">
-                  {timeUp || timeExpired ? "Time's up" : finished ? 'Quiz complete' : 'Quiz closed'}
+                  {closed ? 'Quiz closed' : 'Quiz complete'}
                 </p>
                 <h1 className="font-display mt-3 text-4xl font-bold text-foreground">
                   {standing?.total_score ?? 0} points
@@ -729,13 +703,24 @@ export default function VotingPage() {
                   {standing?.participant_rank
                     ? `Rank #${standing.participant_rank} of ${standing.total_participants}`
                     : ''}
-                  {elapsed != null ? ` • ${fmt(elapsed)}` : ''}
                 </p>
                 <p className="mt-4 text-sm text-muted-foreground">
                   {closed
                     ? 'The host has closed the quiz.'
-                    : 'Waiting for the host to close the quiz and reveal the correct answers.'}
+                    : 'Waiting for the host to close the quiz and show the final review.'}
                 </p>
+              </div>
+
+              <div className="mt-6 rounded-2xl border border-border bg-card p-6 shadow-lg">
+                <h2 className="font-display mb-6 text-center text-xl font-bold text-foreground">
+                  Final Leaderboard
+                </h2>
+                <Leaderboard
+                  entries={leaderboard}
+                  currentId={participant?.id}
+                  podium
+                  total={totalQuestions}
+                />
               </div>
 
               {closed && review && review.length > 0 && (
@@ -761,93 +746,108 @@ export default function VotingPage() {
                 </div>
               )}
             </div>
-          ) : !quizState ? (
-            <div className="mx-auto max-w-xl py-10">
-              <div className="rounded-2xl border border-border bg-card p-8 text-center shadow-lg">
-                <p className="text-sm font-semibold uppercase tracking-widest text-accent">Scored quiz</p>
-                <h1 className="font-display mt-3 text-3xl font-bold text-foreground">{session.title}</h1>
+          ) : lobby ? (
+            <div className="mx-auto max-w-2xl py-10 text-center">
+              <div className="rounded-2xl border border-border bg-card p-10 shadow-lg">
+                <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
+                <h2 className="font-display mt-6 text-2xl font-bold text-foreground">You're in!</h2>
                 <p className="mt-2 text-muted-foreground">
-                  Hi {participant?.name || participant?.external_id}. Ready to play?
+                  Waiting for the host to start the quiz. The first question will appear here automatically.
                 </p>
-                <dl className="mt-6 grid grid-cols-2 gap-4 text-left text-sm">
-                  <div className="rounded-lg bg-muted p-4">
-                    <dt className="text-muted-foreground">Questions</dt>
-                    <dd className="mt-1 text-2xl font-bold text-foreground">{totalQuestions}</dd>
-                  </div>
-                  <div className="rounded-lg bg-muted p-4">
-                    <dt className="text-muted-foreground">Time limit</dt>
-                    <dd className="mt-1 text-2xl font-bold text-foreground">
-                      {session.score_time_limit_seconds
-                        ? `${Math.round(session.score_time_limit_seconds / 60)} min`
-                        : 'None'}
-                    </dd>
-                  </div>
-                </dl>
-                <p className="mt-6 text-sm text-muted-foreground">
-                  Your clock starts when you press Start. Points grow with each question; only your first
-                  answer counts. Correct answers are revealed when the host closes the quiz.
-                </p>
-                {voteError && (
-                  <p className="mt-4 text-sm font-medium text-destructive">{voteError}</p>
-                )}
-                <button
-                  onClick={beginQuiz}
-                  className="mt-6 inline-flex w-full items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
-                >
-                  Start quiz
-                </button>
               </div>
             </div>
           ) : (
-            <div className="mx-auto max-w-3xl">
-              {totalQuestions > 1 && (
-                <div className="mb-6">
-                  <div className="mb-2 flex justify-between text-sm text-muted-foreground">
-                    <span>Question {currentQuestionIndex + 1} of {totalQuestions}</span>
-                    <span>{answeredCount} answered</span>
+            <div className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-[1fr_320px]">
+              <div className="min-w-0">
+                {totalQuestions > 1 && (
+                  <div className="mb-6">
+                    <div className="mb-2 flex justify-between text-sm text-muted-foreground">
+                      <span>Question {hostIndex + 1} of {totalQuestions}</span>
+                      <span>{answeredCount} answered</span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-primary to-accent transition-all duration-500"
+                        style={{ width: `${(answeredCount / totalQuestions) * 100}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-primary to-accent transition-all duration-500"
-                      style={{ width: `${(answeredCount / totalQuestions) * 100}%` }}
-                    />
+                )}
+
+                {showLeaderboardStep ? (
+                  <div className="rounded-2xl border border-border bg-card p-6 shadow-lg">
+                    <h2 className="font-display mb-6 text-center text-xl font-bold text-foreground">Leaderboard</h2>
+                    <Leaderboard entries={leaderboard} currentId={participant?.id} total={totalQuestions} />
+                    <p className="mt-6 text-center text-sm text-muted-foreground">
+                      Waiting for the host to continue…
+                    </p>
                   </div>
-                </div>
-              )}
-
-              {lastAward && lastAward.questionId === scoredQuestion?.id && (
-                <div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-300">
-                  +{lastAward.points} point{lastAward.points !== 1 ? 's' : ''}
-                </div>
-              )}
-
-              {scoredQuestion ? (
-                <PollQuestion
-                  question={scoredQuestion}
-                  options={scoredOptions}
-                  onVote={handleVote}
-                  loading={submittingVote}
-                  selectedOptionId={votes[scoredQuestion.id]}
-                  showResults={false}
-                  resultsData={null}
-                  voterName={participant?.name || participant?.external_id || null}
-                  lockAfterVote
-                />
-              ) : (
-                <p className="text-center text-muted-foreground">No questions yet.</p>
-              )}
-
-              <div className="mt-6 flex justify-end">
-                {scoredQuestion && currentQuestionIndex < totalQuestions - 1 && (
-                  <button
-                    onClick={() => setCurrentQuestionIndex((i) => i + 1)}
-                    disabled={!votes[scoredQuestion.id] || submittingVote}
-                    className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Next question
-                  </button>
+                ) : revealed ? (
+                  <div className="rounded-2xl border border-border bg-card shadow-lg p-8">
+                    <h2 className="font-display text-2xl font-bold text-foreground">{scoredQuestion.text}</h2>
+                    <p className="mt-2 text-muted-foreground">
+                      {questionResult
+                        ? questionResult.chosen_option_id
+                          ? questionResult.is_correct
+                            ? `Correct! +${questionResult.awarded_points} pts`
+                            : 'Not quite.'
+                          : 'No answer locked.'
+                        : 'Revealing…'}
+                    </p>
+                    <div className="mt-6 space-y-3">
+                      {scoredOptions.map((option) => {
+                        const isCorrectOption = questionResult?.correct_option_id === option.id
+                        const isChosenWrong = questionResult?.chosen_option_id === option.id && !isCorrectOption
+                        return (
+                          <div
+                            key={option.id}
+                            className={`rounded-xl border p-4 text-lg font-medium ${
+                              isCorrectOption
+                                ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-300'
+                                : isChosenWrong
+                                  ? 'border-destructive/50 bg-destructive/10 text-destructive'
+                                  : 'border-border text-foreground'
+                            }`}
+                          >
+                            {option.text}
+                          </div>
+                        )
+                      })}
+                    </div>
+                    <p className="mt-6 text-center text-sm text-muted-foreground">
+                      Waiting for the host to continue…
+                    </p>
+                  </div>
+                ) : scoredQuestion ? (
+                  <QuizQuestion
+                    question={scoredQuestion}
+                    options={scoredOptions}
+                    lockedOptionId={lockedOptionId}
+                    onLock={(optionId) => handleVote(optionId)}
+                    locking={submittingVote}
+                  />
+                ) : (
+                  <p className="text-center text-muted-foreground">No questions yet.</p>
+                )}
+                {voteError && (
+                  <p className="mt-4 text-sm font-medium text-destructive">{voteError}</p>
                 )}
               </div>
+
+              <aside className="rounded-2xl border border-border bg-card p-5 shadow-lg lg:sticky lg:top-6 lg:self-start">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="font-display text-lg font-bold text-foreground">Leaderboard</h2>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium text-emerald-300">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Live
+                  </span>
+                </div>
+                <Leaderboard
+                  entries={leaderboard}
+                  currentId={participant?.id}
+                  total={totalQuestions}
+                />
+              </aside>
             </div>
           )}
         </main>

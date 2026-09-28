@@ -11,7 +11,8 @@ export default function PollQuestion({
   showResults = false,
   resultsData = null,
   voterName = null,
-  lockAfterVote = false
+  lockAfterVote = false,
+  actionVerb = 'vote'
 }) {
   const [selected, setSelected] = useState(selectedOptionId)
   const [submitting, setSubmitting] = useState(false)
@@ -140,7 +141,7 @@ export default function PollQuestion({
         <div className="mt-8 text-center">
           <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-solid border-primary border-r-transparent"></div>
           <p className="mt-2 text-muted-foreground">
-            {submitting ? 'Submitting your vote...' : 'Loading...'}
+            {submitting ? `Submitting your ${actionVerb}...` : 'Loading...'}
           </p>
         </div>
       )}

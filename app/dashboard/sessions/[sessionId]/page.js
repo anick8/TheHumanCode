@@ -8,6 +8,7 @@ import SessionForm from '@/components/SessionForm'
 import QuestionEditor from '@/components/QuestionEditor'
 import AssistantPanel from '@/components/AssistantPanel'
 import { formatDateTime, getAppUrl } from '@/lib/utils'
+import { copyFor } from '@/lib/sessionCopy'
 
 const SESSION_TYPE_LABELS = { poll: 'Voting poll', quiz: 'Quiz', comments: 'Image & comments' }
 const RESULTS_MODE_LABELS = { live: 'Live results', after_all: 'After all questions' }
@@ -28,6 +29,7 @@ export default function SessionDetailPage() {
   const [questionKeys, setQuestionKeys] = useState({})
   const [assistantOpen, setAssistantOpen] = useState(false)
   const [appliedSettings, setAppliedSettings] = useState(null)
+  const typeCopy = copyFor(session?.session_type)
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
   const supabase = createClient()
@@ -602,6 +604,11 @@ export default function SessionDetailPage() {
               <span className="inline-flex items-center rounded-full bg-primary/15 px-3 py-1 text-xs font-medium text-accent capitalize">
                 {SESSION_TYPE_LABELS[session.session_type] || session.session_type}
               </span>
+              {session.session_type === 'quiz' && !session.is_scored && (
+                <span className="inline-flex items-center rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+                  Legacy · unscored
+                </span>
+              )}
               {!isComments && (
                 <span className="inline-flex items-center rounded-full bg-primary/15 px-3 py-1 text-xs font-medium text-accent">
                   {RESULTS_MODE_LABELS[session.results_mode] || session.results_mode}
@@ -735,7 +742,7 @@ export default function SessionDetailPage() {
                   Publish to attendees
                 </h3>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Edits above are held in the browser until you save. Attendees at{' '}
+                  Edits above are held in the browser until you save. Participants at{' '}
                   <code className="text-foreground">/vote/{session.slug}</code> only see
                   saved questions.
                 </p>
@@ -784,9 +791,9 @@ export default function SessionDetailPage() {
             appliedSettings={appliedSettings}
           />
 
-          {/* Voting URL */}
+          {/* Session URL */}
           <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
-            <h3 className="text-xl font-semibold text-foreground mb-4">Voting URL</h3>
+            <h3 className="text-xl font-semibold text-foreground mb-4">{typeCopy.urlLabel}</h3>
             <p className="text-muted-foreground mb-4">
               Share this URL with attendees. They can open it directly without scanning the QR code.
             </p>

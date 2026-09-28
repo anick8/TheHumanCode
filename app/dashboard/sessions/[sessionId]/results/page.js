@@ -545,7 +545,7 @@ export default function SessionResultsPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
               <div className="text-3xl font-bold text-foreground">{stats.totalVotes}</div>
-              <div className="text-sm text-muted-foreground">Total Votes</div>
+              <div className="text-sm text-muted-foreground">{isScored ? 'Total Answers' : 'Total Votes'}</div>
               <div className="mt-2 text-xs text-muted-foreground">
                 Across all questions
               </div>
@@ -574,14 +574,14 @@ export default function SessionResultsPage() {
               <div className="mb-6">
                 <h2 className="font-display text-2xl font-bold text-foreground">Most Active Question</h2>
                 <p className="mt-1 text-muted-foreground">
-                  Question with the highest voter engagement
+                  Question with the highest {isScored ? 'response' : 'voter'} engagement
                 </p>
               </div>
 
               <div className="mb-8">
                 <h3 className="text-xl font-semibold text-foreground">{topQuestion.text}</h3>
                 <div className="mt-2 text-sm text-muted-foreground">
-                  {topOptions.length} options • {stats.totalVotes} total votes
+                  {topOptions.length} options • {stats.totalVotes} total {isScored ? 'answers' : 'votes'}
                 </div>
               </div>
 
@@ -602,8 +602,8 @@ export default function SessionResultsPage() {
               <div>
                 <h3 className="text-lg font-semibold text-foreground mb-2">Share these results</h3>
                 <p className="text-accent">
-                  Use the QR code from the session page to continue collecting votes.
-                  Results update automatically as more people vote.
+                  Use the QR code from the session page to continue collecting {isScored ? 'answers' : 'votes'}.
+                  Results update automatically as more people {isScored ? 'answer' : 'vote'}.
                 </p>
                 <div className="mt-4">
                   <a
@@ -639,7 +639,7 @@ export default function SessionResultsPage() {
                   </div>
                 </div>
                 <p className="mt-2 text-muted-foreground">
-                  See how participants voted on this question.
+                  See how participants {isScored ? 'answered' : 'voted on'} this question.
                 </p>
               </div>
 
@@ -661,7 +661,7 @@ export default function SessionResultsPage() {
                       <thead>
                         <tr>
                           <th className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">Option</th>
-                          <th className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">Votes</th>
+                          <th className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">{isScored ? 'Answers' : 'Votes'}</th>
                           <th className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">Percentage</th>
                         </tr>
                       </thead>

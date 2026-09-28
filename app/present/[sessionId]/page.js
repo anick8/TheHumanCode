@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { QRCodeSVG } from 'qrcode.react'
 import { createClient } from '@/lib/supabase/client'
 import ResultsChart from '@/components/ResultsChart'
+import Leaderboard from '@/components/Leaderboard'
 import { getAppUrl } from '@/lib/utils'
 import SessionTheme from '@/components/SessionTheme'
 import SessionLogo from '@/components/SessionLogo'
@@ -37,6 +38,12 @@ export default function PresentPage() {
   const [leaderboard, setLeaderboard] = useState([])
   const [commentCounts, setCommentCounts] = useState({}) // {questionId: count}
   const [commentWall, setCommentWall] = useState([]) // owner-only, current image
+  // Scored quiz: the answer key (owner-only, fetched once) to highlight the
+  // correct option at reveal, and how many participants have locked an
+  // answer for the open question - a total only, never the per-option split,
+  // so it can be shown before reveal without hinting at the answer.
+  const [correctOptionByQuestion, setCorrectOptionByQuestion] = useState({})
+  const [lockedCount, setLockedCount] = useState(0)
 
   useEffect(() => {
     if (!sessionId) return
@@ -71,11 +78,24 @@ export default function PresentPage() {
           }
         }
 
+        // The answer key, for the reveal stage's correct-option highlight.
+        // Owner-only under RLS; harmless to fetch upfront since it never
+        // reaches an attendee.
+        const keyMap = {}
+        if (sessionData.is_scored && questionIds.length > 0) {
+          const { data: keysData } = await supabase
+            .from('question_keys')
+            .select('question_id, option_id')
+            .in('question_id', questionIds)
+          for (const k of keysData || []) keyMap[k.question_id] = k.option_id
+        }
+
         if (cancelled) return
         setUserId(user?.id ?? null)
         setSession(sessionData)
         setQuestions(questionsData || [])
         setOptionsByQuestion(optionsMap)
+        setCorrectOptionByQuestion(keyMap)
 
         // Opening this page directly (not via Start) on a session that isn't
         // presenting puts attendees in the lobby, same as pressing Start.
@@ -181,8 +201,9 @@ export default function PresentPage() {
 
   // Lobby for identified sessions: a public join count via the aggregate RPC,
   // plus the live name wall for the owner (RLS keeps participant rows private
-  // to everyone else).
-  const lobby = session?.is_scored ? true : session?.current_question_index === -1
+  // to everyone else). A scored quiz is host-paced like everything else now,
+  // so -1 means lobby for it too.
+  const lobby = session?.current_question_index === -1
   const identified = session?.participation_mode === 'identified'
   const isScored = Boolean(session?.is_scored)
   useEffect(() => {
@@ -223,7 +244,18 @@ export default function PresentPage() {
         .eq('session_id', sessionId)
         .order('score', { ascending: false })
         .order('finished_at', { ascending: true, nullsFirst: false })
-      if (!cancelled) setLeaderboard(data || [])
+      if (!cancelled) {
+        setLeaderboard(
+          (data || []).map((p, i) => ({
+            participant_id: p.id,
+            display_name: p.name || p.external_id || 'Player',
+            score: p.score,
+            answered_count: p.answered_count,
+            finished_at: p.finished_at,
+            rank: i + 1,
+          }))
+        )
+      }
     }
     load()
     const interval = setInterval(load, 3000)
@@ -232,6 +264,31 @@ export default function PresentPage() {
       clearInterval(interval)
     }
   }, [isScored, sessionId])
+
+  // How many participants have locked an answer for the currently open
+  // question - a total only, so it never leaks the option split before
+  // reveal. Stops polling once revealed (get_vote_counts takes over).
+  const currentQuestionId = inQuestion ? questions[session?.current_question_index]?.id : null
+  useEffect(() => {
+    if (!isScored || !currentQuestionId || revealed) {
+      setLockedCount(0)
+      return
+    }
+    let cancelled = false
+    const load = async () => {
+      const { count } = await supabase
+        .from('votes')
+        .select('id', { count: 'exact', head: true })
+        .eq('question_id', currentQuestionId)
+      if (!cancelled) setLockedCount(count || 0)
+    }
+    load()
+    const interval = setInterval(load, 3000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [isScored, currentQuestionId, revealed])
 
   // RLS turns an unauthorized UPDATE into "0 rows affected" rather than an
   // error, so check the returned rows - otherwise a non-owner's click would
@@ -262,15 +319,47 @@ export default function PresentPage() {
   const isOwner = Boolean(userId && session && userId === session.owner_id)
   // Comments sessions have no results reveal step - each image is one Next.
   const showBetween = !isComments && session?.results_mode === 'live'
-  const canAdvance = isOwner && total > 0 && index < total && !advancing
+  const closed = Boolean(session?.scored_closed)
+  const showLeaderboardStep = Boolean(session?.show_leaderboard)
+  const canAdvance = isOwner && total > 0 && index < total && !advancing && !closed
   // In Live Results mode, a question's first Next reveals its results.
   const revealStep = showBetween && !revealed && index >= 0 && index < total
 
-  const goNext = () => {
-    if (isScored) return
+  // A scored quiz's reveal is a judged, scored action, not a plain column
+  // flip - reveal_quiz_question() does the judging server-side.
+  const revealQuestion = async () => {
+    setAdvancing(true)
+    setError(null)
+    const { error: rpcError } = await supabase.rpc('reveal_quiz_question', { p_session_id: sessionId })
+    if (rpcError) {
+      setError(rpcError.message || 'Could not reveal this question.')
+      setAdvancing(false)
+      return false
+    }
+    setSession((prev) => (prev ? { ...prev, results_revealed: true, show_leaderboard: false } : prev))
+    setAdvancing(false)
+    return true
+  }
+
+  const goNext = async () => {
     if (!canAdvance) return
-    if (revealStep) updateSession({ results_revealed: true })
-    else updateSession({ current_question_index: index + 1, results_revealed: false })
+
+    // Host-paced quiz, on a real question: Reveal -> Leaderboard -> Next/End.
+    if (isScored && index >= 0) {
+      if (!revealed) {
+        await revealQuestion()
+      } else if (!showLeaderboardStep) {
+        await updateSession({ show_leaderboard: true })
+      } else if (index < total - 1) {
+        await updateSession({ current_question_index: index + 1, results_revealed: false, show_leaderboard: false })
+      } else {
+        await updateSession({ scored_closed: true })
+      }
+      return
+    }
+
+    if (revealStep) await updateSession({ results_revealed: true })
+    else await updateSession({ current_question_index: index + 1, results_revealed: false })
   }
 
   // Presentation clickers send PageDown / ArrowRight.
@@ -317,16 +406,20 @@ export default function PresentPage() {
   const questionComments = currentQuestion ? commentCounts[currentQuestion.id] || 0 : 0
   const votesLabel = isComments
     ? `${questionComments} comment${questionComments !== 1 ? 's' : ''}`
-    : `${questionVotes} vote${questionVotes !== 1 ? 's' : ''}`
+    : isScored
+      ? `${lockedCount} locked`
+      : `${questionVotes} vote${questionVotes !== 1 ? 's' : ''}`
 
   const nextLabel =
-    index < 0
-      ? (isComments ? 'Show first image' : 'Start first question')
-      : revealStep
-        ? 'Show results'
-        : index < total - 1
-          ? (isComments ? 'Next image' : 'Next question')
-          : (isComments ? 'End session' : 'End poll')
+    isScored && index >= 0
+      ? (!revealed ? 'Reveal answer' : !showLeaderboardStep ? 'Show leaderboard' : index < total - 1 ? 'Next question' : 'End quiz')
+      : index < 0
+        ? (isComments ? 'Show first image' : isScored ? 'Start quiz' : 'Start first question')
+        : revealStep
+          ? 'Show results'
+          : index < total - 1
+            ? (isComments ? 'Next image' : 'Next question')
+            : (isComments ? 'End session' : 'End poll')
 
   return (
     <SessionTheme theme={session.theme} className="min-h-screen flex flex-col">
@@ -337,15 +430,17 @@ export default function PresentPage() {
         <div className="min-w-0">
           <p className="truncate font-display text-lg font-bold text-foreground">{session.title}</p>
           <p className="text-sm text-muted-foreground">
-            {session.is_scored
-              ? (session.scored_closed ? 'Quiz closed · Final results' : 'Scored quiz · Live leaderboard')
+            {closed
+              ? 'Quiz closed · Final results'
               : index < 0
                 ? 'Waiting room'
                 : index < total
                   ? isComments
                     ? `Image ${index + 1} of ${total}`
-                    : `Question ${index + 1} of ${total}${revealed ? ' · Results' : ''}`
-                  : isComments ? 'Session ended' : 'Poll ended'}
+                    : isScored
+                      ? `Question ${index + 1} of ${total}${showLeaderboardStep ? ' · Leaderboard' : revealed ? ' · Revealed' : ''}`
+                      : `Question ${index + 1} of ${total}${revealed ? ' · Results' : ''}`
+                  : isComments ? 'Session ended' : isScored ? 'Quiz complete' : 'Poll ended'}
           </p>
         </div>
         </div>
@@ -365,69 +460,13 @@ export default function PresentPage() {
 
       {/* Stage */}
       <main className="flex flex-1 items-center justify-center px-6 py-10">
-        {isScored ? (
-          <div className="w-full max-w-4xl">
-            {!session.scored_closed ? (
-              <>
-                <div className="text-center">
-                  <p className="text-sm font-semibold uppercase tracking-widest text-accent">Scored quiz · Live</p>
-                  <h1 className="mt-3 font-display text-4xl font-bold text-foreground md:text-5xl">{session.title}</h1>
-                  <p className="mt-3 text-muted-foreground">
-                    {participantCount} {participantCount === 1 ? 'participant' : 'participants'} joined
-                    {session.score_time_limit_seconds
-                      ? ` · ${Math.round(session.score_time_limit_seconds / 60)} min limit`
-                      : ' · no time limit'}
-                  </p>
-                </div>
-                <div className="mt-8 rounded-2xl border border-border bg-card p-6">
-                  <h2 className="font-display mb-4 text-2xl font-bold text-foreground">Leaderboard</h2>
-                  {leaderboard.length === 0 ? (
-                    <p className="text-muted-foreground">Waiting for players to join and answer…</p>
-                  ) : (
-                    <ol className="space-y-2">
-                      {leaderboard.map((p, i) => (
-                        <li key={p.id} className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
-                          <span className="flex items-center gap-3">
-                            <span className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold ${
-                              i === 0 ? 'bg-amber-400/20 text-amber-300' : 'bg-muted text-foreground'
-                            }`}>
-                              {i + 1}
-                            </span>
-                            <span className="font-medium text-foreground">{p.name || p.external_id || 'Player'}</span>
-                          </span>
-                          <span className="flex items-center gap-4 text-sm">
-                            <span className="text-muted-foreground">{p.answered_count}/{questions.length}</span>
-                            <span className="font-bold text-accent">{p.score} pts</span>
-                          </span>
-                        </li>
-                      ))}
-                    </ol>
-                  )}
-                </div>
-              </>
-            ) : (
-              <div className="text-center">
-                <p className="text-sm font-semibold uppercase tracking-widest text-accent">Final results</p>
-                <h1 className="mt-3 font-display text-4xl font-bold text-foreground md:text-5xl">{session.title}</h1>
-                <div className="mt-10 space-y-4">
-                  {leaderboard.slice(0, 3).map((p, i) => (
-                    <div
-                      key={p.id}
-                      className={`mx-auto flex max-w-xl items-center justify-between rounded-2xl border px-8 py-6 ${
-                        i === 0 ? 'border-amber-400/40 bg-amber-400/10' : 'border-border bg-card'
-                      }`}
-                    >
-                      <span className="flex items-center gap-4">
-                        <span className="font-display text-3xl font-bold text-accent">{i + 1}</span>
-                        <span className="text-2xl font-semibold text-foreground">{p.name || p.external_id || 'Player'}</span>
-                      </span>
-                      <span className="font-display text-3xl font-bold text-foreground">{p.score}</span>
-                    </div>
-                  ))}
-                  {leaderboard.length === 0 && <p className="text-muted-foreground">No participants.</p>}
-                </div>
-              </div>
-            )}
+        {closed ? (
+          <div className="text-center w-full max-w-4xl">
+            <p className="text-sm font-semibold uppercase tracking-widest text-accent">Final results</p>
+            <h1 className="mt-3 font-display text-4xl font-bold text-foreground md:text-5xl">{session.title}</h1>
+            <div className="mt-10">
+              <Leaderboard entries={leaderboard} podium total={total} />
+            </div>
           </div>
         ) : index < 0 ? (
           <div className="text-center">
@@ -505,6 +544,60 @@ export default function PresentPage() {
               )}
             </div>
           </div>
+        ) : currentQuestion && isScored ? (
+          <div className="w-full max-w-4xl">
+            <p className="text-sm font-semibold uppercase tracking-widest text-accent">
+              Question {index + 1} of {total}
+            </p>
+            <h1 className="mt-4 font-display text-4xl font-bold leading-tight text-foreground md:text-5xl">
+              {currentQuestion.text}
+            </h1>
+
+            {showLeaderboardStep ? (
+              <div className="mt-10 rounded-2xl border border-border bg-card p-6">
+                <h2 className="font-display mb-4 text-2xl font-bold text-foreground">Leaderboard</h2>
+                <Leaderboard entries={leaderboard} total={total} />
+              </div>
+            ) : (
+              <div className="mt-10 grid gap-4 sm:grid-cols-2">
+                {currentOptions.map((option, i) => {
+                  const isCorrectOption = revealed && correctOptionByQuestion[currentQuestion.id] === option.id
+                  return (
+                    <div
+                      key={option.id}
+                      className={`flex items-center rounded-xl border px-6 py-5 text-xl ${
+                        isCorrectOption
+                          ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-300'
+                          : 'border-border bg-card text-foreground'
+                      }`}
+                    >
+                      <span className="mr-4 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/15 font-display text-accent">
+                        {String.fromCharCode(65 + i)}
+                      </span>
+                      {option.text}
+                      {revealed && (
+                        <span className="ml-auto text-base font-semibold text-muted-foreground">
+                          {voteCounts[option.id] || 0}
+                        </span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {!revealed && !showLeaderboardStep && (
+              <div className="mt-10 flex justify-center">
+                <span className="inline-flex items-center gap-3 rounded-full border border-border bg-card px-6 py-3 text-2xl font-semibold text-foreground">
+                  <span className="relative flex h-3 w-3">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75"></span>
+                    <span className="relative inline-flex h-3 w-3 rounded-full bg-primary"></span>
+                  </span>
+                  {votesLabel}
+                </span>
+              </div>
+            )}
+          </div>
         ) : currentQuestion ? (
           <div className="w-full max-w-5xl">
             <p className="text-sm font-semibold uppercase tracking-widest text-accent">
@@ -547,10 +640,10 @@ export default function PresentPage() {
         ) : (
           <div className="text-center">
             <h1 className="font-display text-4xl font-bold text-foreground md:text-6xl">
-              {isComments ? 'Thanks for commenting!' : 'Thanks for voting!'}
+              {isComments ? 'Thanks for commenting!' : isScored ? 'Quiz complete!' : 'Thanks for voting!'}
             </h1>
             <p className="mt-4 text-lg text-muted-foreground">
-              {isComments ? 'The session has ended.' : 'Attendees are now seeing the results.'}
+              {isComments ? 'The session has ended.' : isScored ? 'Close the quiz to show final results.' : 'Attendees are now seeing the results.'}
             </p>
             {isOwner && (
               <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
@@ -581,18 +674,16 @@ export default function PresentPage() {
       </main>
 
       {/* Controls - the session owner only */}
-      {isScored ? (
+      {closed ? (
         <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-border px-6 py-4">
-          <p className="text-sm text-muted-foreground">
-            Scored quiz · participants play at their own pace
-          </p>
+          <p className="text-sm text-muted-foreground">Quiz closed · final results shown</p>
           {isOwner ? (
             <button
-              onClick={() => updateSession({ scored_closed: !session.scored_closed })}
+              onClick={() => updateSession({ scored_closed: false })}
               disabled={advancing}
               className="rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
             >
-              {session.scored_closed ? 'Reopen quiz' : 'Close quiz & show winners'}
+              Reopen quiz
             </button>
           ) : (
             <p className="text-sm text-muted-foreground">Only the session owner can control this presentation.</p>
@@ -605,14 +696,16 @@ export default function PresentPage() {
               <p className="text-sm text-muted-foreground">
                 {isComments
                   ? 'Attendees comment on the open image only'
-                  : showBetween ? 'Live results: shown after each question' : 'Results shown after the last question'}
+                  : isScored
+                    ? 'Host-paced: lock, reveal, then leaderboard'
+                    : showBetween ? 'Live results: shown after each question' : 'Results shown after the last question'}
                 {' · '}
                 <Link href={`/dashboard/sessions/${sessionId}`} className="text-accent hover:underline">
                   Change
                 </Link>
               </p>
               <div className="flex items-center gap-4">
-              {currentQuestion && (
+              {currentQuestion && !(isScored && showLeaderboardStep) && (
                 <span className="text-sm font-medium text-muted-foreground">{votesLabel}</span>
               )}
               <button
