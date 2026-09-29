@@ -24,6 +24,9 @@ export default function QuestionEditor({
   const [imageError, setImageError] = useState(null)
   const [editingQuestion, setEditingQuestion] = useState(null)
   const [expandedQuestion, setExpandedQuestion] = useState(null)
+  const [editingLabel, setEditingLabel] = useState(null) // clue id whose QR label is being edited inline
+  const [labelDraft, setLabelDraft] = useState('')
+  const labelEditCancelled = useRef(false)
   const [exitingQuestions, setExitingQuestions] = useState(() => new Set())
   const [exitingOptions, setExitingOptions] = useState(() => new Set())
 
@@ -419,11 +422,61 @@ export default function QuestionEditor({
                                 {index + 1}
                               </span>
                               <div className="min-w-0">
-                                <h3 className="text-lg font-semibold text-foreground">
-                                  {isTreasureHunt
-                                    ? (question.clue_label?.trim() || `Clue #${index + 1}`)
-                                    : (question.text || 'Untitled Question')}
-                                </h3>
+                                {isTreasureHunt ? (
+                                  editingLabel === question.id ? (
+                                    <input
+                                      type="text"
+                                      value={labelDraft}
+                                      autoFocus
+                                      maxLength={60}
+                                      placeholder={`Clue #${index + 1}`}
+                                      aria-label="QR label"
+                                      onClick={(e) => e.stopPropagation()}
+                                      onChange={(e) => setLabelDraft(e.target.value)}
+                                      onBlur={() => {
+                                        if (!labelEditCancelled.current) {
+                                          updateQuestion(question.id, 'clue_label', labelDraft.trim())
+                                        }
+                                        labelEditCancelled.current = false
+                                        setEditingLabel(null)
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() }
+                                        if (e.key === 'Escape') {
+                                          e.preventDefault()
+                                          labelEditCancelled.current = true
+                                          e.currentTarget.blur()
+                                        }
+                                      }}
+                                      className="w-full max-w-xs text-lg font-semibold text-foreground bg-transparent border-b-2 border-ring focus:outline-none"
+                                    />
+                                  ) : (
+                                    <div className="group flex items-center gap-2">
+                                      <h3 className="text-lg font-semibold text-foreground">
+                                        {question.clue_label?.trim() || `Clue #${index + 1}`}
+                                      </h3>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          setLabelDraft(question.clue_label || '')
+                                          setEditingLabel(question.id)
+                                        }}
+                                        className="inline-flex items-center p-1.5 text-muted-foreground hover:text-accent hover:bg-muted rounded-lg sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                                        title="Edit QR label"
+                                        aria-label="Edit QR label"
+                                      >
+                                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                        </svg>
+                                      </button>
+                                    </div>
+                                  )
+                                ) : (
+                                  <h3 className="text-lg font-semibold text-foreground">
+                                    {question.text || 'Untitled Question'}
+                                  </h3>
+                                )}
                                 <p className="mt-1 text-sm text-muted-foreground">
                                   {isTreasureHunt
                                     ? (question.text?.trim() || 'No message yet')
@@ -542,23 +595,6 @@ export default function QuestionEditor({
                             />
 
                             {/* Edit Question */}
-                            {isEditing && isTreasureHunt && (
-                              <div className="mb-6">
-                                <label className="block text-sm font-medium text-foreground mb-2">QR label</label>
-                                <input
-                                  type="text"
-                                  value={question.clue_label || ''}
-                                  maxLength={60}
-                                  onChange={(e) => updateQuestion(question.id, 'clue_label', e.target.value)}
-                                  className="block w-full rounded-lg border border-border px-4 py-3 text-foreground shadow-sm focus:border-ring focus:ring-2 focus:ring-ring focus:ring-opacity-20"
-                                  placeholder={`Clue #${index + 1}`}
-                                />
-                                <p className="mt-2 text-sm text-muted-foreground">
-                                  Printed under this clue's QR code. Finders never see it.
-                                </p>
-                              </div>
-                            )}
-
                             {isEditing && (
                               <div className="mb-6">
                                 <label className="block text-sm font-medium text-foreground mb-2">
