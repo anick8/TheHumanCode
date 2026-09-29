@@ -154,7 +154,7 @@ export default function DashboardHome() {
           Create with AI
         </label>
         <p className="mt-1 text-xs text-muted-foreground">
-          Describe the quiz you want — topic, audience, and how many questions. You&apos;ll review
+          Describe the quiz you want topic, audience, and how many questions. You&apos;ll review
           every question before anything is saved.
         </p>
         <div
@@ -163,7 +163,7 @@ export default function DashboardHome() {
           className="mt-3 inline-flex rounded-lg border border-border bg-muted p-1"
         >
           {[
-            { value: 'poll', label: 'Voting poll', hint: 'Anonymous — no name needed' },
+            { value: 'poll', label: 'Voting poll', hint: 'Anonymous no name needed' },
             { value: 'quiz', label: 'Quiz', hint: 'Participants give a name' },
           ].map((option) => (
             <button

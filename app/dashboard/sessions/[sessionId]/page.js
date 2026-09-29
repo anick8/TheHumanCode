@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import QRCodeDisplay from '@/components/QRCodeDisplay'
@@ -12,6 +12,29 @@ import { copyFor } from '@/lib/sessionCopy'
 
 const SESSION_TYPE_LABELS = { poll: 'Voting poll', quiz: 'Quiz', comments: 'Image & comments', treasure_hunt: 'Treasure hunt' }
 const RESULTS_MODE_LABELS = { live: 'Live results', after_all: 'After all questions' }
+
+// Comparable form of the editor's contents, used to tell whether anything
+// differs from what was last loaded/saved. Only fields the editor can change
+// (and saveQuestions writes) are included; blank/absent values are normalised
+// so a null column and an untouched empty input compare equal.
+function snapshotEditor(questions, optionsByQuestion, questionKeys) {
+  return JSON.stringify(
+    questions.map((q) => ({
+      id: q.id,
+      text: q.text ?? '',
+      order_index: q.order_index,
+      points: q.points ?? null,
+      image_url: q.image_url || null,
+      clue_label: q.clue_label?.trim() || null,
+      key: questionKeys[q.id] ?? null,
+      options: (optionsByQuestion[q.id] || []).map((o) => ({
+        id: o.id,
+        text: o.text ?? '',
+        order_index: o.order_index,
+      })),
+    }))
+  )
+}
 
 export default function SessionDetailPage() {
   const params = useParams()
@@ -27,9 +50,15 @@ export default function SessionDetailPage() {
   const [userId, setUserId] = useState(null)
   const [hasVotes, setHasVotes] = useState(false)
   const [questionKeys, setQuestionKeys] = useState({})
+  // Editor contents as last loaded/saved; null until the first load finishes.
+  const [savedSnapshot, setSavedSnapshot] = useState(null)
   const [assistantOpen, setAssistantOpen] = useState(false)
   const [appliedSettings, setAppliedSettings] = useState(null)
   const typeCopy = copyFor(session?.session_type)
+  const questionsDirty = useMemo(
+    () => savedSnapshot !== null && snapshotEditor(questions, optionsByQuestion, questionKeys) !== savedSnapshot,
+    [savedSnapshot, questions, optionsByQuestion, questionKeys]
+  )
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
   const supabase = createClient()
@@ -104,6 +133,7 @@ export default function SessionDetailPage() {
       setOptionsByQuestion(optionsMap)
 
       const questionIds = loadedQuestions.map((q) => q.id)
+      let loadedKeys = {}
 
       // Answer keys are owner-only; the select returns nothing for non-owners.
       if (questionIds.length > 0) {
@@ -115,9 +145,11 @@ export default function SessionDetailPage() {
         const keyMap = {}
         for (const key of keysData || []) keyMap[key.question_id] = key.option_id
         setQuestionKeys(keyMap)
+        loadedKeys = keyMap
       } else {
         setQuestionKeys({})
       }
+      setSavedSnapshot(snapshotEditor(loadedQuestions, optionsMap, loadedKeys))
 
       // The session type is locked once voting has started (the DB trigger is
       // the real guard; this drives the disabled form state).
@@ -135,6 +167,7 @@ export default function SessionDetailPage() {
       // Tables might not exist yet - that's ok
       setQuestions([])
       setOptionsByQuestion({})
+      setSavedSnapshot(snapshotEditor([], {}, {}))
     } finally {
       setLoading(false)
     }
@@ -176,9 +209,11 @@ export default function SessionDetailPage() {
       if (data?.[0]) {
         setSession(data[0])
       }
+      return true
     } catch (error) {
       console.error('Error updating session:', error)
       alert('Failed to update session. Please try again.')
+      return false
     }
   }
 
@@ -763,8 +798,8 @@ export default function SessionDetailPage() {
               </div>
               <button
                 onClick={saveQuestions}
-                disabled={saving}
-                className="inline-flex shrink-0 items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50"
+                disabled={saving || !questionsDirty}
+                className="inline-flex shrink-0 items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving ? 'Saving…' : 'Save Questions'}
               </button>
@@ -778,8 +813,12 @@ export default function SessionDetailPage() {
 
             {saveMessage && (
               <div className="mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
-                <p className="text-sm font-medium text-emerald-300">{saveMessage}</p>
+                <p role="status" className="text-sm font-medium text-emerald-300">{saveMessage}</p>
               </div>
+            )}
+
+            {!questionsDirty && !saving && !saveMessage && !saveError && savedSnapshot !== null && (
+              <p className="mt-4 text-right text-sm text-muted-foreground">No unsaved changes</p>
             )}
           </div>
         </div>

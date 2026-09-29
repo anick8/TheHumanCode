@@ -7,7 +7,7 @@ import { generateSlug } from '@/lib/utils'
 import { copyFor } from '@/lib/sessionCopy'
 
 export default function SessionForm({ onSubmit, initialData = null, loading = false, lockParticipation = false, appliedSettings = null }) {
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState(() => ({
     title: initialData?.title || '',
     slug: initialData?.slug || generateSlug(),
     results_mode: initialData?.results_mode || 'live',
@@ -18,8 +18,13 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
     is_scored: initialData?.is_scored ?? false,
     score_time_limit_seconds: initialData?.score_time_limit_seconds ?? null,
     is_active: initialData?.is_active ?? true,
-  })
+  }))
   const [formError, setFormError] = useState(null)
+  // Last-saved values, so Save is only enabled for real edits. Editing an
+  // existing session only; creating always has something to submit.
+  const [savedData, setSavedData] = useState(formData)
+  const [justSaved, setJustSaved] = useState(false)
+  const isDirty = !initialData || Object.keys(formData).some((key) => formData[key] !== savedData[key])
   const typeCopy = copyFor(formData.session_type)
 
   const updateField = (field, value) => {
@@ -74,7 +79,12 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
     })
   }, [appliedSettings?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleSubmit = (e) => {
+  // Any new edit retires the "Changes saved" confirmation.
+  useEffect(() => {
+    if (isDirty) setJustSaved(false)
+  }, [isDirty])
+
+  const handleSubmit = async (e) => {
     e.preventDefault()
     if (
       formData.participation_mode === 'identified' &&
@@ -85,7 +95,11 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
       return
     }
     setFormError(null)
-    onSubmit(formData)
+    const ok = await onSubmit(formData)
+    if (initialData && ok !== false) {
+      setSavedData(formData)
+      setJustSaved(true)
+    }
   }
 
   const regenerateSlug = () => {
@@ -444,8 +458,8 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
           </button>
           <button
             type="submit"
-            disabled={loading}
-            className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50"
+            disabled={loading || !isDirty}
+            className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? (
               <>
@@ -462,6 +476,16 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
             )}
           </button>
         </div>
+        {initialData && (justSaved && !isDirty ? (
+          <p role="status" className="-mt-4 flex items-center justify-end gap-1.5 text-sm font-medium text-green-600">
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            Changes saved
+          </p>
+        ) : !isDirty ? (
+          <p className="-mt-4 text-right text-sm text-muted-foreground">No unsaved changes</p>
+        ) : null)}
       </form>
     </div>
   )
