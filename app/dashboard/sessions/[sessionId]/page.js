@@ -10,7 +10,7 @@ import AssistantPanel from '@/components/AssistantPanel'
 import { formatDateTime, getAppUrl } from '@/lib/utils'
 import { copyFor } from '@/lib/sessionCopy'
 
-const SESSION_TYPE_LABELS = { poll: 'Voting poll', quiz: 'Quiz', comments: 'Image & comments' }
+const SESSION_TYPE_LABELS = { poll: 'Voting poll', quiz: 'Quiz', comments: 'Image & comments', treasure_hunt: 'Treasure hunt' }
 const RESULTS_MODE_LABELS = { live: 'Live results', after_all: 'After all questions' }
 
 export default function SessionDetailPage() {
@@ -41,6 +41,7 @@ export default function SessionDetailPage() {
   const seedPrompt = searchParams.get('prompt')
   const isOwner = Boolean(userId && session && userId === session.owner_id)
   const isComments = session?.session_type === 'comments'
+  const isTreasureHunt = session?.session_type === 'treasure_hunt'
 
   useEffect(() => {
     if (sessionId) {
@@ -360,6 +361,8 @@ export default function SessionDetailPage() {
         // poll/quiz rows leaves the column untouched.
         const fields = { text, order_index: index, points }
         if (isComments) fields.image_url = question.image_url || null
+        // Organizer-only QR caption; blank clears it back to "Clue #N".
+        if (isTreasureHunt) fields.clue_label = question.clue_label?.trim() || null
 
         if (String(question.id).startsWith('temp_')) {
           const { data, error } = await supabase
@@ -379,10 +382,11 @@ export default function SessionDetailPage() {
         }
       }
 
-      // Comments sessions have no options or answer key - each question is
-      // just an image + prompt, so skip both passes below entirely.
+      // Comments and Treasure Hunt questions have no options or answer key -
+      // a comments question is an image + prompt, a clue is just a message -
+      // so skip both passes below entirely.
       const optionIdMap = {}
-      for (const question of isComments ? [] : questions) {
+      for (const question of (isComments || isTreasureHunt) ? [] : questions) {
         const realQuestionId = questionIdMap[question.id]
         if (!realQuestionId) continue
         optionIdMap[question.id] = {}
@@ -609,7 +613,7 @@ export default function SessionDetailPage() {
                   Legacy · unscored
                 </span>
               )}
-              {!isComments && (
+              {!isComments && !isTreasureHunt && (
                 <span className="inline-flex items-center rounded-full bg-primary/15 px-3 py-1 text-xs font-medium text-accent">
                   {RESULTS_MODE_LABELS[session.results_mode] || session.results_mode}
                 </span>
@@ -617,19 +621,21 @@ export default function SessionDetailPage() {
             </div>
           </div>
           <div className="flex flex-wrap gap-3">
-            <button
-              onClick={startPresenting}
-              className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
-            >
-              <svg className="mr-2 h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-              </svg>
-              {session.current_question_index !== null &&
-              session.current_question_index !== undefined &&
-              session.current_question_index < questions.length
-                ? 'Resume'
-                : 'Start'}
-            </button>
+            {!isTreasureHunt && (
+              <button
+                onClick={startPresenting}
+                className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
+              >
+                <svg className="mr-2 h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                </svg>
+                {session.current_question_index !== null &&
+                session.current_question_index !== undefined &&
+                session.current_question_index < questions.length
+                  ? 'Resume'
+                  : 'Start'}
+              </button>
+            )}
             {isOwner && (
               <button
                 onClick={() => setAssistantOpen(true)}
@@ -650,15 +656,17 @@ export default function SessionDetailPage() {
               </svg>
               Design
             </button>
-            <button
-              onClick={viewResults}
-              className="inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors"
-            >
-              <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-              View Results
-            </button>
+            {!isTreasureHunt && (
+              <button
+                onClick={viewResults}
+                className="inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors"
+              >
+                <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                View Results
+              </button>
+            )}
             <button
               onClick={deleteSession}
               className="inline-flex items-center justify-center rounded-lg border border-destructive/40 bg-card px-6 py-3 text-base font-semibold text-destructive shadow-sm hover:bg-destructive/10 transition-colors"
@@ -699,7 +707,7 @@ export default function SessionDetailPage() {
             <svg className="mr-2 h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
             </svg>
-            QR Code
+            {isTreasureHunt ? 'Clue QR Codes' : 'QR Code'}
           </button>
           <button
             onClick={() => setActiveTab('settings')}
@@ -742,9 +750,15 @@ export default function SessionDetailPage() {
                   Publish to attendees
                 </h3>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Edits above are held in the browser until you save. Participants at{' '}
-                  <code className="text-foreground">/vote/{session.slug}</code> only see
-                  saved questions.
+                  {isTreasureHunt ? (
+                    'Edits above are held in the browser until you save. Only saved clues get a working QR code.'
+                  ) : (
+                    <>
+                      Edits above are held in the browser until you save. Participants at{' '}
+                      <code className="text-foreground">/vote/{session.slug}</code> only see
+                      saved questions.
+                    </>
+                  )}
                 </p>
               </div>
               <button
@@ -772,7 +786,23 @@ export default function SessionDetailPage() {
       )}
 
       {activeTab === 'qr' && (
-        <QRCodeDisplay slug={session.slug} />
+        isTreasureHunt ? (
+          <div className="rounded-2xl border border-border bg-card p-8 shadow-sm text-center">
+            <h3 className="text-xl font-semibold text-foreground mb-2">Clue QR codes</h3>
+            <p className="text-muted-foreground mb-6 max-w-xl mx-auto">
+              Each clue gets its own QR code, generated from the clues saved above. Open the printable
+              sheet to download or print them for hiding around the venue.
+            </p>
+            <button
+              onClick={() => router.push(`/dashboard/sessions/${sessionId}/clues`)}
+              className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
+            >
+              Open Printable Sheet
+            </button>
+          </div>
+        ) : (
+          <QRCodeDisplay slug={session.slug} />
+        )
       )}
 
       {activeTab === 'settings' && (
@@ -791,38 +821,41 @@ export default function SessionDetailPage() {
             appliedSettings={appliedSettings}
           />
 
-          {/* Session URL */}
-          <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
-            <h3 className="text-xl font-semibold text-foreground mb-4">{typeCopy.urlLabel}</h3>
-            <p className="text-muted-foreground mb-4">
-              Share this URL with attendees. They can open it directly without scanning the QR code.
-            </p>
-            <div className="bg-muted rounded-lg p-4">
-              <code className="text-foreground break-all">
-                {getAppUrl()}/vote/{session.slug}
-              </code>
+          {/* Session URL - a Treasure Hunt has no single shared URL: each clue
+              is only reachable through its own QR code, from the tab above. */}
+          {!isTreasureHunt && (
+            <div className="rounded-2xl border border-border bg-card p-8 shadow-sm">
+              <h3 className="text-xl font-semibold text-foreground mb-4">{typeCopy.urlLabel}</h3>
+              <p className="text-muted-foreground mb-4">
+                Share this URL with attendees. They can open it directly without scanning the QR code.
+              </p>
+              <div className="bg-muted rounded-lg p-4">
+                <code className="text-foreground break-all">
+                  {getAppUrl()}/vote/{session.slug}
+                </code>
+              </div>
+              <div className="mt-4 flex space-x-4">
+                <button
+                  onClick={() => navigator.clipboard.writeText(`${getAppUrl()}/vote/${session.slug}`)}
+                  className="inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors"
+                >
+                  <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  Copy URL
+                </button>
+                <button
+                  onClick={() => window.open(`/vote/${session.slug}`, '_blank')}
+                  className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
+                >
+                  <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                  Open Voting Page
+                </button>
+              </div>
             </div>
-            <div className="mt-4 flex space-x-4">
-              <button
-                onClick={() => navigator.clipboard.writeText(`${getAppUrl()}/vote/${session.slug}`)}
-                className="inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors"
-              >
-                <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-                Copy URL
-              </button>
-              <button
-                onClick={() => window.open(`/vote/${session.slug}`, '_blank')}
-                className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
-              >
-                <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                </svg>
-                Open Voting Page
-              </button>
-            </div>
-          </div>
+          )}
         </div>
       )}
 

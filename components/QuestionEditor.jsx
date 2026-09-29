@@ -19,6 +19,7 @@ export default function QuestionEditor({
   loading = false
 }) {
   const isComments = sessionType === 'comments'
+  const isTreasureHunt = sessionType === 'treasure_hunt'
   const [uploadingImage, setUploadingImage] = useState(null) // questionId currently uploading
   const [imageError, setImageError] = useState(null)
   const [editingQuestion, setEditingQuestion] = useState(null)
@@ -183,6 +184,7 @@ export default function QuestionEditor({
       order_index: questions.length,
       options: [],
       image_url: isComments ? null : undefined,
+      clue_label: isTreasureHunt ? '' : undefined,
       // A default ramp makes "compounding" scores one step; editable per question.
       points: isScored ? (questions.length + 1) * 10 : 10
     }
@@ -340,9 +342,13 @@ export default function QuestionEditor({
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-8">
         <div className="min-w-0">
-          <h2 className="font-display text-2xl font-semibold text-foreground">Questions & Options</h2>
+          <h2 className="font-display text-2xl font-semibold text-foreground">
+            {isTreasureHunt ? 'Clues' : 'Questions & Options'}
+          </h2>
           <p className="mt-2 text-muted-foreground">
-            Add questions and answer choices for your poll. Attendees will see them in this order.
+            {isTreasureHunt
+              ? 'Add one message per hidden clue. Each gets its own QR code once saved - print them from the QR Code tab.'
+              : 'Add questions and answer choices for your poll. Attendees will see them in this order.'}
           </p>
         </div>
         <button
@@ -353,7 +359,7 @@ export default function QuestionEditor({
           <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          Add Question
+          {isTreasureHunt ? 'Add Clue' : 'Add Question'}
         </button>
       </div>
 
@@ -366,9 +372,13 @@ export default function QuestionEditor({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            <h3 className="mt-6 text-lg font-medium text-foreground">No questions yet</h3>
+            <h3 className="mt-6 text-lg font-medium text-foreground">
+              {isTreasureHunt ? 'No clues yet' : 'No questions yet'}
+            </h3>
             <p className="mt-2 text-muted-foreground max-w-md mx-auto">
-              Add your first question to create a poll. Each question can have multiple answer options.
+              {isTreasureHunt
+                ? 'Add your first clue. Each one becomes its own hidden QR code once saved.'
+                : 'Add your first question to create a poll. Each question can have multiple answer options.'}
             </p>
           </div>
         ) : (
@@ -410,10 +420,14 @@ export default function QuestionEditor({
                               </span>
                               <div className="min-w-0">
                                 <h3 className="text-lg font-semibold text-foreground">
-                                  {question.text || 'Untitled Question'}
+                                  {isTreasureHunt
+                                    ? (question.clue_label?.trim() || `Clue #${index + 1}`)
+                                    : (question.text || 'Untitled Question')}
                                 </h3>
                                 <p className="mt-1 text-sm text-muted-foreground">
-                                  {isComments
+                                  {isTreasureHunt
+                                    ? (question.text?.trim() || 'No message yet')
+                                    : isComments
                                     ? (question.image_url ? 'Image added' : 'No image yet - add one below')
                                     : `${questionOptions.length} option${questionOptions.length !== 1 ? 's' : ''}${questionOptions.length === 0 ? ' - Add options below' : ''}`}
                                 </p>
@@ -492,7 +506,7 @@ export default function QuestionEditor({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation()
-                                if (confirm('Delete this question and all its options?')) {
+                                if (confirm(isTreasureHunt ? 'Delete this clue? Its QR code will stop working.' : 'Delete this question and all its options?')) {
                                   deleteQuestion(question.id)
                                 }
                               }}
@@ -528,27 +542,46 @@ export default function QuestionEditor({
                             />
 
                             {/* Edit Question */}
+                            {isEditing && isTreasureHunt && (
+                              <div className="mb-6">
+                                <label className="block text-sm font-medium text-foreground mb-2">QR label</label>
+                                <input
+                                  type="text"
+                                  value={question.clue_label || ''}
+                                  maxLength={60}
+                                  onChange={(e) => updateQuestion(question.id, 'clue_label', e.target.value)}
+                                  className="block w-full rounded-lg border border-border px-4 py-3 text-foreground shadow-sm focus:border-ring focus:ring-2 focus:ring-ring focus:ring-opacity-20"
+                                  placeholder={`Clue #${index + 1}`}
+                                />
+                                <p className="mt-2 text-sm text-muted-foreground">
+                                  Printed under this clue's QR code. Finders never see it.
+                                </p>
+                              </div>
+                            )}
+
                             {isEditing && (
                               <div className="mb-6">
                                 <label className="block text-sm font-medium text-foreground mb-2">
-                                  {isComments ? 'Prompt' : 'Question Text'}
+                                  {isTreasureHunt ? 'Clue message' : isComments ? 'Prompt' : 'Question Text'}
                                 </label>
                                 <textarea
                                   value={question.text}
                                   onChange={(e) => updateQuestion(question.id, 'text', e.target.value)}
                                   className="block w-full rounded-lg border border-border px-4 py-3 text-foreground shadow-sm focus:border-ring focus:ring-2 focus:ring-ring focus:ring-opacity-20 resize-none"
                                   rows="2"
-                                  placeholder={isComments ? 'What should attendees react to?' : 'Enter your question here...'}
+                                  placeholder={isTreasureHunt ? 'What should the finder read?' : isComments ? 'What should attendees react to?' : 'Enter your question here...'}
                                 />
                                 <p className="mt-2 text-sm text-muted-foreground">
-                                  {isComments
+                                  {isTreasureHunt
+                                    ? 'Shown when someone scans this clue\'s QR code.'
+                                    : isComments
                                     ? 'Shown under the image while attendees comment.'
                                     : 'What do you want to ask your audience?'}
                                 </p>
                               </div>
                             )}
 
-                            {isComments ? (
+                            {isTreasureHunt ? null : isComments ? (
                               /* Image upload */
                               <div>
                                 <h4 className="text-lg font-semibold text-foreground mb-4">Image</h4>
@@ -712,24 +745,45 @@ export default function QuestionEditor({
             <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
           </svg>
           <div>
-            <h4 className="text-lg font-semibold text-foreground mb-2">Tips for great polls</h4>
+            <h4 className="text-lg font-semibold text-foreground mb-2">
+              {isTreasureHunt ? 'Tips for a great hunt' : 'Tips for great polls'}
+            </h4>
             <ul className="text-muted-foreground space-y-2">
-              <li className="flex items-start">
-                <span className="mr-2">🔢</span>
-                <span>Keep questions clear and concise. Avoid technical jargon.</span>
-              </li>
-              <li className="flex items-start">
-                <span className="mr-2">📝</span>
-                <span>Provide 3-5 options per question. More options can be overwhelming.</span>
-              </li>
-              <li className="flex items-start">
-                <span className="mr-2">⏱️</span>
-                <span>Order questions from general to specific. Start with easier questions.</span>
-              </li>
-              <li className="flex items-start">
-                <span className="mr-2">📊</span>
-                <span>Use the "Move up/down" buttons to arrange questions in the best order.</span>
-              </li>
+              {isTreasureHunt ? (
+                <>
+                  <li className="flex items-start">
+                    <span className="mr-2">🔍</span>
+                    <span>Keep each clue's message short - it's read on a phone at the hiding spot.</span>
+                  </li>
+                  <li className="flex items-start">
+                    <span className="mr-2">🖨️</span>
+                    <span>Save your clues, then print their QR codes from the QR Code tab.</span>
+                  </li>
+                  <li className="flex items-start">
+                    <span className="mr-2">🔒</span>
+                    <span>Codes only show a message while the session is Active. Turn it off to hide every clue.</span>
+                  </li>
+                </>
+              ) : (
+                <>
+                  <li className="flex items-start">
+                    <span className="mr-2">🔢</span>
+                    <span>Keep questions clear and concise. Avoid technical jargon.</span>
+                  </li>
+                  <li className="flex items-start">
+                    <span className="mr-2">📝</span>
+                    <span>Provide 3-5 options per question. More options can be overwhelming.</span>
+                  </li>
+                  <li className="flex items-start">
+                    <span className="mr-2">⏱️</span>
+                    <span>Order questions from general to specific. Start with easier questions.</span>
+                  </li>
+                  <li className="flex items-start">
+                    <span className="mr-2">📊</span>
+                    <span>Use the "Move up/down" buttons to arrange questions in the best order.</span>
+                  </li>
+                </>
+              )}
             </ul>
           </div>
         </div>

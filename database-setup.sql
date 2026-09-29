@@ -1135,6 +1135,9 @@ GRANT EXECUTE ON FUNCTION public.get_leaderboard(uuid) TO anon, authenticated;
 --               permissive so a legacy unscored quiz that already has votes,
 --               frozen by prevent_points_change_after_votes, remains valid)
 --   comments -> participation_mode='identified', is_scored=false
+--   treasure_hunt -> participation_mode='anonymous', is_scored=false (see
+--               section 20 - added later, so its membership check is a
+--               separate, named constraint rather than this inline one)
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS session_type text NOT NULL DEFAULT 'poll'
   CHECK (session_type IN ('poll', 'quiz', 'comments'));
 
@@ -1641,3 +1644,87 @@ $$;
 
 REVOKE ALL ON FUNCTION public.get_vote_counts(uuid) FROM public;
 GRANT EXECUTE ON FUNCTION public.get_vote_counts(uuid) TO anon, authenticated;
+
+-- 20. Treasure Hunt session type
+-- The organizer hides QR-coded Clues; whoever scans one reads its message.
+-- Clues reuse the `questions` table (text = message, order_index = clue
+-- number); no options or scoring apply, and participation is anonymous - like
+-- a poll, but its own session_type so every RPC/policy above can tell it
+-- apart from a real poll's questions.
+ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_session_type_check;
+ALTER TABLE sessions ADD CONSTRAINT sessions_session_type_check
+  CHECK (session_type IN ('poll', 'quiz', 'comments', 'treasure_hunt'));
+
+ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_type_consistency;
+ALTER TABLE sessions ADD CONSTRAINT sessions_type_consistency CHECK (
+     (session_type = 'poll'          AND participation_mode = 'anonymous'  AND NOT is_scored)
+  OR (session_type = 'quiz'          AND participation_mode = 'identified')
+  OR (session_type = 'comments'      AND participation_mode = 'identified' AND NOT is_scored)
+  OR (session_type = 'treasure_hunt' AND participation_mode = 'anonymous'  AND NOT is_scored)
+);
+
+-- Each clue gets a random, unguessable, permanent token at creation. Never
+-- regenerated on edit, so printed QR codes keep working across text edits.
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS clue_token text UNIQUE
+  DEFAULT encode(extensions.gen_random_bytes(9), 'hex');
+
+-- Optional organizer-facing caption printed with the clue's QR code. Never
+-- returned by get_clue(); falls back to "Clue #N" in the UI when null.
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS clue_label text;
+
+-- Attendees never select `questions` directly for a Treasure Hunt (that would
+-- expose every clue's message and token to anyone who found one). They only
+-- ever reach a clue's message through get_clue(), scoped to its own token.
+DROP POLICY IF EXISTS "Anyone can view questions for active sessions" ON questions;
+CREATE POLICY "Anyone can view questions for active sessions" ON questions
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM sessions
+      WHERE sessions.id = questions.session_id
+      AND sessions.is_active = true
+      AND sessions.session_type <> 'treasure_hunt'
+    )
+  );
+
+-- Public scan endpoint for /h/<token>. Returns only what that one clue's
+-- token unlocks - never the session's other clues - and only while the
+-- session is active; the message itself is withheld otherwise.
+CREATE OR REPLACE FUNCTION public.get_clue(p_token text)
+RETURNS TABLE (
+  status text,
+  clue_message text,
+  clue_number integer,
+  session_title text
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+STABLE
+AS $$
+DECLARE
+  v_question public.questions;
+  v_session public.sessions;
+BEGIN
+  SELECT * INTO v_question FROM public.questions WHERE clue_token = p_token;
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT 'missing'::text, NULL::text, NULL::integer, NULL::text;
+    RETURN;
+  END IF;
+
+  SELECT * INTO v_session FROM public.sessions WHERE id = v_question.session_id;
+  IF NOT FOUND OR v_session.session_type <> 'treasure_hunt' THEN
+    RETURN QUERY SELECT 'missing'::text, NULL::text, NULL::integer, NULL::text;
+    RETURN;
+  END IF;
+
+  IF NOT v_session.is_active THEN
+    RETURN QUERY SELECT 'not_live'::text, NULL::text, v_question.order_index + 1, v_session.title;
+    RETURN;
+  END IF;
+
+  RETURN QUERY SELECT 'live'::text, v_question.text, v_question.order_index + 1, v_session.title;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_clue(text) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_clue(text) TO anon, authenticated;

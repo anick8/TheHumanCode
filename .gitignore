@@ -41,3 +41,8 @@ yarn-error.log*
 # ...but the template carries variable names only, never values.
 !.env.example
 .gstack/
+
+# Playwright CLI output
+.playwright-cli/
+test-results/
+playwright-report/

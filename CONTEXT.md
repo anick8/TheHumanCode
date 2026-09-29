@@ -9,7 +9,7 @@ A set of questions an organizer runs for a room. Has exactly one Session type (P
 _Avoid_: Poll (as a synonym for any session - "poll" names one specific session type, not the container).
 
 **Session type**:
-One of three fixed presets: Poll (anonymous voting, never scored), Quiz (named participants, always scored), Comments (named participants, free-text reactions to images, never scored). Chosen at creation and locked once the session has its first response.
+One of four fixed presets: Poll (anonymous voting, never scored), Quiz (named participants, always scored), Comments (named participants, free-text reactions to images, never scored), Treasure Hunt (anonymous, no Participants at all - each Clue is reached only by scanning its own QR code). Chosen at creation and locked once the session has its first response.
 
 **Poll**:
 A Session type where anonymous attendees vote on options and see aggregate results.
@@ -23,6 +23,13 @@ A Quiz created before every quiz was always scored, whose `is_scored` stayed fal
 
 **Comments**:
 A Session type where named Participants leave free-text comments on images the organizer uploads.
+
+**Treasure Hunt**:
+A Session type with no Participants: the organizer hides physical QR codes, each printed for one Clue. Scanning is anonymous - nothing is recorded about who found what, and there is no join step. Clues are scattered, not chained: any order, no dependency between them.
+
+**Clue**:
+One message in a Treasure Hunt, reached only by scanning its own QR code (never by browsing the session). Its QR code carries a random, permanent token that never changes, even when the organizer edits the Clue's message later - only deleting the Clue invalidates its printed code. The message is shown only while the session is active; scanning an inactive session's Clue, or a deleted Clue's code, shows a status message instead. A Clue may also carry an organizer-only label (default "Clue #N") printed under its QR code; finders never see it.
+_Avoid_: Question (the underlying database row a Clue reuses, but "Clue" is the organizer- and finder-facing term).
 
 **Participant**:
 A person taking part in a Session, identified by name and/or ID in Quiz and Comments sessions. The generic term used across the UI regardless of session type - a Participant votes in a Poll, answers in a Quiz, and comments in a Comments session.

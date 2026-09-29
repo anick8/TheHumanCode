@@ -28,13 +28,14 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
 
   // A session type is a preset over participation_mode/is_scored (both a DB
   // constraint and this UI keep them in sync): poll = anonymous, never scored;
-  // quiz = identified, always scored; comments = identified, never scored.
+  // quiz = identified, always scored; comments = identified, never scored;
+  // treasure_hunt = anonymous, never scored (like poll, but its own type).
   // Switching types resets whichever flags the new type forbids.
   const setSessionType = (type) => {
     setFormData(prev => ({
       ...prev,
       session_type: type,
-      participation_mode: type === 'poll' ? 'anonymous' : 'identified',
+      participation_mode: (type === 'poll' || type === 'treasure_hunt') ? 'anonymous' : 'identified',
       is_scored: type === 'quiz',
       ...(type !== 'quiz' ? { score_time_limit_seconds: null } : {}),
     }))
@@ -55,7 +56,7 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
       // with it, or the row violates sessions_type_consistency on save.
       if (values.session_type) {
         next.session_type = values.session_type
-        next.participation_mode = values.session_type === 'poll' ? 'anonymous' : 'identified'
+        next.participation_mode = (values.session_type === 'poll' || values.session_type === 'treasure_hunt') ? 'anonymous' : 'identified'
         next.is_scored = values.session_type === 'quiz'
         if (values.session_type !== 'quiz') {
           next.score_time_limit_seconds = null
@@ -165,7 +166,7 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
               <span className="text-xs text-muted-foreground">{typeCopy.lockedLabel}</span>
             )}
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
             <label className={`relative rounded-lg border p-4 transition-colors ${
               lockParticipation ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'
             } ${
@@ -264,9 +265,42 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
                 </div>
               </div>
             </label>
+
+            <label className={`relative rounded-lg border p-4 transition-colors ${
+              lockParticipation ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'
+            } ${
+              formData.session_type === 'treasure_hunt'
+                ? 'border-ring bg-muted ring-2 ring-primary/20'
+                : 'border-border hover:bg-muted'
+            }`}>
+              <input
+                type="radio"
+                name="session_type"
+                value="treasure_hunt"
+                checked={formData.session_type === 'treasure_hunt'}
+                onChange={(e) => setSessionType(e.target.value)}
+                disabled={lockParticipation}
+                className="sr-only"
+              />
+              <div className="flex items-start">
+                <div className="flex-shrink-0">
+                  <div className="h-5 w-5 rounded-full border flex items-center justify-center">
+                    <div className={`h-2.5 w-2.5 rounded-full ${
+                      formData.session_type === 'treasure_hunt' ? 'bg-primary' : 'bg-transparent'
+                    }`} />
+                  </div>
+                </div>
+                <div className="ml-3">
+                  <span className="block text-sm font-semibold text-foreground">Treasure hunt</span>
+                  <span className="block mt-1 text-sm text-muted-foreground">
+                    Each clue gets its own hidden QR code. Anyone who scans one reads its message - no names or IDs.
+                  </span>
+                </div>
+              </div>
+            </label>
           </div>
 
-          {formData.session_type !== 'poll' && (
+          {formData.session_type !== 'poll' && formData.session_type !== 'treasure_hunt' && (
             <div className="mt-4 space-y-3 rounded-lg border border-border bg-muted/60 p-4">
               <label className={`flex items-start gap-3 ${lockParticipation ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}>
                 <input
@@ -319,7 +353,9 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
           <p className="mt-2 text-sm text-muted-foreground">
             {formData.session_type === 'poll'
               ? 'Voting polls collect no names or IDs - only aggregate results.'
-              : `Quiz and comments sessions attach ${formData.session_type === 'quiz' ? 'answers' : 'comments'} to a name and/or ID so you can see who responded. Participants are not authenticated, so an ID only prevents duplicate entries - it is not verified.`}
+              : formData.session_type === 'treasure_hunt'
+                ? 'Each clue is reached only by scanning its own hidden QR code. Scanning collects no names or IDs.'
+                : `Quiz and comments sessions attach ${formData.session_type === 'quiz' ? 'answers' : 'comments'} to a name and/or ID so you can see who responded. Participants are not authenticated, so an ID only prevents duplicate entries - it is not verified.`}
           </p>
           {formError && (
             <p className="mt-2 text-sm font-medium text-destructive">{formError}</p>
@@ -390,7 +426,9 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
               Active Session
             </label>
             <p className="text-sm text-muted-foreground">
-              When active, attendees can scan the QR code and {typeCopy.verb}. Uncheck to temporarily disable {typeCopy.verbGerund}.
+              {formData.session_type === 'treasure_hunt'
+                ? 'While active, scanning a clue\'s QR code shows its message. Uncheck to hide every clue until the hunt starts (or after it ends).'
+                : `When active, attendees can scan the QR code and ${typeCopy.verb}. Uncheck to temporarily disable ${typeCopy.verbGerund}.`}
             </p>
           </div>
         </div>
