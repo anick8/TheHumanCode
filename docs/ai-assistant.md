@@ -94,7 +94,8 @@ silently at runtime, so both sides import the constant instead of spelling the s
   deliberately not implemented.
 
 - **Cost controls:** `isStepCount(8)` caps loop steps, `maxOutputTokens` caps output, request caps
-  reject oversized histories, and `ai_usage` enforces a per-user hourly limit. The `ai_usage` table is
+  reject oversized histories, and `ai_usage` enforces a per-user hourly limit (`lib/ai/rateLimit.js`, shared by `/api/assistant`
+  and `/api/assistant/title`). The `ai_usage` table is
   RLS-scoped so a user can neither read another's counter nor write rows attributed to someone else.
 
 ## Schema rules

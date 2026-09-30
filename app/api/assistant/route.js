@@ -9,15 +9,13 @@ import { createClient } from '@/lib/supabase/server'
 import { getModel, MAX_OUTPUT_TOKENS, MAX_STEPS } from '@/lib/ai/provider'
 import { buildTools } from '@/lib/ai/tools'
 import { buildInstructions } from '@/lib/ai/prompt'
+import { isOverAiLimit } from '@/lib/ai/rateLimit'
 
 export const maxDuration = 60
 
 // Request caps. These bound what one call can cost before the model is reached.
 const MAX_MESSAGES = 40
 const MAX_TOTAL_CHARS = 60000
-
-// Per-user hourly cap on assistant requests.
-const RATE_LIMIT_PER_HOUR = 60
 
 function countChars(messages) {
   return JSON.stringify(messages ?? []).length
@@ -63,16 +61,8 @@ export async function POST(request) {
     )
   }
 
-  // Rate limit. The table is RLS-scoped to the caller, so a user can neither
-  // read another user's counter nor write rows attributed to someone else.
-  const since = new Date(Date.now() - 60 * 60 * 1000).toISOString()
-  const { count } = await supabase
-    .from('ai_usage')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', user.id)
-    .gte('created_at', since)
-
-  if ((count ?? 0) >= RATE_LIMIT_PER_HOUR) {
+  // Rate limit (see lib/ai/rateLimit.js), shared with /api/assistant/title.
+  if (await isOverAiLimit(supabase, user.id)) {
     return Response.json(
       { error: 'You have reached the hourly limit for the assistant. Try again later.' },
       { status: 429 }

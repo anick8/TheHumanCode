@@ -1,10 +1,11 @@
 import { generateText } from 'ai'
 import { createClient } from '@/lib/supabase/server'
 import { getModel } from '@/lib/ai/provider'
+import { isOverAiLimit } from '@/lib/ai/rateLimit'
 
 // A single non-streaming generation, not an agent turn — deliberately separate
-// from /api/assistant's tool-calling loop, ai_usage rate limiting and
-// isStepCount machinery, none of which apply to one ungrounded call.
+// from /api/assistant's tool-calling loop and isStepCount machinery, neither of
+// which applies to one ungrounded call. It does share the hourly ai_usage limit.
 export async function POST(request) {
   // middleware.js only matches /dashboard and /present, so this route is
   // reachable unauthenticated unless it checks for itself, same as the main
@@ -16,12 +17,18 @@ export async function POST(request) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Same organizer gate as /api/assistant - this route also spends money and
-  // has no rate limit of its own, so it must not be reachable by every
-  // authenticated account.
+  // Same organizer gate as /api/assistant - this route also spends money, so
+  // it must not be reachable by every authenticated account.
   const { data: isOrganizer } = await supabase.rpc('is_organizer')
   if (!isOrganizer) {
     return Response.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  if (await isOverAiLimit(supabase, user.id)) {
+    return Response.json(
+      { error: 'You have reached the hourly limit for the assistant. Try again later.' },
+      { status: 429 }
+    )
   }
 
   let body
@@ -35,6 +42,8 @@ export async function POST(request) {
   if (!prompt || typeof prompt !== 'string') {
     return Response.json({ error: 'No prompt provided.' }, { status: 400 })
   }
+
+  await supabase.from('ai_usage').insert({ user_id: user.id })
 
   try {
     const { text } = await generateText({

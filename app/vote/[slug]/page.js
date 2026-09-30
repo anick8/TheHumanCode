@@ -467,15 +467,14 @@ export default function VotingPage() {
           }))
         }
       } else {
-        const { error } = await supabase.from('votes').insert({
-          option_id: optionId,
-          question_id: currentQuestion.id,
-          voter_token: voterToken
+        // Validated and rate limited server-side. A repeat from this browser is
+        // a no-op, so the UI reflects the existing vote.
+        const { error } = await supabase.rpc('submit_anonymous_vote', {
+          p_voter_token: voterToken,
+          p_question_id: currentQuestion.id,
+          p_option_id: optionId,
         })
-
-        // 23505 = unique(question_id, voter_token): this browser already voted on
-        // this question. Treat as success so the UI reflects the existing vote.
-        if (error && error.code !== '23505') throw error
+        if (error) throw error
 
         setVotes(prev => ({
           ...prev,

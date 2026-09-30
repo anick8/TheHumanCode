@@ -1728,3 +1728,140 @@ $$;
 
 REVOKE ALL ON FUNCTION public.get_clue(text) FROM public;
 GRANT EXECUTE ON FUNCTION public.get_clue(text) TO anon, authenticated;
+
+-- ============================================================================
+-- 21. Rate limiting: anonymous votes and organizer write volume
+-- ============================================================================
+
+-- Anonymous votes used to be a raw INSERT allowed by "Anyone can vote"
+-- (WITH CHECK (true)) with a client-generated voter_token, so nothing stopped
+-- votes into inactive sessions, closed questions, or mismatched options, or a
+-- script minting tokens. They now go through submit_anonymous_vote, which
+-- validates the vote and caps votes per network per question.
+ALTER TABLE votes ADD COLUMN IF NOT EXISTS voter_ip_hash text;
+CREATE INDEX IF NOT EXISTS idx_votes_question_ip ON votes(question_id, voter_ip_hash);
+
+CREATE OR REPLACE FUNCTION public.submit_anonymous_vote(
+  p_voter_token text,
+  p_question_id uuid,
+  p_option_id uuid
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  -- Per question, per network. Generous on purpose: a whole room on one
+  -- conference Wi-Fi shares a single IP. It stops scripted stuffing, not crowds.
+  c_ip_cap CONSTANT integer := 300;
+  v_session public.sessions%ROWTYPE;
+  v_question public.questions%ROWTYPE;
+  v_index integer;
+  v_ip text;
+  v_ip_hash text;
+BEGIN
+  IF p_voter_token IS NULL OR char_length(p_voter_token) NOT BETWEEN 1 AND 100 THEN
+    RAISE EXCEPTION 'Invalid voter token';
+  END IF;
+
+  SELECT * INTO v_question FROM public.questions WHERE id = p_question_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Unknown question';
+  END IF;
+
+  SELECT * INTO v_session FROM public.sessions WHERE id = v_question.session_id;
+  IF NOT FOUND OR v_session.is_active = false THEN
+    RAISE EXCEPTION 'This session is not active';
+  END IF;
+  IF v_session.participation_mode <> 'anonymous' THEN
+    RAISE EXCEPTION 'This session requires joining first';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.options WHERE id = p_option_id AND question_id = p_question_id
+  ) THEN
+    RAISE EXCEPTION 'That option does not belong to the question';
+  END IF;
+
+  -- Presenter-driven session: only the question on screen accepts votes, and
+  -- not once its results are revealed. Self-paced (index IS NULL) accepts any.
+  IF v_session.current_question_index IS NOT NULL THEN
+    SELECT sub.idx INTO v_index FROM (
+      SELECT id, (row_number() OVER (ORDER BY order_index) - 1) AS idx
+      FROM public.questions WHERE session_id = v_session.id
+    ) sub WHERE sub.id = p_question_id;
+
+    IF v_index IS DISTINCT FROM v_session.current_question_index
+       OR v_session.results_revealed THEN
+      RAISE EXCEPTION 'This question is not open for votes';
+    END IF;
+  END IF;
+
+  -- Only a hash of the caller's IP is stored. Absent header (e.g. local dev)
+  -- skips the cap rather than failing the vote.
+  v_ip := btrim(split_part(
+    coalesce(current_setting('request.headers', true)::json ->> 'x-forwarded-for', ''), ',', 1));
+  IF v_ip <> '' THEN
+    v_ip_hash := md5(v_ip);
+    IF (SELECT count(*) FROM public.votes
+         WHERE question_id = p_question_id AND voter_ip_hash = v_ip_hash) >= c_ip_cap THEN
+      RAISE EXCEPTION 'Too many votes from this network';
+    END IF;
+  END IF;
+
+  -- A repeat from the same browser is a no-op, matching the old 23505 handling.
+  INSERT INTO public.votes (option_id, question_id, voter_token, voter_ip_hash)
+  VALUES (p_option_id, p_question_id, p_voter_token, v_ip_hash)
+  ON CONFLICT (question_id, voter_token) DO NOTHING;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.submit_anonymous_vote(text, uuid, uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.submit_anonymous_vote(text, uuid, uuid) TO anon, authenticated;
+
+-- With RLS on and no INSERT policy, raw inserts are denied: the RPC above is
+-- the only way in. An earlier section replaced "Anyone can vote" with the "anonymously"
+-- variant, so drop both names.
+DROP POLICY IF EXISTS "Anyone can vote" ON votes;
+DROP POLICY IF EXISTS "Anyone can vote anonymously" ON votes;
+
+-- Organizer write volume. One editor save writes many rows, so a per-request
+-- limit doesn't fit; cap the volume at the table instead.
+CREATE OR REPLACE FUNCTION public.limit_sessions_per_hour()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+  IF (SELECT count(*) FROM public.sessions
+       WHERE owner_id = NEW.owner_id
+         AND created_at > now() - interval '1 hour') >= 30 THEN
+    RAISE EXCEPTION 'You have created too many sessions in the last hour. Try again later.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS limit_sessions_per_hour ON sessions;
+CREATE TRIGGER limit_sessions_per_hour
+  BEFORE INSERT ON sessions
+  FOR EACH ROW EXECUTE FUNCTION public.limit_sessions_per_hour();
+
+CREATE OR REPLACE FUNCTION public.limit_questions_per_session()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+  IF (SELECT count(*) FROM public.questions WHERE session_id = NEW.session_id) >= 200 THEN
+    RAISE EXCEPTION 'A session can have at most 200 questions.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS limit_questions_per_session ON questions;
+CREATE TRIGGER limit_questions_per_session
+  BEFORE INSERT ON questions
+  FOR EACH ROW EXECUTE FUNCTION public.limit_questions_per_session();
