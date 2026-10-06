@@ -1,5 +1,7 @@
 'use client'
 
+import { tiedScores, tieNote } from '@/lib/tiebreak'
+
 // Reusable ranked leaderboard for scored quizzes. Pure display: it renders
 // whatever rows it's given (already ranked by the caller). `currentId`
 // highlights the viewer's own row; `podium` collapses to a top-3 reveal for
@@ -11,6 +13,7 @@ export default function Leaderboard({
   total = entries.length,
 }) {
   const ranked = entries
+  const tied = tiedScores(ranked)
   if (podium) {
     const top = ranked.slice(0, 3)
     const medal = ['text-amber-300', 'text-slate-300', 'text-amber-600']
@@ -29,12 +32,17 @@ export default function Leaderboard({
             if (!p) return null
             return (
               <div key={p.participant_id} className="flex flex-col items-center gap-3 animate-scale-in">
-                <span className={`font-display text-2xl font-bold ${medal[slot]}`}>#{slot + 1}</span>
+                <span className={`font-display text-2xl font-bold ${medal[slot]}`}>#{p.rank ?? slot + 1}</span>
                 <div className={`flex w-32 flex-col items-center justify-end rounded-xl border bg-card px-3 pb-4 pt-5 ${ring[slot]} ${heights[slot]}`}>
                   <span className="text-center text-lg font-bold leading-tight text-foreground line-clamp-2">
                     {p.display_name}
                   </span>
                   <span className="mt-1 font-display text-xl text-accent">{p.score}</span>
+                  {tieNote(tied, p.score, p.total_response_ms) && (
+                    <span className="mt-1 text-center text-[11px] leading-tight text-muted-foreground">
+                      {tieNote(tied, p.score, p.total_response_ms)}
+                    </span>
+                  )}
                 </div>
               </div>
             )
@@ -56,7 +64,8 @@ export default function Leaderboard({
   return (
     <ol className="space-y-2">
       {ranked.map((p, i) => {
-        const place = i + 1
+        const place = p.rank ?? i + 1
+        const note = tieNote(tied, p.score, p.total_response_ms)
         const isSelf = currentId && p.participant_id === currentId
         return (
           <li
@@ -73,9 +82,12 @@ export default function Leaderboard({
               >
                 {place}
               </span>
-              <span className="truncate font-medium text-foreground">
-                {p.display_name}
-                {isSelf && <span className="ml-2 text-xs font-normal text-accent">(you)</span>}
+              <span className="min-w-0">
+                <span className="block truncate font-medium text-foreground">
+                  {p.display_name}
+                  {isSelf && <span className="ml-2 text-xs font-normal text-accent">(you)</span>}
+                </span>
+                {note && <span className="block truncate text-xs text-muted-foreground">{note}</span>}
               </span>
             </span>
             <span className="flex shrink-0 items-center gap-4 text-sm">

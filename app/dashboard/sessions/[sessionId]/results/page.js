@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import ResultsChart from '@/components/ResultsChart'
 import { formatDateTime } from '@/lib/utils'
+import { tiedScores, tieNote } from '@/lib/tiebreak'
 import SessionTheme from '@/components/SessionTheme'
 import SessionLogo from '@/components/SessionLogo'
 
@@ -247,6 +248,19 @@ export default function SessionResultsPage() {
     const bt = b.finished_at ? new Date(b.finished_at).getTime() : Infinity
     return at - bt
   })
+
+  // Scored quiz: ranks follow the Tiebreak (Score, then cumulative Response
+  // time) and exactly equal entries share a rank; a Legacy quiz keeps its
+  // plain position.
+  const tiedParticipantScores = session?.is_scored ? tiedScores(rankedParticipants, (p) => p.score || 0) : new Set()
+  const rankOf = (p, index) =>
+    session?.is_scored
+      ? 1 + rankedParticipants.filter(
+          (o) =>
+            (o.score || 0) > (p.score || 0) ||
+            ((o.score || 0) === (p.score || 0) && (o.total_response_ms || 0) < (p.total_response_ms || 0))
+        ).length
+      : index + 1
 
   const exportResults = () => {
     const data = {
@@ -875,14 +889,21 @@ export default function SessionResultsPage() {
                   <tbody className="divide-y divide-border">
                     {rankedParticipants.map((p, index) => (
                       <tr key={p.id} className={index === 0 ? 'bg-amber-400/5' : ''}>
-                        <td className="px-4 py-4 text-sm font-bold text-accent">{index + 1}</td>
+                        <td className="px-4 py-4 text-sm font-bold text-accent">{rankOf(p, index)}</td>
                         <td className="px-4 py-4 text-sm text-foreground">
                           {p.name || <span className="text-muted-foreground">(no name)</span>}
                         </td>
                         {hasParticipantIds && (
                           <td className="px-4 py-4 text-sm text-muted-foreground">{p.external_id || '—'}</td>
                         )}
-                        <td className="px-4 py-4 text-sm font-bold text-foreground">{p.score || 0}</td>
+                        <td className="px-4 py-4 text-sm font-bold text-foreground">
+                          {p.score || 0}
+                          {tieNote(tiedParticipantScores, p.score || 0, p.total_response_ms) && (
+                            <span className="block text-xs font-normal text-muted-foreground">
+                              {tieNote(tiedParticipantScores, p.score || 0, p.total_response_ms)}
+                            </span>
+                          )}
+                        </td>
                         <td className="px-4 py-4 text-sm text-muted-foreground">
                           {p.answered_count || 0}/{questions.length}
                         </td>
