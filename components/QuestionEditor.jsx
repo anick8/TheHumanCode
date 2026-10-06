@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { TIME_LIMIT_DEFAULT, TIME_LIMIT_MIN, TIME_LIMIT_MAX, clampTimeLimit } from '@/lib/utils'
 
 const OPTION_KEY = (questionId, optionId) => `${questionId}::${optionId}`
 const ENTER_EASE = 'cubic-bezier(0.16, 1, 0.3, 1)'
@@ -189,7 +190,8 @@ export default function QuestionEditor({
       image_url: isComments ? null : undefined,
       clue_label: isTreasureHunt ? '' : undefined,
       // A default ramp makes "compounding" scores one step; editable per question.
-      points: isScored ? (questions.length + 1) * 10 : 10
+      points: isScored ? (questions.length + 1) * 10 : 10,
+      time_limit_seconds: TIME_LIMIT_DEFAULT
     }
 
     const updatedQuestions = [...questions, newQuestion]
@@ -499,6 +501,28 @@ export default function QuestionEditor({
                                         disabled={locked}
                                         onChange={(e) =>
                                           updateQuestion(question.id, 'points', Math.max(0, Math.round(Number(e.target.value) || 0)))
+                                        }
+                                        className="w-20 rounded-lg border border-border px-2 py-1 text-sm text-foreground shadow-sm focus:border-ring focus:ring-2 focus:ring-ring focus:ring-opacity-20 disabled:opacity-60"
+                                      />
+                                    </label>
+                                    <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                                      Time limit (s)
+                                      <input
+                                        type="number"
+                                        min={TIME_LIMIT_MIN}
+                                        max={TIME_LIMIT_MAX}
+                                        step="1"
+                                        value={question.time_limit_seconds ?? TIME_LIMIT_DEFAULT}
+                                        disabled={locked}
+                                        onChange={(e) =>
+                                          updateQuestion(
+                                            question.id,
+                                            'time_limit_seconds',
+                                            e.target.value === '' ? '' : Math.round(Number(e.target.value))
+                                          )
+                                        }
+                                        onBlur={(e) =>
+                                          updateQuestion(question.id, 'time_limit_seconds', clampTimeLimit(e.target.value))
                                         }
                                         className="w-20 rounded-lg border border-border px-2 py-1 text-sm text-foreground shadow-sm focus:border-ring focus:ring-2 focus:ring-ring focus:ring-opacity-20 disabled:opacity-60"
                                       />

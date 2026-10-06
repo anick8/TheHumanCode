@@ -46,6 +46,9 @@ _Avoid_: Vote (for Quiz responses - a Quiz Participant answers, they don't vote)
 **Lock**:
 A Participant's act of committing their selected option as their final Answer to the open Quiz question. Before Lock, they can change their selection freely; after Lock it is final and no longer editable. A locked Answer carries no correctness or points yet - those wait for Reveal.
 
+**Time limit**:
+How long a Quiz question accepts a Lock, counted from when the host first opens it. Set per question (default 20 seconds, between 5 and 120) and frozen once the question has any Answers.
+
 **Reveal**:
 The host's action, from the presenter screen, that judges every Participant's locked Answer for the open Quiz question against its correct option, awards points, and shows the correct option on every device. Nothing about correctness is visible to any Participant before Reveal - not even in the Leaderboard or vote totals.
 

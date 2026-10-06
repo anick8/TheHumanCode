@@ -7,7 +7,7 @@ import QRCodeDisplay from '@/components/QRCodeDisplay'
 import SessionForm from '@/components/SessionForm'
 import QuestionEditor from '@/components/QuestionEditor'
 import AssistantPanel from '@/components/AssistantPanel'
-import { formatDateTime, getAppUrl } from '@/lib/utils'
+import { formatDateTime, getAppUrl, clampTimeLimit } from '@/lib/utils'
 import { copyFor } from '@/lib/sessionCopy'
 
 const SESSION_TYPE_LABELS = { poll: 'Voting poll', quiz: 'Quiz', comments: 'Image & comments', treasure_hunt: 'Treasure hunt' }
@@ -24,6 +24,7 @@ function snapshotEditor(questions, optionsByQuestion, questionKeys) {
       text: q.text ?? '',
       order_index: q.order_index,
       points: q.points ?? null,
+      time_limit_seconds: q.time_limit_seconds ?? null,
       image_url: q.image_url || null,
       clue_label: q.clue_label?.trim() || null,
       key: questionKeys[q.id] ?? null,
@@ -275,6 +276,7 @@ export default function SessionDetailPage() {
         text: question.text,
         order_index: index,
         points: Number.isInteger(question.points) ? question.points : 10,
+        time_limit_seconds: clampTimeLimit(question.time_limit_seconds),
         options: [],
       })
       newOptions[questionId] = (question.options ?? []).map((option, optionIndex) => ({
@@ -394,7 +396,12 @@ export default function SessionDetailPage() {
 
         // image_url only applies to comments-session questions; undefined for
         // poll/quiz rows leaves the column untouched.
-        const fields = { text, order_index: index, points }
+        const fields = {
+          text,
+          order_index: index,
+          points,
+          time_limit_seconds: clampTimeLimit(question.time_limit_seconds),
+        }
         if (isComments) fields.image_url = question.image_url || null
         // Organizer-only QR caption; blank clears it back to "Clue #N".
         if (isTreasureHunt) fields.clue_label = question.clue_label?.trim() || null

@@ -1865,3 +1865,37 @@ DROP TRIGGER IF EXISTS limit_questions_per_session ON questions;
 CREATE TRIGGER limit_questions_per_session
   BEFORE INSERT ON questions
   FOR EACH ROW EXECUTE FUNCTION public.limit_questions_per_session();
+
+-- ============================================================================
+-- 22. Quiz Time limit
+-- ============================================================================
+
+-- Every Quiz question has a Time limit: how long, from when the host first
+-- opens it, it accepts a Lock. Default 20s, organizer-editable within 5-120s.
+-- Polls, Comments and Treasure Hunt rows carry the default and ignore it.
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS time_limit_seconds integer NOT NULL DEFAULT 20;
+ALTER TABLE questions DROP CONSTRAINT IF EXISTS questions_time_limit_range;
+ALTER TABLE questions ADD CONSTRAINT questions_time_limit_range
+  CHECK (time_limit_seconds BETWEEN 5 AND 120);
+
+-- The Time limit freezes with points once a question has been answered, so
+-- the window can't be rewritten under a running quiz.
+CREATE OR REPLACE FUNCTION public.prevent_points_change_after_votes()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+  IF NEW.points IS DISTINCT FROM OLD.points
+     AND EXISTS (SELECT 1 FROM public.votes v WHERE v.question_id = NEW.id)
+  THEN
+    RAISE EXCEPTION 'Question points cannot change after voting has started';
+  END IF;
+  IF NEW.time_limit_seconds IS DISTINCT FROM OLD.time_limit_seconds
+     AND EXISTS (SELECT 1 FROM public.votes v WHERE v.question_id = NEW.id)
+  THEN
+    RAISE EXCEPTION 'Question Time limit cannot change after voting has started';
+  END IF;
+  RETURN NEW;
+END;
+$$;
