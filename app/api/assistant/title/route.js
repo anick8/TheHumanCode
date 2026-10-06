@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getModel } from '@/lib/ai/provider'
 import { isOverAiLimit } from '@/lib/ai/rateLimit'
 
+// Names and types (poll or quiz) a new session from the organizer's prompt.
 // A single non-streaming generation, not an agent turn — deliberately separate
 // from /api/assistant's tool-calling loop and isStepCount machinery, neither of
 // which applies to one ungrounded call. It does share the hourly ai_usage limit.
@@ -49,11 +50,14 @@ export async function POST(request) {
     const { text } = await generateText({
       model: getModel(),
       instructions:
-        'Given a short description of a quiz or poll, respond with exactly ONE word that ' +
-        'names its topic — Title Case, no punctuation, no quotes, nothing else. Example: ' +
-        'input "a 6-question quiz on renewable energy" -> output "Renewable".',
+        'Given a short description of a quiz or poll, respond in the exact form ' +
+        '<Word>|<type>. <Word> is ONE word naming the topic, Title Case, no punctuation. ' +
+        '<type> is "quiz" if the description implies right/wrong answers, scoring or a ' +
+        'leaderboard, or "poll" for opinions, voting or feedback. Nothing else. Examples: ' +
+        'input "a 6-question quiz on renewable energy" -> output "Renewable|quiz"; ' +
+        'input "ask the team which lunch spot they prefer" -> output "Lunch|poll".',
       prompt: prompt.slice(0, 500),
-      maxOutputTokens: 12,
+      maxOutputTokens: 16,
       // The configured model (lib/ai/provider.js) is a reasoning model. Without
       // this, it spends the entire output budget on internal <reasoning> text
       // and never reaches the actual one-word answer - confirmed by testing:
@@ -61,13 +65,25 @@ export async function POST(request) {
       // value for a single-word lookup, so it's turned off rather than paid for.
       providerOptions: { openrouter: { reasoning: { effort: 'none' } } },
     })
-    return Response.json({ title: sanitizeTitle(text) ?? 'Untitled Session' })
+    const [rawTitle, rawType] = String(text ?? '').split('|')
+    return Response.json({
+      title: sanitizeTitle(rawTitle) ?? 'Untitled Session',
+      sessionType: sanitizeType(rawType, prompt),
+    })
   } catch (error) {
     // A missing key or a failed call degrades to the placeholder rather than
     // blocking session creation - naming a session is never worth erroring on.
     console.error('Title generation failed:', error)
-    return Response.json({ title: 'Untitled Session' })
+    return Response.json({ title: 'Untitled Session', sessionType: sanitizeType(null, prompt) })
   }
+}
+
+// The model's answer wins when it is a valid type; otherwise guess from the
+// prompt's own wording so a failed or malformed reply still picks sensibly.
+function sanitizeType(raw, prompt) {
+  const type = String(raw ?? '').trim().toLowerCase()
+  if (type === 'quiz' || type === 'poll') return type
+  return /\b(quiz|trivia|score|scored|leaderboard|test)\b/i.test(prompt) ? 'quiz' : 'poll'
 }
 
 function sanitizeTitle(raw) {

@@ -12,7 +12,6 @@ export default function DashboardHome() {
   const [sessions, setSessions] = useState([])
   const [loading, setLoading] = useState(true)
   const [aiPrompt, setAiPrompt] = useState('')
-  const [aiType, setAiType] = useState('poll')
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState(null)
   const router = useRouter()
@@ -36,6 +35,7 @@ export default function DashboardHome() {
       // failure here (missing key, network, bad response) falls back to the
       // same placeholder the route itself falls back to.
       let title = 'Untitled Session'
+      let sessionType = 'poll'
       try {
         const titleRes = await fetch('/api/assistant/title', {
           method: 'POST',
@@ -45,6 +45,9 @@ export default function DashboardHome() {
         if (titleRes.ok) {
           const titleData = await titleRes.json()
           if (titleData.title) title = titleData.title
+          if (titleData.sessionType === 'poll' || titleData.sessionType === 'quiz') {
+            sessionType = titleData.sessionType
+          }
         }
       } catch {
         // Network failure - keep the placeholder.
@@ -56,14 +59,14 @@ export default function DashboardHome() {
           title,
           slug: generateSlug(),
           results_mode: 'live',
-          // The chosen type decides participation_mode, and the pair has to
-          // satisfy sessions_type_consistency. A poll is anonymous; a quiz
-          // names its participants and is always scored.
-          session_type: aiType,
-          participation_mode: aiType === 'poll' ? 'anonymous' : 'identified',
+          // The type is inferred from the prompt and decides participation_mode;
+          // the pair has to satisfy sessions_type_consistency. A poll is
+          // anonymous; a quiz names its participants and is always scored.
+          session_type: sessionType,
+          participation_mode: sessionType === 'poll' ? 'anonymous' : 'identified',
           identity_requires_name: true,
           identity_requires_id: false,
-          is_scored: aiType === 'quiz',
+          is_scored: sessionType === 'quiz',
           score_time_limit_seconds: null,
           is_active: true,
           owner_id: user?.id,
@@ -154,39 +157,9 @@ export default function DashboardHome() {
           Create with AI
         </label>
         <p className="mt-1 text-xs text-muted-foreground">
-          Describe the quiz you want topic, audience, and how many questions. You&apos;ll review
-          every question before anything is saved.
-        </p>
-        <div
-          role="radiogroup"
-          aria-label="Session type"
-          className="mt-3 inline-flex rounded-lg border border-border bg-muted p-1"
-        >
-          {[
-            { value: 'poll', label: 'Voting poll', hint: 'Anonymous no name needed' },
-            { value: 'quiz', label: 'Quiz', hint: 'Participants give a name' },
-          ].map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              role="radio"
-              aria-checked={aiType === option.value}
-              title={option.hint}
-              onClick={() => setAiType(option.value)}
-              className={`rounded-md px-4 py-1.5 text-xs font-semibold transition-colors ${
-                aiType === option.value
-                  ? 'bg-gradient-to-r from-primary to-accent text-white shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-        <p className="mt-2 text-xs text-muted-foreground">
-          {aiType === 'poll'
-            ? 'Attendees vote anonymously. You can turn this into a scored quiz later.'
-            : 'Attendees enter a name and answer scored questions with a leaderboard.'}
+          Describe the quiz or poll you want: topic, audience, and how many questions. We&apos;ll
+          pick the session type from your description, and you&apos;ll review every question
+          before anything is saved.
         </p>
 
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
