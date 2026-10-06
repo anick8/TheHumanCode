@@ -753,7 +753,11 @@ export default function VotingPage() {
           ) : lobby ? (
             <div className="mx-auto max-w-2xl py-10 text-center">
               <div className="rounded-2xl border border-border bg-card p-10 shadow-lg">
-                <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
                 <h2 className="font-display mt-6 text-2xl font-bold text-foreground">You're in!</h2>
                 <p className="mt-2 text-muted-foreground">
                   Waiting for the host to start the quiz. The first question will appear here automatically.
@@ -904,7 +908,11 @@ export default function VotingPage() {
             </div>
           ) : inLobby ? (
             <div className="mx-auto max-w-2xl py-10 text-center">
-              <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
               <h2 className="font-display mt-6 text-2xl font-bold text-foreground">You're in!</h2>
               <p className="mt-2 text-muted-foreground">
                 Waiting for the host to show the first image.
@@ -1067,7 +1075,11 @@ export default function VotingPage() {
           // Waiting room: the host has started but hasn't shown a question yet
           <div className="max-w-3xl mx-auto">
             <div className="rounded-2xl border border-border bg-card shadow-lg p-10 text-center">
-              <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
               <h2 className="font-display mt-6 text-2xl font-bold text-foreground">You're in!</h2>
               <p className="mt-2 text-muted-foreground">
                 Waiting for the host to start. The first question will appear here automatically.
