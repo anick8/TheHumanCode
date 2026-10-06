@@ -449,6 +449,11 @@ export default function VotingPage() {
         })
         if (error) throw error
         const row = data?.[0]
+        if (isScored && row?.time_up) {
+          // Past the Time limit: the server stored nothing.
+          setVoteError("Time's up — no answer recorded.")
+          return
+        }
         const recorded = row?.recorded_option_id || optionId
         setVotes(prev => ({
           ...prev,

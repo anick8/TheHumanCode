@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { QRCodeSVG } from 'qrcode.react'
 import { createClient } from '@/lib/supabase/client'
+import { useQuestionClock } from '@/lib/useQuestionClock'
 import ResultsChart from '@/components/ResultsChart'
 import Leaderboard from '@/components/Leaderboard'
 import { getAppUrl } from '@/lib/utils'
@@ -269,6 +270,7 @@ export default function PresentPage() {
   // question - a total only, so it never leaks the option split before
   // reveal. Stops polling once revealed (get_vote_counts takes over).
   const currentQuestionId = inQuestion ? questions[session?.current_question_index]?.id : null
+  const clock = useQuestionClock(supabase, inQuestion ? questions[session.current_question_index] : null, isScored && !revealed)
   useEffect(() => {
     if (!isScored || !currentQuestionId || revealed) {
       setLockedCount(0)
@@ -407,7 +409,7 @@ export default function PresentPage() {
   const votesLabel = isComments
     ? `${questionComments} comment${questionComments !== 1 ? 's' : ''}`
     : isScored
-      ? `${lockedCount} locked`
+      ? `${lockedCount} locked${clock.remainingSeconds === null ? '' : clock.timeUp ? " · Time's up" : ` · ${clock.remainingSeconds}s`}`
       : `${questionVotes} vote${questionVotes !== 1 ? 's' : ''}`
 
   const nextLabel =

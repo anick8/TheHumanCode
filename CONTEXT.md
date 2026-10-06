@@ -44,7 +44,7 @@ A Participant's response to a Quiz question. Judged server-side against the ques
 _Avoid_: Vote (for Quiz responses - a Quiz Participant answers, they don't vote).
 
 **Lock**:
-A Participant's act of committing their selected option as their final Answer to the open Quiz question. Before Lock, they can change their selection freely; after Lock it is final and no longer editable. A locked Answer carries no correctness or points yet - those wait for Reveal.
+A Participant's act of committing their selected option as their final Answer to the open Quiz question. Before Lock, they can change their selection freely; after Lock it is final and no longer editable. A locked Answer carries no correctness or points yet - those wait for Reveal. A Lock is refused once the question's Time limit has passed (a 1-second grace covers network delay); the Participant then has no Answer for that question.
 
 **Time limit**:
 How long a Quiz question accepts a Lock, counted from when the host first opens it. Set per question (default 20 seconds, between 5 and 120) and frozen once the question has any Answers.

@@ -1899,3 +1899,151 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+-- ============================================================================
+-- 23. Quiz question clock and Lock deadline
+-- ============================================================================
+
+-- The moment the host FIRST opened a question. Stamped once by the trigger
+-- below and never moved, so restarting to the lobby and reopening a question
+-- can't hand anyone extra time. NULL for questions opened before this shipped,
+-- which therefore have no deadline.
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS opened_at timestamptz;
+
+-- The presenter advances a quiz by updating current_question_index straight
+-- from the browser, so the stamp has to be a trigger. It matches the question
+-- the same way reveal_quiz_question() and the Lock RPC do (order_index).
+CREATE OR REPLACE FUNCTION public.stamp_question_opened_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  UPDATE public.questions q
+     SET opened_at = now()
+   WHERE q.session_id = NEW.id
+     AND q.order_index = NEW.current_question_index
+     AND q.opened_at IS NULL;
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.stamp_question_opened_at() FROM public;
+
+DROP TRIGGER IF EXISTS stamp_question_opened_at ON sessions;
+CREATE TRIGGER stamp_question_opened_at AFTER UPDATE OF current_question_index ON sessions
+  FOR EACH ROW
+  WHEN (NEW.is_scored
+        AND NEW.current_question_index IS NOT NULL
+        AND NEW.current_question_index >= 0
+        AND NEW.current_question_index IS DISTINCT FROM OLD.current_question_index)
+  EXECUTE FUNCTION public.stamp_question_opened_at();
+
+-- submit_identified_vote: as section 20, plus the deadline. A Lock arriving
+-- after opened_at + the question's Time limit + 1s grace is refused with
+-- time_up = true and stores nothing. A repeat Lock still returns the stored
+-- row, even after the deadline.
+CREATE OR REPLACE FUNCTION public.submit_identified_vote(
+  p_join_token text,
+  p_question_id uuid,
+  p_option_id uuid
+)
+RETURNS TABLE (
+  recorded_option_id uuid,
+  recorded boolean,
+  is_correct boolean,
+  awarded_points integer,
+  total_score integer,
+  answered_count integer,
+  finished_at timestamptz,
+  time_up boolean,
+  closed boolean
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  -- Covers network latency between a phone's last tap and the server.
+  c_grace CONSTANT interval := interval '1 second';
+  v_participant public.participants%ROWTYPE;
+  v_session public.sessions%ROWTYPE;
+  v_question public.questions%ROWTYPE;
+  v_existing public.votes%ROWTYPE;
+  v_score integer;
+  v_answered integer;
+  v_finished timestamptz;
+BEGIN
+  SELECT * INTO v_participant FROM public.participants WHERE join_token = p_join_token;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Unknown participant';
+  END IF;
+
+  SELECT * INTO v_session FROM public.sessions WHERE id = v_participant.session_id;
+  IF NOT FOUND OR v_session.is_active = false THEN
+    RAISE EXCEPTION 'This session is not active';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.options WHERE id = p_option_id AND question_id = p_question_id
+  ) THEN
+    RAISE EXCEPTION 'That option does not belong to the question';
+  END IF;
+
+  IF v_session.is_scored THEN
+    IF v_session.scored_closed THEN
+      RETURN QUERY SELECT NULL::uuid, false, NULL::boolean, 0, v_participant.score,
+        v_participant.answered_count, v_participant.finished_at, false, true;
+      RETURN;
+    END IF;
+
+    SELECT * INTO v_question FROM public.questions WHERE id = p_question_id;
+    IF v_session.current_question_index IS NULL
+       OR v_question.order_index IS DISTINCT FROM v_session.current_question_index
+       OR v_session.results_revealed THEN
+      RAISE EXCEPTION 'This question is not open for answers';
+    END IF;
+  END IF;
+
+  -- Locked before: return the stored row and never lock twice.
+  SELECT * INTO v_existing FROM public.votes v
+   WHERE v.question_id = p_question_id AND v.participant_id = v_participant.id;
+  IF FOUND THEN
+    RETURN QUERY SELECT v_existing.option_id, false, v_existing.is_correct,
+      v_existing.awarded_points, v_participant.score, v_participant.answered_count,
+      v_participant.finished_at, false, v_session.scored_closed;
+    RETURN;
+  END IF;
+
+  -- Past the Time limit: refuse. Questions with no open time have no deadline.
+  IF v_session.is_scored
+     AND v_question.opened_at IS NOT NULL
+     AND now() > v_question.opened_at + make_interval(secs => v_question.time_limit_seconds) + c_grace
+  THEN
+    RETURN QUERY SELECT NULL::uuid, false, NULL::boolean, 0, v_participant.score,
+      v_participant.answered_count, v_participant.finished_at, true, false;
+    RETURN;
+  END IF;
+
+  INSERT INTO public.votes (option_id, question_id, voter_token, participant_id, is_correct, awarded_points)
+  VALUES (p_option_id, p_question_id, v_participant.id::text, v_participant.id, NULL, 0);
+
+  UPDATE public.participants p
+     SET answered_count = p.answered_count + 1,
+         finished_at = CASE
+           WHEN p.finished_at IS NOT NULL THEN p.finished_at
+           WHEN p.answered_count + 1 >= (
+             SELECT count(*) FROM public.questions q WHERE q.session_id = v_participant.session_id
+           ) THEN now()
+           ELSE NULL
+         END
+   WHERE p.id = v_participant.id
+  RETURNING p.score, p.answered_count, p.finished_at INTO v_score, v_answered, v_finished;
+
+  RETURN QUERY SELECT p_option_id, true, NULL::boolean, 0, v_score, v_answered, v_finished, false, false;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.submit_identified_vote(text, uuid, uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.submit_identified_vote(text, uuid, uuid) TO anon, authenticated;

@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { useQuestionClock } from '@/lib/useQuestionClock'
 
 // Host-paced quiz question: tap to select, change your mind freely, then
 // Lock commits the choice. Once locked (or once the question is revealed)
@@ -14,20 +16,29 @@ export default function QuizQuestion({
   locking = false,
 }) {
   const [selected, setSelected] = useState(lockedOptionId)
+  const isLocked = Boolean(lockedOptionId)
+  const { remainingSeconds, timeUp } = useQuestionClock(createClient(), question, !isLocked)
 
   useEffect(() => {
     setSelected(lockedOptionId)
   }, [question?.id, lockedOptionId])
-
-  const isLocked = Boolean(lockedOptionId)
 
   return (
     <div className="rounded-2xl border border-border bg-card shadow-lg p-8">
       <div className="mb-8">
         <h2 className="font-display text-2xl font-bold text-foreground">{question.text}</h2>
         <p className="mt-2 text-muted-foreground">
-          {isLocked ? 'Answer locked. Waiting for the host to reveal.' : 'Select your answer, then lock it in.'}
+          {isLocked
+            ? 'Answer locked. Waiting for the host to reveal.'
+            : timeUp
+              ? "Time's up — no answer recorded."
+              : 'Select your answer, then lock it in.'}
         </p>
+        {!isLocked && remainingSeconds !== null && !timeUp && (
+          <p className={`mt-3 text-sm font-semibold tabular-nums ${remainingSeconds <= 5 ? 'text-destructive' : 'text-muted-foreground'}`}>
+            {remainingSeconds}s left
+          </p>
+        )}
       </div>
 
       <div className="space-y-4">
@@ -37,7 +48,7 @@ export default function QuizQuestion({
             <button
               key={option.id}
               onClick={() => !isLocked && setSelected(option.id)}
-              disabled={isLocked || locking}
+              disabled={isLocked || locking || timeUp}
               className={`w-full text-left rounded-xl border p-6 transition-all duration-200 ${
                 isLocked ? 'cursor-default' : 'hover:shadow-md active:scale-[0.995]'
               } ${
@@ -67,10 +78,10 @@ export default function QuizQuestion({
         ) : (
           <button
             onClick={() => selected && onLock(selected)}
-            disabled={!selected || locking}
+            disabled={!selected || locking || timeUp}
             className="inline-flex w-full items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {locking ? 'Locking…' : 'Lock answer'}
+            {locking ? 'Locking…' : timeUp ? "Time's up" : 'Lock answer'}
           </button>
         )}
       </div>
