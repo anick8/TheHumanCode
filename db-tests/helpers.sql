@@ -55,3 +55,29 @@ BEGIN
   PERFORM set_config('request.jwt.claim.sub', v_owner::text, true);
   PERFORM set_config('request.jwt.claims', json_build_object('sub', v_owner)::text, true);
 END $$;
+
+-- Opens the question at p_index with the given Time limit, then back-dates its
+-- open time so p_elapsed_s seconds have already passed (now() is frozen inside
+-- a transaction, so elapsed time can only be simulated).
+CREATE FUNCTION pg_temp.open_question(p_session uuid, p_index integer, p_limit_s integer, p_elapsed_s integer)
+RETURNS void LANGUAGE plpgsql AS $$
+DECLARE v_question uuid := pg_temp.question_at(p_session, p_index);
+BEGIN
+  UPDATE public.questions SET time_limit_seconds = p_limit_s WHERE id = v_question;
+  UPDATE public.sessions SET current_question_index = p_index, results_revealed = false WHERE id = p_session;
+  UPDATE public.questions SET opened_at = now() - make_interval(secs => p_elapsed_s) WHERE id = v_question;
+END $$;
+
+-- Locks through the public RPC (option 0 = right, 1 = wrong), then back-dates
+-- the stored Lock so it landed p_ms milliseconds after the question opened.
+CREATE FUNCTION pg_temp.lock_at(p_token text, p_question uuid, p_option_order integer, p_ms integer)
+RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  PERFORM public.submit_identified_vote(p_token, p_question, pg_temp.option_of(p_question, p_option_order));
+  UPDATE public.votes v
+     SET created_at = (SELECT q.opened_at FROM public.questions q WHERE q.id = p_question)
+                      + make_interval(secs => p_ms / 1000.0)
+   WHERE v.question_id = p_question
+     AND v.participant_id = (SELECT id FROM public.participants WHERE join_token = p_token);
+END $$;
+

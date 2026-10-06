@@ -2047,3 +2047,191 @@ $$;
 
 REVOKE ALL ON FUNCTION public.submit_identified_vote(text, uuid, uuid) FROM public;
 GRANT EXECUTE ON FUNCTION public.submit_identified_vote(text, uuid, uuid) TO anon, authenticated;
+
+-- ============================================================================
+-- 24. Quiz Response-time Tiebreak
+-- ============================================================================
+
+-- Score stays flat points. Speed only breaks ties: Participants on the same
+-- Score rank by lowest cumulative Response time (Lock minus the question's
+-- first open, capped at its Time limit; a missed question counts the full
+-- limit). Accrued once per question, at Reveal.
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS revealed_at timestamptz;
+ALTER TABLE participants ADD COLUMN IF NOT EXISTS total_response_ms bigint NOT NULL DEFAULT 0;
+
+-- A late joiner starts as if they missed every question already revealed.
+-- Done as a trigger so join_session's rejoin/upsert logic stays untouched.
+CREATE OR REPLACE FUNCTION public.seed_participant_response_ms()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.sessions s WHERE s.id = NEW.session_id AND s.is_scored) THEN
+    SELECT coalesce(sum(q.time_limit_seconds * 1000), 0) INTO NEW.total_response_ms
+      FROM public.questions q
+     WHERE q.session_id = NEW.session_id
+       AND q.revealed_at IS NOT NULL
+       AND q.opened_at IS NOT NULL;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.seed_participant_response_ms() FROM public;
+
+DROP TRIGGER IF EXISTS seed_participant_response_ms ON participants;
+CREATE TRIGGER seed_participant_response_ms BEFORE INSERT ON participants
+  FOR EACH ROW EXECUTE FUNCTION public.seed_participant_response_ms();
+
+-- reveal_quiz_question: as section 20 (judges every locked answer, awards
+-- points once each), plus the Response-time accrual. The accrual is guarded by
+-- revealed_at IS NULL so a repeat Reveal, or a restart and reopen followed by
+-- another Reveal, never adds time twice. A question with no open time (opened
+-- before this shipped) adds nothing for anyone.
+CREATE OR REPLACE FUNCTION public.reveal_quiz_question(p_session_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_session public.sessions%ROWTYPE;
+  v_question public.questions%ROWTYPE;
+BEGIN
+  SELECT * INTO v_session FROM public.sessions WHERE id = p_session_id;
+  IF NOT FOUND OR v_session.owner_id <> auth.uid() THEN
+    RAISE EXCEPTION 'Not authorized';
+  END IF;
+  IF NOT v_session.is_scored THEN
+    RAISE EXCEPTION 'This session is not scored';
+  END IF;
+  IF v_session.current_question_index IS NULL OR v_session.current_question_index < 0 THEN
+    RAISE EXCEPTION 'No question is currently open';
+  END IF;
+
+  SELECT * INTO v_question FROM public.questions
+  WHERE session_id = p_session_id AND order_index = v_session.current_question_index;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'No question at this position';
+  END IF;
+
+  WITH judged AS (
+    UPDATE public.votes v
+    SET is_correct = (k.option_id IS NOT NULL AND k.option_id = v.option_id),
+        awarded_points = CASE WHEN k.option_id IS NOT NULL AND k.option_id = v.option_id
+                               THEN coalesce(q.points, 0) ELSE 0 END
+    FROM public.questions q
+    LEFT JOIN public.question_keys k ON k.question_id = q.id
+    WHERE v.question_id = v_question.id
+      AND q.id = v_question.id
+      AND v.is_correct IS NULL
+    RETURNING v.participant_id, v.awarded_points
+  )
+  UPDATE public.participants p
+  SET score = p.score + judged.awarded_points,
+      finished_at = CASE
+        WHEN p.finished_at IS NOT NULL THEN p.finished_at
+        WHEN p.answered_count >= (SELECT count(*) FROM public.questions WHERE session_id = p_session_id)
+        THEN now() ELSE p.finished_at END
+  FROM judged
+  WHERE p.id = judged.participant_id;
+
+  IF v_question.revealed_at IS NULL THEN
+    IF v_question.opened_at IS NOT NULL THEN
+      UPDATE public.participants p
+         SET total_response_ms = p.total_response_ms + coalesce(
+               (SELECT least(
+                         greatest(0, round(extract(epoch FROM v.created_at - v_question.opened_at) * 1000)),
+                         v_question.time_limit_seconds * 1000
+                       )::bigint
+                  FROM public.votes v
+                 WHERE v.question_id = v_question.id AND v.participant_id = p.id),
+               v_question.time_limit_seconds * 1000)
+       WHERE p.session_id = p_session_id;
+    END IF;
+    UPDATE public.questions SET revealed_at = now() WHERE id = v_question.id;
+  END IF;
+
+  UPDATE public.sessions SET results_revealed = true, show_leaderboard = false WHERE id = p_session_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.reveal_quiz_question(uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.reveal_quiz_question(uuid) TO authenticated;
+
+-- get_leaderboard: ranked by Score, then lowest cumulative Response time,
+-- compared to the millisecond - exactly equal values share a rank. A Legacy
+-- (unscored) quiz keeps ordering ties by when each finished. Now also returns
+-- total_response_ms so a view can explain a tie.
+DROP FUNCTION IF EXISTS public.get_leaderboard(uuid);
+CREATE FUNCTION public.get_leaderboard(p_session_id uuid)
+RETURNS TABLE (
+  participant_id uuid,
+  display_name text,
+  score integer,
+  answered_count integer,
+  finished_at timestamptz,
+  rank bigint,
+  total_response_ms bigint
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT sub.id, sub.display_name, sub.score, sub.answered_count, sub.finished_at, sub.rnk, sub.total_response_ms
+  FROM (
+    SELECT p.id,
+           coalesce(p.name, p.external_id, 'Player') AS display_name,
+           p.score,
+           p.answered_count,
+           p.finished_at,
+           p.total_response_ms,
+           rank() OVER (
+             ORDER BY p.score DESC,
+                      p.total_response_ms ASC,
+                      CASE WHEN s.is_scored THEN NULL ELSE p.finished_at END ASC NULLS LAST
+           ) AS rnk
+    FROM public.participants p
+    JOIN public.sessions s ON s.id = p.session_id
+    WHERE p.session_id = p_session_id
+  ) sub
+  WHERE EXISTS (
+    SELECT 1 FROM public.sessions s
+    WHERE s.id = p_session_id AND s.is_active = true AND s.is_scored = true
+  )
+  ORDER BY sub.rnk;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_leaderboard(uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_leaderboard(uuid) TO anon, authenticated;
+
+-- get_participant_standing: the participant's own rank follows the same rule.
+CREATE OR REPLACE FUNCTION public.get_participant_standing(p_join_token text)
+RETURNS TABLE (total_score integer, participant_rank bigint, total_participants bigint, answered_count integer, finished_at timestamptz)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT p.score, r.rnk, r.total, p.answered_count, p.finished_at
+  FROM public.participants p
+  JOIN (
+    SELECT p2.id,
+           rank() OVER (
+             ORDER BY p2.score DESC,
+                      p2.total_response_ms ASC,
+                      CASE WHEN s.is_scored THEN NULL ELSE p2.finished_at END ASC NULLS LAST
+           ) AS rnk,
+           count(*) OVER () AS total
+    FROM public.participants p2
+    JOIN public.sessions s ON s.id = p2.session_id
+    WHERE p2.session_id = (SELECT session_id FROM public.participants WHERE join_token = p_join_token)
+  ) r ON r.id = p.id
+  WHERE p.join_token = p_join_token;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_participant_standing(text) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_participant_standing(text) TO anon, authenticated;

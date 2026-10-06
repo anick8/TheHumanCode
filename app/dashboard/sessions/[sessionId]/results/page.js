@@ -109,7 +109,7 @@ export default function SessionResultsPage() {
     try {
       const { data, error } = await supabase
         .from('participants')
-        .select('id, name, external_id, created_at, score, answered_count, started_at, finished_at')
+        .select('id, name, external_id, created_at, score, answered_count, started_at, finished_at, total_response_ms')
         .eq('session_id', sessionId)
         .order('created_at')
 
@@ -238,6 +238,11 @@ export default function SessionResultsPage() {
 
   const rankedParticipants = [...participants].sort((a, b) => {
     if ((b.score || 0) !== (a.score || 0)) return (b.score || 0) - (a.score || 0)
+    // A scored quiz breaks ties by cumulative Response time; a Legacy quiz
+    // keeps ordering them by when each finished.
+    if (session?.is_scored && (a.total_response_ms || 0) !== (b.total_response_ms || 0)) {
+      return (a.total_response_ms || 0) - (b.total_response_ms || 0)
+    }
     const at = a.finished_at ? new Date(a.finished_at).getTime() : Infinity
     const bt = b.finished_at ? new Date(b.finished_at).getTime() : Infinity
     return at - bt
@@ -263,6 +268,7 @@ export default function SessionResultsPage() {
             answered: p.answered_count ?? 0,
             finishedAt: p.finished_at,
             elapsedSeconds: elapsedSeconds(p),
+            totalResponseMs: p.total_response_ms ?? 0,
             answers: questions.reduce((acc, q) => {
               const optId = participantAnswers[p.id]?.[q.id]
               if (optId) acc[q.text] = optionLabel(q.id, optId) || optId

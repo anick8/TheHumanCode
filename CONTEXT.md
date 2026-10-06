@@ -55,8 +55,16 @@ The host's action, from the presenter screen, that judges every Participant's lo
 **Comment**:
 A Participant's free-text response to a Comments-session image.
 
+**Response time**:
+How long a Participant took on a Quiz question: from the host first opening it to the Participant's Lock. A wrong Answer counts its real time; a question they never Locked counts as its full Time limit. It is added up across the questions revealed so far, and a Participant who joins late starts as if they had missed every question already revealed.
+_Avoid_: speed, answer time.
+
+**Tiebreak**:
+How Participants on the same Score are ordered: lowest cumulative Response time first. Speed never changes Score, and Participants with exactly the same Score and cumulative Response time share a rank. A Legacy quiz still orders ties by when each Participant finished.
+_Avoid_: speed bonus - no bonus points exist.
+
 **Score**:
 A Participant's running total of points earned from correct Quiz Answers. Only exists on Quiz sessions.
 
 **Leaderboard**:
-The ranking of Quiz Participants by Score, shown between questions and as the final ranking once the quiz is closed.
+The ranking of Quiz Participants by Score, then by Tiebreak, shown between questions and as the final ranking once the quiz is closed.

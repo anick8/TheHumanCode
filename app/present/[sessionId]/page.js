@@ -233,27 +233,24 @@ export default function PresentPage() {
     }
   }, [identified, lobby, sessionId, userId, session?.owner_id])
 
-  // Scored quiz: the owner sees a live ranked board. RLS returns nothing to
-  // non-owners, so the board is effectively owner-only.
+  // Scored quiz: the live ranked board shown on the presenter screen.
   useEffect(() => {
     if (!isScored || !sessionId) return
     let cancelled = false
     const load = async () => {
-      const { data } = await supabase
-        .from('participants')
-        .select('id, name, external_id, score, answered_count, finished_at')
-        .eq('session_id', sessionId)
-        .order('score', { ascending: false })
-        .order('finished_at', { ascending: true, nullsFirst: false })
+      // Ranked server-side (Score, then cumulative Response time) so the
+      // presenter, the phones and the results page can't disagree.
+      const { data } = await supabase.rpc('get_leaderboard', { p_session_id: sessionId })
       if (!cancelled) {
         setLeaderboard(
-          (data || []).map((p, i) => ({
-            participant_id: p.id,
-            display_name: p.name || p.external_id || 'Player',
+          (data || []).map((p) => ({
+            participant_id: p.participant_id,
+            display_name: p.display_name,
             score: p.score,
             answered_count: p.answered_count,
             finished_at: p.finished_at,
-            rank: i + 1,
+            rank: Number(p.rank),
+            total_response_ms: Number(p.total_response_ms),
           }))
         )
       }
