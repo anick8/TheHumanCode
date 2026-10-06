@@ -45,6 +45,26 @@ export default function PresentPage() {
   // so it can be shown before reveal without hinting at the answer.
   const [correctOptionByQuestion, setCorrectOptionByQuestion] = useState({})
   const [lockedCount, setLockedCount] = useState(0)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [canFullscreen, setCanFullscreen] = useState(false)
+
+  // Browser fullscreen hides the URL bar and tabs while projecting. Track it
+  // via fullscreenchange so Esc keeps the button label right, and leave it on
+  // unmount so client-side navigation doesn't strand the dashboard fullscreen.
+  useEffect(() => {
+    setCanFullscreen(Boolean(document.fullscreenEnabled))
+    const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement))
+    document.addEventListener('fullscreenchange', onChange)
+    return () => {
+      document.removeEventListener('fullscreenchange', onChange)
+      if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
+    }
+  }, [])
+
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
+    else document.documentElement.requestFullscreen?.().catch(() => {})
+  }
 
   useEffect(() => {
     if (!sessionId) return
@@ -368,6 +388,9 @@ export default function PresentPage() {
       if (['ArrowRight', 'PageDown'].includes(e.key)) {
         e.preventDefault()
         goNext()
+      } else if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault()
+        toggleFullscreen()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -443,12 +466,30 @@ export default function PresentPage() {
           </p>
         </div>
         </div>
-        <Link
-          href={`/dashboard/sessions/${sessionId}`}
-          className="shrink-0 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
-        >
-          Exit
-        </Link>
+        <div className="flex shrink-0 items-center gap-2">
+          {canFullscreen && (
+            <button
+              onClick={toggleFullscreen}
+              title={isFullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)'}
+              className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {isFullscreen ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+                )}
+              </svg>
+              {isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            </button>
+          )}
+          <Link
+            href={`/dashboard/sessions/${sessionId}`}
+            className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+          >
+            Exit
+          </Link>
+        </div>
       </header>
 
       {(error || !session.is_active) && (
