@@ -16,6 +16,7 @@ export default function JoinGate({ session, onJoined }) {
   const requiresId = Boolean(session?.identity_requires_id)
   const collected = requiresName && requiresId ? 'name and ID' : requiresName ? 'name' : 'ID'
   const typeCopy = copyFor(session?.session_type)
+  const isWheel = session?.session_type === 'wheel'
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -62,7 +63,9 @@ export default function JoinGate({ session, onJoined }) {
       <div className="rounded-2xl border border-border bg-card p-8 shadow-lg">
         <h1 className="font-display text-2xl font-bold text-foreground">Join this session</h1>
         <p className="mt-2 text-muted-foreground">
-          {session?.title} collects your {collected} so the organizer can see who responded.
+          {isWheel
+            ? `Enter your name to go on the wheel for ${session?.title}.`
+            : `${session?.title} collects your ${collected} so the organizer can see who responded.`}
         </p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
@@ -77,6 +80,7 @@ export default function JoinGate({ session, onJoined }) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 autoComplete="name"
+                maxLength={isWheel ? 24 : undefined}
                 className="block w-full rounded-lg border border-border px-4 py-3 text-foreground shadow-sm focus:border-ring focus:ring-2 focus:ring-ring focus:ring-opacity-20"
                 placeholder="Your name"
               />
@@ -115,10 +119,12 @@ export default function JoinGate({ session, onJoined }) {
           </button>
         </form>
 
-        <p className="mt-4 text-xs text-muted-foreground">
-          Your answers are stored with your {collected} and visible to the organizer. Only your first answer
-          on each question is recorded.
-        </p>
+        {!isWheel && (
+          <p className="mt-4 text-xs text-muted-foreground">
+            Your answers are stored with your {collected} and visible to the organizer. Only your first answer
+            on each question is recorded.
+          </p>
+        )}
       </div>
     </div>
   )
