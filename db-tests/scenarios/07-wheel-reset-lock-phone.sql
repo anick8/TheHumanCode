@@ -114,7 +114,7 @@ BEGIN
   INSERT INTO public.wheel_spins (session_id, entry_id, label, created_at)
   VALUES (v_session, v_bo_entry, 'Bo', now() - interval '1 minute');
   INSERT INTO public.wheel_spins (session_id, entry_id, label, created_at)
-  VALUES (v_session, v_ada_entry, 'Ada', now());
+  VALUES (v_session, v_ada_entry, 'Ada', now() - interval '30 seconds');
 
   SELECT * INTO v_row FROM public.get_wheel_latest_pick(v_ada);
   IF v_row.label <> 'Ada' OR v_row.is_you IS NOT TRUE THEN

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { createClient } from '@/lib/supabase/client'
 import { finalRotation, LABEL_HIDE_ABOVE } from '@/lib/wheel'
+import { WHEEL_LABEL_MAX } from '@/lib/wheelEntries'
 
 const SPIN_MS = 5000
 const POLL_MS = 3000 // same cadence as the rest of the presenter's polling
@@ -123,7 +124,7 @@ export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, o
   const fetchAll = useCallback(async () => {
     const [{ data: entryRows }, { data: spinRows }] = await Promise.all([
       supabase.from('wheel_entries').select('id, label, kind, removed_at, created_at').eq('session_id', sessionId).order('created_at').order('id'),
-      supabase.from('wheel_spins').select('id, entry_id, label, removed, created_at').eq('session_id', sessionId).order('created_at', { ascending: false }),
+      supabase.from('wheel_spins').select('id, entry_id, label, removed, created_at, resolved_at').eq('session_id', sessionId).order('created_at', { ascending: false }),
     ])
     return { entryRows: entryRows || [], spinRows: spinRows || [] }
   }, [supabase, sessionId])
@@ -144,22 +145,45 @@ export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, o
 
   useEffect(() => {
     if (!isOwner) return
-    refresh(true)
+    // On load, restore a Pick that was never resolved (e.g. after a reload): only
+    // the latest Spin can be pending, and only while its Entry is still active.
+    let cancelled = false
+    ;(async () => {
+      const { entryRows, spinRows } = await refresh(true)
+      if (cancelled || phaseRef.current !== 'idle') return
+      const latest = spinRows[0]
+      const active = entryRows.filter((e) => !e.removed_at)
+      if (!latest || latest.resolved_at || !latest.entry_id) return
+      const at = finalRotation({ entries: active, entryId: latest.entry_id, turns: 0 })
+      if (at == null) return
+      rotationRef.current = at
+      setRotation(at)
+      setFrozenEntries(active)
+      setPick({ spinId: latest.id, entryId: latest.entry_id, label: latest.label })
+      setPhaseBoth('landed')
+    })()
     const t = setInterval(() => refresh(), POLL_MS)
-    return () => clearInterval(t)
+    return () => {
+      cancelled = true
+      clearInterval(t)
+    }
   }, [isOwner, refresh])
 
   useEffect(() => () => cancelAnimationFrame(rafRef.current), [])
 
   const activeEntries = useMemo(() => allEntries.filter((e) => !e.removed_at), [allEntries])
   const wheelEntries = frozenEntries ?? activeEntries
-  const canSpin = isOwner && activeEntries.length >= 2 && phase !== 'spinning' && !busy
+  // Spin is only possible from 'idle': a landed Pick must be resolved (Remove/Keep) first.
+  const canSpin = isOwner && activeEntries.length >= 2 && phase === 'idle' && !busy
 
   const spin = useCallback(async () => {
-    if (phaseRef.current === 'spinning' || busy) return
+    if (phaseRef.current !== 'idle' || busy) return
     if (activeEntries.length < 2) return
     setPhaseBoth('spinning') // freeze before awaiting so a second press is ignored
     setPick(null)
+    // Snapshot the active Entries BEFORE the Spin so a joiner arriving afterwards
+    // cannot change the wheel the Pick lands on.
+    const snapshot = await fetchAll()
     const { data, error } = await supabase.rpc('spin_wheel', { p_session_id: sessionId })
     const row = Array.isArray(data) ? data[0] : data
     if (error || !row) {
@@ -169,16 +193,15 @@ export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, o
       refresh(true)
       return
     }
-    // Entries at the moment of the Spin (server read after the Spin; joiners can
-    // only add segments, the Pick is always among them).
-    const { entryRows, spinRows } = await fetchAll()
-    let frozen = entryRows.filter((e) => !e.removed_at)
+    // The server picks among Entries active at spin time, so the Pick should be in
+    // the snapshot. If not (the snapshot was stale: a joiner or restore slipped in
+    // between the read and the RPC), add the Pick's Entry so the wheel still lands on it.
+    let frozen = snapshot.entryRows.filter((e) => !e.removed_at)
     if (!frozen.some((e) => e.id === row.entry_id)) {
-      const pickEntry = entryRows.find((e) => e.id === row.entry_id)
-      frozen = [...frozen, pickEntry || { id: row.entry_id, label: row.label, kind: 'manual' }]
+      frozen = [...frozen, { id: row.entry_id, label: row.label, kind: 'manual' }]
     }
-    setAllEntries(entryRows)
-    setSpins(spinRows)
+    setAllEntries(snapshot.entryRows)
+    setSpins(snapshot.spinRows)
     setFrozenEntries(frozen)
     setPick({ spinId: row.spin_id, entryId: row.entry_id, label: row.label })
 
@@ -319,7 +342,9 @@ export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, o
             >
               Spin
             </button>
-            {activeEntries.length < 2 ? (
+            {phase === 'landed' ? (
+              <p data-testid="spin-hint" className="text-sm text-muted-foreground">Choose Remove or Keep above to spin again</p>
+            ) : activeEntries.length < 2 ? (
               <p data-testid="spin-hint" className="text-sm text-muted-foreground">Add at least 2 entries</p>
             ) : (
               <p className="text-sm text-muted-foreground">or press Space</p>
@@ -349,7 +374,7 @@ export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, o
               <input
                 value={single}
                 onChange={(e) => setSingle(e.target.value)}
-                maxLength={24}
+                maxLength={WHEEL_LABEL_MAX}
                 placeholder="Add an entry"
                 disabled={editsLocked}
                 className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"

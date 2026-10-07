@@ -11,7 +11,6 @@ import AssistantPanel from '@/components/AssistantPanel'
 import { formatDateTime, getAppUrl, clampTimeLimit } from '@/lib/utils'
 import { copyFor } from '@/lib/sessionCopy'
 
-const SESSION_TYPE_LABELS = { poll: 'Voting poll', quiz: 'Quiz', comments: 'Image & comments', treasure_hunt: 'Treasure hunt', wheel: 'Wheel of Fortune' }
 const RESULTS_MODE_LABELS = { live: 'Live results', after_all: 'After all questions' }
 
 // Comparable form of the editor's contents, used to tell whether anything
@@ -84,13 +83,18 @@ export default function SessionDetailPage() {
     }
   }, [sessionId])
 
+  // Spins happen on the presenter screen, so re-check when this tab regains focus.
   useEffect(() => {
     if (!sessionId || !isWheel) return
-    supabase
-      .from('wheel_spins')
-      .select('id', { count: 'exact', head: true })
-      .eq('session_id', sessionId)
-      .then(({ count }) => setHasSpins((count || 0) > 0))
+    const check = () =>
+      supabase
+        .from('wheel_spins')
+        .select('id', { count: 'exact', head: true })
+        .eq('session_id', sessionId)
+        .then(({ count }) => setHasSpins((count || 0) > 0))
+    check()
+    window.addEventListener('focus', check)
+    return () => window.removeEventListener('focus', check)
   }, [sessionId, isWheel]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -666,7 +670,7 @@ export default function SessionDetailPage() {
                 {session.is_active ? 'Active' : 'Inactive'}
               </span>
               <span className="inline-flex items-center rounded-full bg-primary/15 px-3 py-1 text-xs font-medium text-accent capitalize">
-                {SESSION_TYPE_LABELS[session.session_type] || session.session_type}
+                {typeCopy.typeLabel}
               </span>
               {session.session_type === 'quiz' && !session.is_scored && (
                 <span className="inline-flex items-center rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">

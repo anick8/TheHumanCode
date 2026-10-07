@@ -25,7 +25,7 @@ ALTER TABLE sessions ADD CONSTRAINT sessions_type_consistency CHECK (
 );
 
 -- ---- Entries ---------------------------------------------------------------
--- One row per segment on the wheel. removed_at NULL = active.
+-- One row per Entry on the wheel. removed_at NULL = active.
 CREATE TABLE IF NOT EXISTS wheel_entries (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id uuid NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -49,8 +49,12 @@ CREATE TABLE IF NOT EXISTS wheel_spins (
   entry_id uuid REFERENCES wheel_entries(id) ON DELETE SET NULL,
   label text NOT NULL,
   removed boolean NOT NULL DEFAULT false,
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  resolved_at timestamptz
 );
+-- resolved_at: set when the organizer chose remove or keep for this Pick. Null on
+-- Spins from before the column existed; only a session's LATEST Spin can be pending.
+ALTER TABLE wheel_spins ADD COLUMN IF NOT EXISTS resolved_at timestamptz;
 CREATE INDEX IF NOT EXISTS idx_wheel_spins_session ON wheel_spins(session_id, created_at DESC);
 
 -- ---- RLS: organizer reads; every write goes through the RPCs below ----------
@@ -140,9 +144,8 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
-  v_entry public.wheel_entries%ROWTYPE;
 BEGIN
-  SELECT e.* INTO v_entry FROM public.wheel_entries e
+  PERFORM 1 FROM public.wheel_entries e
     JOIN public.sessions s ON s.id = e.session_id
    WHERE e.id = p_entry_id AND s.owner_id = auth.uid();
   IF NOT FOUND THEN
@@ -162,9 +165,8 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
-  v_entry public.wheel_entries%ROWTYPE;
 BEGIN
-  SELECT e.* INTO v_entry FROM public.wheel_entries e
+  PERFORM 1 FROM public.wheel_entries e
     JOIN public.sessions s ON s.id = e.session_id
    WHERE e.id = p_entry_id AND s.owner_id = auth.uid();
   IF NOT FOUND THEN
@@ -222,7 +224,9 @@ REVOKE ALL ON FUNCTION public.spin_wheel(uuid) FROM public;
 GRANT EXECUTE ON FUNCTION public.spin_wheel(uuid) TO authenticated;
 
 -- resolve_wheel_pick: the organizer's choice after a Spin. Remove takes the
--- Pick's Entry off the wheel and marks the Spin; keep changes nothing.
+-- Pick's Entry off the wheel and marks the Spin; keep changes nothing to the
+-- wheel. Both stamp resolved_at. Refused if already resolved, if the Spin is not
+-- the session's latest, or if the session is not a wheel.
 CREATE OR REPLACE FUNCTION public.resolve_wheel_pick(p_spin_id uuid, p_remove boolean)
 RETURNS void
 LANGUAGE plpgsql
@@ -231,17 +235,34 @@ SET search_path = ''
 AS $$
 DECLARE
   v_spin public.wheel_spins%ROWTYPE;
+  v_session public.sessions%ROWTYPE;
+  v_latest uuid;
 BEGIN
-  SELECT w.* INTO v_spin FROM public.wheel_spins w
-    JOIN public.sessions s ON s.id = w.session_id
-   WHERE w.id = p_spin_id AND s.owner_id = auth.uid();
+  SELECT s.* INTO v_session FROM public.sessions s
+   WHERE s.id = (SELECT w.session_id FROM public.wheel_spins w WHERE w.id = p_spin_id)
+     AND s.owner_id = auth.uid()
+   FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Not authorized';
+  END IF;
+  IF v_session.session_type <> 'wheel' THEN
+    RAISE EXCEPTION 'This session is not a Wheel of Fortune';
+  END IF;
+  SELECT * INTO v_spin FROM public.wheel_spins w WHERE w.id = p_spin_id;
+  IF v_spin.resolved_at IS NOT NULL THEN
+    RAISE EXCEPTION 'This Pick has already been resolved';
+  END IF;
+  SELECT w.id INTO v_latest FROM public.wheel_spins w
+   WHERE w.session_id = v_spin.session_id
+   ORDER BY w.created_at DESC, w.id DESC LIMIT 1;
+  IF v_latest IS DISTINCT FROM p_spin_id THEN
+    RAISE EXCEPTION 'Only the latest Spin can be resolved';
   END IF;
   IF p_remove IS TRUE THEN
     UPDATE public.wheel_entries SET removed_at = coalesce(removed_at, now()) WHERE id = v_spin.entry_id;
     UPDATE public.wheel_spins SET removed = true WHERE id = p_spin_id;
   END IF;
+  UPDATE public.wheel_spins SET resolved_at = now() WHERE id = p_spin_id;
 END;
 $$;
 
@@ -315,13 +336,15 @@ END;
 $$;
 
 -- ---- Phone read ------------------------------------------------------------
--- The latest Pick, scoped by join token. Returns no row before the first Spin.
+-- The latest Pick that is older than 7 seconds (the presenter's wheel animation
+-- is 5s, so a phone never reveals a Pick early), scoped by join token. Returns
+-- no row when there is no such Spin. A newer Spin is ignored until it ages in,
+-- so the phone keeps showing the previous Pick meanwhile.
 -- Never exposes the Entry list or anyone else's identity beyond the Pick's
 -- label, which the whole room sees on the presenter screen anyway.
 CREATE OR REPLACE FUNCTION public.get_wheel_latest_pick(p_join_token text)
 RETURNS TABLE (spin_id uuid, label text, picked_at timestamptz, is_you boolean)
 LANGUAGE plpgsql
-STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $$
@@ -339,6 +362,7 @@ BEGIN
                                    WHERE e.participant_id = v_participant.id), false)
       FROM public.wheel_spins w
      WHERE w.session_id = v_participant.session_id
+       AND w.created_at <= clock_timestamp() - interval '7 seconds'
      ORDER BY w.created_at DESC, w.id DESC
      LIMIT 1;
 END;

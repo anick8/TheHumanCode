@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { generateJoinToken } from '@/lib/utils'
 import { copyFor } from '@/lib/sessionCopy'
+import { WHEEL_LABEL_MAX } from '@/lib/wheelEntries'
 
 export default function JoinGate({ session, onJoined }) {
   const [name, setName] = useState('')
@@ -80,7 +81,7 @@ export default function JoinGate({ session, onJoined }) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 autoComplete="name"
-                maxLength={isWheel ? 24 : undefined}
+                maxLength={isWheel ? WHEEL_LABEL_MAX : undefined}
                 className="block w-full rounded-lg border border-border px-4 py-3 text-foreground shadow-sm focus:border-ring focus:ring-2 focus:ring-ring focus:ring-opacity-20"
                 placeholder="Your name"
               />
