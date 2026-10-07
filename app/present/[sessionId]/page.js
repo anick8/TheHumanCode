@@ -11,6 +11,7 @@ import Leaderboard from '@/components/Leaderboard'
 import { getAppUrl } from '@/lib/utils'
 import SessionTheme from '@/components/SessionTheme'
 import SessionLogo from '@/components/SessionLogo'
+import WheelPresenter from '@/components/WheelPresenter'
 
 // Full-screen presenter view for projecting a session. The host's position
 // lives in sessions.current_question_index, and every attendee device on
@@ -176,6 +177,7 @@ export default function PresentPage() {
   // Image & comments: the owner's live comment wall for the open image, plus a
   // count per image so the footer/stage pill can show "N comments" like votes.
   const isComments = session?.session_type === 'comments'
+  const isWheel = session?.session_type === 'wheel'
   useEffect(() => {
     if (!isComments || !inQuestion || !sessionId) return
     const questionId = questions[session.current_question_index]?.id
@@ -452,7 +454,9 @@ export default function PresentPage() {
         <div className="min-w-0">
           <p className="truncate font-display text-lg font-bold text-foreground">{session.title}</p>
           <p className="text-sm text-muted-foreground">
-            {closed
+            {isWheel
+              ? 'Wheel of Fortune'
+              : closed
               ? 'Quiz closed · Final results'
               : index < 0
                 ? 'Waiting room'
@@ -500,7 +504,9 @@ export default function PresentPage() {
 
       {/* Stage */}
       <main className="flex flex-1 items-center justify-center px-6 py-10">
-        {closed ? (
+        {isWheel ? (
+          <WheelPresenter sessionId={sessionId} session={session} isOwner={isOwner} voteUrl={voteUrl} onError={setError} />
+        ) : closed ? (
           <div className="text-center w-full max-w-4xl">
             <p className="text-sm font-semibold uppercase tracking-widest text-accent">Final results</p>
             <h1 className="mt-3 font-display text-4xl font-bold text-foreground md:text-5xl">{session.title}</h1>
@@ -714,7 +720,7 @@ export default function PresentPage() {
       </main>
 
       {/* Controls - the session owner only */}
-      {closed ? (
+      {isWheel ? null : closed ? (
         <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-border px-6 py-4">
           <p className="text-sm text-muted-foreground">Quiz closed · final results shown</p>
           {isOwner ? (
