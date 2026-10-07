@@ -115,4 +115,17 @@ BEGIN
   IF v_err IS NULL THEN RAISE EXCEPTION 'removing an unknown Entry succeeded'; END IF;
 END $$;
 
+-- A bulk paste keeps its order: created_at strictly increases down the paste.
+DO $$
+DECLARE
+  v_session uuid := pg_temp.make_wheel();
+BEGIN
+  PERFORM pg_temp.act_as_owner(v_session);
+  PERFORM public.add_wheel_entries(v_session, ARRAY['Asha', 'Ben', 'Cy', 'Dee']);
+  IF (SELECT array_agg(label ORDER BY created_at, id) FROM public.wheel_entries WHERE session_id = v_session)
+     <> ARRAY['Asha', 'Ben', 'Cy', 'Dee'] THEN
+    RAISE EXCEPTION 'pasted Entries lost their order';
+  END IF;
+END $$;
+
 ROLLBACK;

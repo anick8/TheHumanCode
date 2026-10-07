@@ -118,8 +118,9 @@ BEGIN
       FROM unnest(coalesce(p_labels, '{}'::text[])) WITH ORDINALITY AS l(label, ord)
      WHERE btrim(coalesce(l.label, '')) <> ''
   ), ins AS (
-    INSERT INTO public.wheel_entries (session_id, label, kind)
-    SELECT p_session_id, c.label, 'manual' FROM cleaned c ORDER BY c.ord
+    INSERT INTO public.wheel_entries (session_id, label, kind, created_at)
+    SELECT p_session_id, c.label, 'manual', clock_timestamp() + c.ord * interval '1 microsecond'
+      FROM cleaned c ORDER BY c.ord
     RETURNING 1
   )
   SELECT count(*) INTO v_added FROM ins;
