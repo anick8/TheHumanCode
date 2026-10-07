@@ -6,11 +6,12 @@ import { createClient } from '@/lib/supabase/client'
 import QRCodeDisplay from '@/components/QRCodeDisplay'
 import SessionForm from '@/components/SessionForm'
 import QuestionEditor from '@/components/QuestionEditor'
+import WheelEntriesPanel from '@/components/WheelEntriesPanel'
 import AssistantPanel from '@/components/AssistantPanel'
 import { formatDateTime, getAppUrl, clampTimeLimit } from '@/lib/utils'
 import { copyFor } from '@/lib/sessionCopy'
 
-const SESSION_TYPE_LABELS = { poll: 'Voting poll', quiz: 'Quiz', comments: 'Image & comments', treasure_hunt: 'Treasure hunt' }
+const SESSION_TYPE_LABELS = { poll: 'Voting poll', quiz: 'Quiz', comments: 'Image & comments', treasure_hunt: 'Treasure hunt', wheel: 'Wheel of Fortune' }
 const RESULTS_MODE_LABELS = { live: 'Live results', after_all: 'After all questions' }
 
 // Comparable form of the editor's contents, used to tell whether anything
@@ -50,6 +51,8 @@ export default function SessionDetailPage() {
   const [saveMessage, setSaveMessage] = useState(null)
   const [userId, setUserId] = useState(null)
   const [hasVotes, setHasVotes] = useState(false)
+  // A wheel has no votes; its Spins lock the session type instead.
+  const [hasSpins, setHasSpins] = useState(false)
   const [questionKeys, setQuestionKeys] = useState({})
   // Editor contents as last loaded/saved; null until the first load finishes.
   const [savedSnapshot, setSavedSnapshot] = useState(null)
@@ -72,6 +75,7 @@ export default function SessionDetailPage() {
   const isOwner = Boolean(userId && session && userId === session.owner_id)
   const isComments = session?.session_type === 'comments'
   const isTreasureHunt = session?.session_type === 'treasure_hunt'
+  const isWheel = session?.session_type === 'wheel'
 
   useEffect(() => {
     if (sessionId) {
@@ -79,6 +83,15 @@ export default function SessionDetailPage() {
       loadQuestions()
     }
   }, [sessionId])
+
+  useEffect(() => {
+    if (!sessionId || !isWheel) return
+    supabase
+      .from('wheel_spins')
+      .select('id', { count: 'exact', head: true })
+      .eq('session_id', sessionId)
+      .then(({ count }) => setHasSpins((count || 0) > 0))
+  }, [sessionId, isWheel]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (searchParams.get('assistant') === '1') setAssistantOpen(true)
@@ -549,6 +562,11 @@ export default function SessionDetailPage() {
   // where it left off; otherwise reset to the lobby (-1), which puts every
   // attendee device on the "waiting for the host" screen.
   const startPresenting = async () => {
+    // A wheel has no questions to step through: straight to the presenter.
+    if (isWheel) {
+      router.push(`/present/${sessionId}`)
+      return
+    }
     const idx = session?.current_question_index
     const inProgress = idx !== null && idx !== undefined && idx < questions.length
     if (!inProgress) {
@@ -655,7 +673,7 @@ export default function SessionDetailPage() {
                   Legacy · unscored
                 </span>
               )}
-              {!isComments && !isTreasureHunt && (
+              {!isComments && !isTreasureHunt && !isWheel && (
                 <span className="inline-flex items-center rounded-full bg-primary/15 px-3 py-1 text-xs font-medium text-accent">
                   {RESULTS_MODE_LABELS[session.results_mode] || session.results_mode}
                 </span>
@@ -678,7 +696,7 @@ export default function SessionDetailPage() {
                   : 'Start'}
               </button>
             )}
-            {isOwner && (
+            {isOwner && !isWheel && (
               <button
                 onClick={() => setAssistantOpen(true)}
                 className="inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors"
@@ -736,7 +754,7 @@ export default function SessionDetailPage() {
             <svg className="mr-2 h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            Questions
+            {isWheel ? 'Entries' : 'Questions'}
           </button>
           <button
             onClick={() => setActiveTab('qr')}
@@ -769,7 +787,11 @@ export default function SessionDetailPage() {
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'questions' && (
+      {activeTab === 'questions' && isWheel && (
+        <WheelEntriesPanel sessionId={sessionId} pollMs={5000} disabled={!isOwner} />
+      )}
+
+      {activeTab === 'questions' && !isWheel && (
         <div className="space-y-8">
           <QuestionEditor
             questions={questions}
@@ -863,7 +885,7 @@ export default function SessionDetailPage() {
             initialData={session}
             onSubmit={updateSession}
             loading={loading}
-            lockParticipation={hasVotes}
+            lockParticipation={hasVotes || hasSpins}
             appliedSettings={appliedSettings}
           />
 
@@ -905,7 +927,7 @@ export default function SessionDetailPage() {
         </div>
       )}
 
-      {isOwner && (
+      {isOwner && !isWheel && (
         <AssistantPanel
           open={assistantOpen}
           onClose={() => setAssistantOpen(false)}
