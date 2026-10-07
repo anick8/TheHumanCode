@@ -109,6 +109,7 @@ export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, o
   const [single, setSingle] = useState('')
   const [bulk, setBulk] = useState('')
   const [busy, setBusy] = useState(false)
+  const [confirmReset, setConfirmReset] = useState(false)
   const [frozenEntries, setFrozenEntries] = useState(null) // wheel's Entries while a Spin is unresolved
 
   const phaseRef = useRef('idle')
@@ -253,6 +254,15 @@ export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, o
     await rpc('add_wheel_entries', { p_session_id: sessionId, p_labels: labels })
   }
 
+  const doReset = async () => {
+    setBusy(true)
+    const { error } = await supabase.rpc('reset_wheel', { p_session_id: sessionId })
+    if (error) onError?.(error.message)
+    setBusy(false)
+    setConfirmReset(false)
+    await refresh(true)
+  }
+
   const editsLocked = phase !== 'idle'
   const btn = 'rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed'
 
@@ -377,7 +387,23 @@ export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, o
         )}
 
         <div className="rounded-2xl border border-border bg-card p-4">
-          <h2 className="font-display text-lg font-bold text-foreground">Picked so far</h2>
+          <div className="flex items-baseline justify-between gap-2">
+            <h2 className="font-display text-lg font-bold text-foreground">Picked so far</h2>
+            {isOwner && !confirmReset && (
+              <button onClick={() => setConfirmReset(true)} disabled={phase !== 'idle' || busy} className="text-xs font-medium text-destructive hover:underline disabled:opacity-40 disabled:cursor-not-allowed">
+                Reset wheel
+              </button>
+            )}
+          </div>
+          {isOwner && confirmReset && (
+            <div role="alertdialog" aria-label="Reset wheel" data-testid="reset-confirm" className="mt-3 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm">
+              <p className="text-foreground">Clear the Spin history and put every removed Entry back on the wheel? Joined Participants stay.</p>
+              <div className="mt-2 flex gap-2">
+                <button onClick={doReset} disabled={phase !== 'idle' || busy} className="rounded-lg bg-destructive px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50">Yes, reset</button>
+                <button onClick={() => setConfirmReset(false)} disabled={busy} className={btn}>Cancel</button>
+              </div>
+            </div>
+          )}
           <ol data-testid="picked-list" className="mt-3 max-h-56 space-y-1 overflow-y-auto">
             {spins.map((s) => (
               <li key={s.id} className="flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-1.5 text-sm text-foreground">

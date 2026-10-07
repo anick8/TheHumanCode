@@ -31,6 +31,8 @@ export default function SessionResultsPage() {
   // Comments sessions: [{id, body, created_at, question_id, author}], loaded
   // via a direct read (the owner has RLS SELECT on comments and participants).
   const [sessionComments, setSessionComments] = useState([])
+  // Wheel sessions: every Spin, newest first (owner has RLS SELECT on wheel_spins).
+  const [wheelSpins, setWheelSpins] = useState([])
   const supabase = createClient()
 
   const isIdentified = session?.participation_mode === 'identified'
@@ -79,7 +81,8 @@ export default function SessionResultsPage() {
         setActiveTab('comments')
       }
       if (data.session_type === 'wheel') {
-        setActiveTab('participants')
+        setActiveTab('spins')
+        await loadSpins()
       }
     } catch (error) {
       console.error('Error loading session:', error)
@@ -108,6 +111,20 @@ export default function SessionResultsPage() {
       )
     } catch (error) {
       console.error('Error loading comments:', error)
+    }
+  }
+
+  const loadSpins = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('wheel_spins')
+        .select('id, label, removed, created_at')
+        .eq('session_id', sessionId)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      setWheelSpins(data || [])
+    } catch (error) {
+      console.error('Error loading spins:', error)
     }
   }
 
@@ -514,6 +531,18 @@ export default function SessionResultsPage() {
               Comments ({sessionComments.length})
             </button>
           )}
+          {isWheel && (
+            <button
+              onClick={() => setActiveTab('spins')}
+              className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
+                activeTab === 'spins'
+                  ? 'border-ring text-accent'
+                  : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
+              }`}
+            >
+              Spins ({wheelSpins.length})
+            </button>
+          )}
           {isIdentified && (
             <button
               onClick={() => setActiveTab('participants')}
@@ -772,6 +801,27 @@ export default function SessionResultsPage() {
           })}
           {questions.length === 0 && (
             <p className="text-muted-foreground">No images in this session yet.</p>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'spins' && isWheel && (
+        <div className="rounded-2xl border border-border bg-card p-8 shadow-lg">
+          <h2 className="font-display text-2xl font-bold text-foreground">Spins</h2>
+          <p className="mt-1 text-muted-foreground">Every Pick, newest first.</p>
+          {wheelSpins.length === 0 ? (
+            <p data-testid="spins-empty" className="mt-6 text-muted-foreground">No spins yet.</p>
+          ) : (
+            <ol data-testid="spins-list" className="mt-6 divide-y divide-border">
+              {wheelSpins.map((s) => (
+                <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
+                  <span className="font-medium text-foreground">{s.label}</span>
+                  <span className="text-sm text-muted-foreground">
+                    {formatDateTime(s.created_at)} • {s.removed ? 'Removed from wheel' : 'Kept on wheel'}
+                  </span>
+                </li>
+              ))}
+            </ol>
           )}
         </div>
       )}
