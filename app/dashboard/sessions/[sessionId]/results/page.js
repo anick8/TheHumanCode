@@ -36,6 +36,8 @@ export default function SessionResultsPage() {
   const isIdentified = session?.participation_mode === 'identified'
   const isScored = Boolean(session?.is_scored && isIdentified)
   const isComments = session?.session_type === 'comments'
+  // A wheel has no questions or votes: no Overview / All Questions views.
+  const isWheel = session?.session_type === 'wheel'
 
   const sessionId = params.sessionId
 
@@ -75,6 +77,9 @@ export default function SessionResultsPage() {
       }
       if (data.session_type === 'comments') {
         setActiveTab('comments')
+      }
+      if (data.session_type === 'wheel') {
+        setActiveTab('participants')
       }
     } catch (error) {
       console.error('Error loading session:', error)
@@ -421,7 +426,7 @@ export default function SessionResultsPage() {
             <SessionLogo theme={session.theme} className="mb-4 h-12" />
             <h1 className="font-display text-3xl font-bold text-foreground">Results: {session.title}</h1>
             <div className="mt-2 text-muted-foreground">
-              {!isComments && <span>{RESULTS_MODE_LABELS[session.results_mode] || session.results_mode} • </span>}
+              {!isComments && !isWheel && <span>{RESULTS_MODE_LABELS[session.results_mode] || session.results_mode} • </span>}
               <span>{lastUpdated ? `Updated ${formatDateTime(lastUpdated)}` : 'Loading…'}</span>
             </div>
           </div>
@@ -464,7 +469,7 @@ export default function SessionResultsPage() {
       {/* Tabs */}
       <div className="mb-8 border-b border-border">
         <nav className="-mb-px flex space-x-8">
-          {!isComments && (
+          {!isComments && !isWheel && (
             <button
               onClick={() => setActiveTab('overview')}
               className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
@@ -479,7 +484,7 @@ export default function SessionResultsPage() {
               Overview
             </button>
           )}
-          {!isComments && (
+          {!isComments && !isWheel && (
             <button
               onClick={() => setActiveTab('questions')}
               className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
@@ -556,7 +561,7 @@ export default function SessionResultsPage() {
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'overview' && !isComments && (
+      {activeTab === 'overview' && !isComments && !isWheel && (
         <div className="space-y-8">
           {/* Stats Cards - only stats the schema can actually support.
               Completion rate and average time were removed rather than
@@ -642,7 +647,7 @@ export default function SessionResultsPage() {
         </div>
       )}
 
-      {activeTab === 'questions' && !isComments && (
+      {activeTab === 'questions' && !isComments && !isWheel && (
         <div className="space-y-8">
           {questions.map((question, index) => (
             <div key={question.id} className="rounded-2xl border border-border bg-card p-8 shadow-lg">

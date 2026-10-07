@@ -43,6 +43,8 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
       participation_mode: (type === 'poll' || type === 'treasure_hunt') ? 'anonymous' : 'identified',
       is_scored: type === 'quiz',
       ...(type !== 'quiz' ? { score_time_limit_seconds: null } : {}),
+      // A wheel always requires a name and never an ID (DB-enforced preset).
+      ...(type === 'wheel' ? { identity_requires_name: true, identity_requires_id: false } : {}),
     }))
   }
 
@@ -65,6 +67,10 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
         next.is_scored = values.session_type === 'quiz'
         if (values.session_type !== 'quiz') {
           next.score_time_limit_seconds = null
+        }
+        if (values.session_type === 'wheel') {
+          next.identity_requires_name = true
+          next.identity_requires_id = false
         }
       }
 
@@ -312,9 +318,42 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
                 </div>
               </div>
             </label>
+
+            <label className={`relative rounded-lg border p-4 transition-colors ${
+              lockParticipation ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'
+            } ${
+              formData.session_type === 'wheel'
+                ? 'border-ring bg-muted ring-2 ring-primary/20'
+                : 'border-border hover:bg-muted'
+            }`}>
+              <input
+                type="radio"
+                name="session_type"
+                value="wheel"
+                checked={formData.session_type === 'wheel'}
+                onChange={(e) => setSessionType(e.target.value)}
+                disabled={lockParticipation}
+                className="sr-only"
+              />
+              <div className="flex items-start">
+                <div className="flex-shrink-0">
+                  <div className="h-5 w-5 rounded-full border flex items-center justify-center">
+                    <div className={`h-2.5 w-2.5 rounded-full ${
+                      formData.session_type === 'wheel' ? 'bg-primary' : 'bg-transparent'
+                    }`} />
+                  </div>
+                </div>
+                <div className="ml-3">
+                  <span className="block text-sm font-semibold text-foreground">Wheel of Fortune</span>
+                  <span className="block mt-1 text-sm text-muted-foreground">
+                    Attendees join with a name and land on the wheel. Spin it to pick someone at random.
+                  </span>
+                </div>
+              </div>
+            </label>
           </div>
 
-          {formData.session_type !== 'poll' && formData.session_type !== 'treasure_hunt' && (
+          {formData.session_type !== 'poll' && formData.session_type !== 'treasure_hunt' && formData.session_type !== 'wheel' && (
             <div className="mt-4 space-y-3 rounded-lg border border-border bg-muted/60 p-4">
               <label className={`flex items-start gap-3 ${lockParticipation ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}>
                 <input
@@ -369,6 +408,8 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
               ? 'Voting polls collect no names or IDs - only aggregate results.'
               : formData.session_type === 'treasure_hunt'
                 ? 'Each clue is reached only by scanning its own hidden QR code. Scanning collects no names or IDs.'
+                : formData.session_type === 'wheel'
+                  ? 'Attendees join with just a name (up to 24 characters), which puts them on the wheel. You can also add entries yourself. The type is locked after the first spin.'
                 : `Quiz and comments sessions attach ${formData.session_type === 'quiz' ? 'answers' : 'comments'} to a name and/or ID so you can see who responded. Participants are not authenticated, so an ID only prevents duplicate entries - it is not verified.`}
           </p>
           {formError && (

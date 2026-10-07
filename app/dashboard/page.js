@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { formatDateTime, generateSlug } from '@/lib/utils'
 
-const SESSION_TYPE_LABELS = { poll: 'Voting poll', quiz: 'Quiz', comments: 'Image & comments' }
+const SESSION_TYPE_LABELS = { poll: 'Voting poll', quiz: 'Quiz', comments: 'Image & comments', treasure_hunt: 'Treasure hunt', wheel: 'Wheel of Fortune' }
 import { createClient } from '@/lib/supabase/client'
 
 export default function DashboardHome() {
