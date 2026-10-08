@@ -5,8 +5,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { formatDateTime, generateSlug } from '@/lib/utils'
 
-const SESSION_TYPE_LABELS = { poll: 'Voting poll', quiz: 'Quiz', comments: 'Image & comments' }
 import { createClient } from '@/lib/supabase/client'
+import { copyFor } from '@/lib/sessionCopy'
 
 export default function DashboardHome() {
   const [sessions, setSessions] = useState([])
@@ -246,7 +246,7 @@ export default function DashboardHome() {
                 <div>
                   <div className="text-muted-foreground">Type</div>
                   <div className="font-medium text-foreground mt-0.5">
-                    {SESSION_TYPE_LABELS[session.session_type] || session.session_type}
+                    {copyFor(session.session_type).typeLabel}
                     {session.session_type === 'quiz' && !session.is_scored && (
                       <span className="ml-1.5 inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                         legacy

@@ -81,3 +81,51 @@ BEGIN
      AND v.participant_id = (SELECT id FROM public.participants WHERE join_token = p_token);
 END $$;
 
+
+-- ============================================================================
+-- Wheel of Fortune fixtures
+-- ============================================================================
+
+-- An active Wheel of Fortune session owned by a fresh organizer (identified,
+-- name required, never scored). Returns the session id.
+CREATE FUNCTION pg_temp.make_wheel(p_active boolean DEFAULT true) RETURNS uuid
+LANGUAGE plpgsql AS $$
+DECLARE
+  v_owner uuid := gen_random_uuid();
+  v_session uuid := gen_random_uuid();
+BEGIN
+  INSERT INTO auth.users (id, email) VALUES (v_owner, v_owner || '@test.local');
+  INSERT INTO public.sessions (id, owner_id, title, slug, session_type, participation_mode,
+                               identity_requires_name, identity_requires_id, is_scored, is_active)
+  VALUES (v_session, v_owner, 'Scenario wheel', 'scn-' || v_session, 'wheel', 'identified',
+          true, false, false, p_active);
+  RETURN v_session;
+END $$;
+
+-- Acts as some other signed-in user who owns nothing.
+CREATE FUNCTION pg_temp.act_as_stranger() RETURNS void
+LANGUAGE plpgsql AS $$
+DECLARE v_user uuid := gen_random_uuid();
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', v_user::text, true);
+  PERFORM set_config('request.jwt.claims', json_build_object('sub', v_user)::text, true);
+END $$;
+
+-- Runs a statement and returns the error message it raised, or NULL if it
+-- succeeded. Lets a scenario assert that something is refused.
+CREATE FUNCTION pg_temp.error_of(p_sql text) RETURNS text
+LANGUAGE plpgsql AS $$
+BEGIN
+  EXECUTE p_sql;
+  RETURN NULL;
+EXCEPTION WHEN OTHERS THEN
+  RETURN SQLERRM;
+END $$;
+
+-- The active Entries of a wheel, as labels in a stable order.
+CREATE FUNCTION pg_temp.active_labels(p_session uuid) RETURNS text[]
+LANGUAGE plpgsql AS $$
+BEGIN
+  RETURN (SELECT coalesce(array_agg(label ORDER BY label), '{}') FROM public.wheel_entries
+           WHERE session_id = p_session AND removed_at IS NULL);
+END $$;

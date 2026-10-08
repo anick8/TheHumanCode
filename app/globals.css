@@ -165,3 +165,103 @@ body {
 .backface-hidden {
   backface-visibility: hidden;
 }
+
+/* ---- Wheel of Fortune stage (components/WheelPresenter.jsx) ---- */
+.wheel-stage ::selection {
+  background: color-mix(in srgb, var(--color-primary) 55%, transparent);
+  color: #fff;
+}
+
+.wheel-rig {
+  filter: drop-shadow(0 28px 36px rgb(0 0 0 / 0.55));
+}
+
+.wheel-labels {
+  opacity: calc(1 - var(--wheel-v, 0) * 0.65);
+}
+
+.wheel-wedge {
+  transition: opacity 0.5s var(--ease-out-expo);
+}
+.wheel-wedges[data-has-pick="true"] .wheel-wedge:not([data-picked="true"]) {
+  opacity: 0.32;
+}
+.wheel-wedges[data-waiting="true"] {
+  filter: saturate(0.35) brightness(0.75);
+}
+
+/* Flapper kicks once per peg; two identical keyframes let a data-tick flip restart it. */
+.wheel-flapper {
+  transform-box: view-box;
+  transform-origin: 0 0;
+}
+@keyframes wheel-flap-a {
+  0% { transform: rotate(0); }
+  30% { transform: rotate(-26deg); }
+  100% { transform: rotate(0); }
+}
+@keyframes wheel-flap-b {
+  0% { transform: rotate(0); }
+  30% { transform: rotate(-26deg); }
+  100% { transform: rotate(0); }
+}
+.wheel-flapper[data-tick="a"] { animation: wheel-flap-a 0.14s ease-out; }
+.wheel-flapper[data-tick="b"] { animation: wheel-flap-b 0.14s ease-out; }
+
+/* Marquee bulbs: dim at rest, chase while spinning, flash when a Pick lands. */
+.wheel-bulb { opacity: 0.4; }
+@keyframes wheel-chase {
+  0% { opacity: 1; }
+  45% { opacity: 0.2; }
+  100% { opacity: 1; }
+}
+@keyframes wheel-flash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.15; }
+}
+[data-phase="spinning"] .wheel-bulb {
+  animation: wheel-chase 0.5s linear infinite;
+  animation-delay: calc(var(--i) * -0.0208s);
+}
+[data-phase="landed"] .wheel-bulb {
+  animation: wheel-flash 0.42s ease-in-out 5 both;
+  opacity: 1;
+}
+
+/* Pick band wipes open from the centre. */
+.wheel-band {
+  clip-path: inset(0 50% 0 50%);
+  transition: clip-path 0.75s var(--ease-out-expo);
+}
+.wheel-band[data-open="true"] { clip-path: inset(0 0 0 0); }
+
+@keyframes wheel-burst-x {
+  from { transform: translateX(0); }
+  to { transform: translateX(var(--dx)); }
+}
+@keyframes wheel-burst-y {
+  0% { transform: translateY(0) rotate(0); animation-timing-function: cubic-bezier(0.2, 0.7, 0.4, 1); }
+  35% { transform: translateY(var(--up)) rotate(calc(var(--rot) * 0.4)); animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.6); }
+  100% { transform: translateY(70vh) rotate(var(--rot)); opacity: 0; }
+}
+
+@keyframes wheel-bump {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+.wheel-bump { animation: wheel-bump 0.4s var(--ease-out-expo); }
+
+@media (prefers-reduced-motion: reduce) {
+  .wheel-flapper[data-tick] { animation: none; }
+  [data-phase="spinning"] .wheel-bulb,
+  [data-phase="landed"] .wheel-bulb { animation: none; opacity: 1; }
+  .wheel-band { clip-path: none; opacity: 0; transition: opacity 0.3s linear; }
+  .wheel-band[data-open="true"] { opacity: 1; }
+  .wheel-bump { animation: none; }
+}
+
+@keyframes wheel-rain {
+  0% { transform: translate3d(0, -10vh, 0) rotate(0); opacity: 1; }
+  100% { transform: translate3d(var(--dx), 110vh, 0) rotate(var(--rot)); opacity: 0.9; }
+}
