@@ -7,6 +7,7 @@ export default function PollQuestion({
   options,
   onVote,
   loading = false,
+  closed = false,
   selectedOptionId = null,
   showResults = false,
   resultsData = null,
@@ -78,7 +79,7 @@ export default function PollQuestion({
             <button
               key={option.id}
               onClick={() => handleVote(option.id)}
-              disabled={loading || submitting || showResults || (lockAfterVote && Boolean(selectedOptionId))}
+              disabled={loading || submitting || showResults || closed || (lockAfterVote && Boolean(selectedOptionId))}
               className={`w-full text-left rounded-xl border transition-all duration-200 ${
                 showResults
                   ? 'cursor-default'
@@ -153,7 +154,7 @@ export default function PollQuestion({
       )}
 
       {/* Instructions */}
-      {!showResults && !loading && !submitting && (
+      {!showResults && !loading && !submitting && !closed && (
         <div className="mt-8 rounded-lg bg-muted p-4">
           <div className="flex items-center text-sm text-muted-foreground">
             <svg className="h-5 w-5 mr-2 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">

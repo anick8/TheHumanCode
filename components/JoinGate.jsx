@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { generateJoinToken } from '@/lib/utils'
 import { copyFor } from '@/lib/sessionCopy'
 
-export default function JoinGate({ session, onJoined }) {
+export default function JoinGate({ session, onJoined, removed = false }) {
   const [name, setName] = useState('')
   const [externalId, setExternalId] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -57,9 +57,34 @@ export default function JoinGate({ session, onJoined }) {
     }
   }
 
+  const entriesClosed = Boolean(session?.entries_closed)
+
+  if (entriesClosed) {
+    return (
+      <div className="mx-auto max-w-md py-8">
+        <div className="rounded-2xl border border-border bg-card p-8 text-center shadow-lg">
+          {removed && (
+            <p className="mb-4 rounded-lg bg-destructive/10 px-4 py-3 text-sm font-medium text-destructive">
+              You were removed from this session by the host.
+            </p>
+          )}
+          <h1 className="font-display text-2xl font-bold text-foreground">Entries are closed</h1>
+          <p className="mt-2 text-muted-foreground">
+            {session?.title} is no longer accepting new participants.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="mx-auto max-w-md py-8">
       <div className="rounded-2xl border border-border bg-card p-8 shadow-lg">
+        {removed && (
+          <p className="mb-4 rounded-lg bg-destructive/10 px-4 py-3 text-sm font-medium text-destructive">
+            You were removed from this session by the host.
+          </p>
+        )}
         <h1 className="font-display text-2xl font-bold text-foreground">Join this session</h1>
         <p className="mt-2 text-muted-foreground">
           {session?.title} collects your {collected} so the organizer can see who responded.

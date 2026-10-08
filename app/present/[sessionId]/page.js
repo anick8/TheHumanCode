@@ -45,6 +45,8 @@ export default function PresentPage() {
   // so it can be shown before reveal without hinting at the answer.
   const [correctOptionByQuestion, setCorrectOptionByQuestion] = useState({})
   const [lockedCount, setLockedCount] = useState(0)
+  const [roster, setRoster] = useState([]) // owner-only participant list for the Remove drawer
+  const [showRoster, setShowRoster] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [canFullscreen, setCanFullscreen] = useState(false)
 
@@ -253,6 +255,26 @@ export default function PresentPage() {
     }
   }, [identified, lobby, sessionId, userId, session?.owner_id])
 
+  // Host drawer: who has joined, with a Remove action. Polled only while open.
+  useEffect(() => {
+    if (!showRoster || !sessionId) return
+    let cancelled = false
+    const load = async () => {
+      const { data } = await supabase
+        .from('participants')
+        .select('id, name, external_id')
+        .eq('session_id', sessionId)
+        .order('created_at')
+      if (!cancelled) setRoster(data || [])
+    }
+    load()
+    const interval = setInterval(load, 4000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [showRoster, sessionId])
+
   // Scored quiz: the live ranked board shown on the presenter screen.
   useEffect(() => {
     if (!isScored || !sessionId) return
@@ -358,6 +380,36 @@ export default function PresentPage() {
     setSession((prev) => (prev ? { ...prev, results_revealed: true, show_leaderboard: false } : prev))
     setAdvancing(false)
     return true
+  }
+
+  const entriesClosed = Boolean(session?.entries_closed)
+  const toggleEntries = () => updateSession({ entries_closed: !entriesClosed })
+
+  const removeParticipant = async (participant) => {
+    const label = participant.name || participant.external_id || 'this participant'
+    if (!confirm(`Remove ${label}? Their ${isComments ? 'comments' : 'answers'} are deleted too.`)) return
+    setError(null)
+    const { error: rpcError } = await supabase.rpc('remove_participant', { p_participant_id: participant.id })
+    if (rpcError) {
+      setError(rpcError.message || 'Could not remove this participant.')
+      return
+    }
+    setRoster((prev) => prev.filter((r) => r.id !== participant.id))
+    setParticipantNames((prev) => prev.filter((n) => n !== label))
+    setParticipantCount((prev) => Math.max(0, prev - 1))
+  }
+
+  const deleteComment = async (commentId) => {
+    if (!confirm('Delete this comment?')) return
+    setError(null)
+    const { error: rpcError } = await supabase.rpc('delete_comment', { p_comment_id: commentId })
+    if (rpcError) {
+      setError(rpcError.message || 'Could not delete this comment.')
+      return
+    }
+    setCommentWall((prev) => prev.filter((c) => c.comment_id !== commentId))
+    const questionId = questions[session?.current_question_index]?.id
+    if (questionId) setCommentCounts((prev) => ({ ...prev, [questionId]: Math.max(0, (prev[questionId] || 1) - 1) }))
   }
 
   const goNext = async () => {
@@ -515,10 +567,19 @@ export default function PresentPage() {
                 <SessionLogo theme={session.theme} className="h-20 md:h-24" />
               </div>
             )}
-            <p className="text-sm font-semibold uppercase tracking-widest text-accent">Scan to join</p>
+            <p className="text-sm font-semibold uppercase tracking-widest text-accent">
+              {entriesClosed ? (identified ? 'Entries closed' : 'Voting closed') : 'Scan to join'}
+            </p>
             <h1 className="mt-3 font-display text-4xl font-bold text-foreground md:text-6xl">{session.title}</h1>
-            <div className="mt-10 inline-block rounded-2xl bg-white p-6 shadow-2xl">
-              <QRCodeSVG value={voteUrl} size={300} level="H" bgColor="#ffffff" fgColor="#000000" />
+            <div className="relative mt-10 inline-block rounded-2xl bg-white p-6 shadow-2xl">
+              <div className={entriesClosed ? 'opacity-20' : ''}>
+                <QRCodeSVG value={voteUrl} size={300} level="H" bgColor="#ffffff" fgColor="#000000" />
+              </div>
+              {entriesClosed && (
+                <span className="absolute inset-0 flex items-center justify-center font-display text-3xl font-bold text-black">
+                  {identified ? 'Entries closed' : 'Voting closed'}
+                </span>
+              )}
             </div>
             <p className="mt-6 break-all font-mono text-base text-muted-foreground md:text-lg">{voteUrl}</p>
             {total === 0 && (
@@ -575,9 +636,19 @@ export default function PresentPage() {
               ) : (
                 <ul className="max-h-[28rem] space-y-3 overflow-y-auto">
                   {commentWall.map((c) => (
-                    <li key={c.comment_id} className="rounded-lg bg-muted p-3">
+                    <li key={c.comment_id} className="group relative rounded-lg bg-muted p-3">
                       <p className="text-sm font-medium text-accent">{c.author_name}</p>
                       <p className="mt-1 text-sm text-foreground">{c.comment_body}</p>
+                      {isOwner && (
+                        <button
+                          onClick={() => deleteComment(c.comment_id)}
+                          aria-label="Delete comment"
+                          title="Delete comment"
+                          className="absolute right-2 top-2 rounded px-2 py-0.5 text-sm text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus:opacity-100 group-hover:opacity-100"
+                        >
+                          ✕
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -745,6 +816,25 @@ export default function PresentPage() {
                 </Link>
               </p>
               <div className="flex items-center gap-4">
+              {identified && (
+                <button
+                  onClick={() => setShowRoster((v) => !v)}
+                  aria-pressed={showRoster}
+                  className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                >
+                  Participants
+                </button>
+              )}
+              <button
+                onClick={toggleEntries}
+                disabled={advancing}
+                aria-pressed={entriesClosed}
+                className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+              >
+                {identified
+                  ? (entriesClosed ? 'Open entries' : 'Close entries')
+                  : (entriesClosed ? 'Open voting' : 'Close voting')}
+              </button>
               {currentQuestion && !(isScored && showLeaderboardStep) && (
                 <span className="text-sm font-medium text-muted-foreground">{votesLabel}</span>
               )}
@@ -764,6 +854,41 @@ export default function PresentPage() {
             <p className="ml-auto text-sm text-muted-foreground">Only the session owner can control this presentation.</p>
           )}
         </footer>
+      )}
+
+      {isOwner && identified && showRoster && (
+        <aside className="fixed inset-y-0 right-0 z-20 flex w-80 flex-col border-l border-border bg-card shadow-2xl">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <h2 className="font-display text-lg font-bold text-foreground">
+              Participants ({roster.length})
+            </h2>
+            <button
+              onClick={() => setShowRoster(false)}
+              aria-label="Close participants"
+              className="rounded px-2 py-1 text-muted-foreground hover:text-foreground"
+            >
+              ✕
+            </button>
+          </div>
+          <ul className="flex-1 divide-y divide-border overflow-y-auto">
+            {roster.length === 0 && (
+              <li className="px-4 py-6 text-sm text-muted-foreground">Nobody has joined yet.</li>
+            )}
+            {roster.map((r) => (
+              <li key={r.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                <span className="min-w-0 truncate text-sm text-foreground">
+                  {r.name || r.external_id || 'Participant'}
+                </span>
+                <button
+                  onClick={() => removeParticipant(r)}
+                  className="shrink-0 text-sm font-medium text-destructive hover:underline"
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        </aside>
       )}
     </SessionTheme>
   )
