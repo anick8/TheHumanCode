@@ -446,7 +446,7 @@ export default function PresentPage() {
             : (isComments ? 'End session' : 'End poll')
 
   return (
-    <SessionTheme theme={session.theme} className="min-h-screen flex flex-col">
+    <SessionTheme theme={session.theme} className={isWheel ? 'min-h-screen flex flex-col lg:h-screen lg:overflow-hidden' : 'min-h-screen flex flex-col'}>
       {/* Top bar */}
       <header className="flex items-center justify-between gap-4 border-b border-border px-6 py-4">
         <div className="flex min-w-0 items-center gap-4">
@@ -503,7 +503,7 @@ export default function PresentPage() {
       )}
 
       {/* Stage */}
-      <main className="flex flex-1 items-center justify-center px-6 py-10">
+      <main className={isWheel ? 'flex flex-1 flex-col lg:min-h-0' : 'flex flex-1 items-center justify-center px-6 py-10'}>
         {isWheel ? (
           <WheelPresenter sessionId={sessionId} session={session} isOwner={isOwner} voteUrl={voteUrl} onError={setError} />
         ) : closed ? (
