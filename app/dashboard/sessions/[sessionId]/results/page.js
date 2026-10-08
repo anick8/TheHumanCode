@@ -25,6 +25,7 @@ export default function SessionResultsPage() {
   // unlike completion-rate/average-time which the schema has no basis for.
   const [uniqueVoters, setUniqueVoters] = useState(0)
   const [lastUpdated, setLastUpdated] = useState(null)
+  const [actionError, setActionError] = useState(null)
   // Identified sessions: the roster and each participant's answers.
   const [participants, setParticipants] = useState([])
   const [participantAnswers, setParticipantAnswers] = useState({})
@@ -99,7 +100,7 @@ export default function SessionResultsPage() {
     try {
       const { data, error } = await supabase
         .from('comments')
-        .select('id, body, created_at, question_id, participants(name, external_id)')
+        .select('id, body, created_at, question_id, participant_id, participants(name, external_id)')
         .in('question_id', questionIds)
         .order('created_at', { ascending: false })
       if (error) throw error
@@ -112,6 +113,48 @@ export default function SessionResultsPage() {
     } catch (error) {
       console.error('Error loading comments:', error)
     }
+  }
+
+  // Close entries: Quiz/Comments refuse new joins, Poll refuses new votes.
+  // RLS turns a non-owner's UPDATE into zero rows, so check what came back.
+  const toggleEntries = async () => {
+    setActionError(null)
+    const next = !session.entries_closed
+    const { data, error } = await supabase
+      .from('sessions')
+      .update({ entries_closed: next })
+      .eq('id', sessionId)
+      .select('id')
+    if (error || !data?.length) {
+      setActionError(error?.message || 'Could not update the session.')
+      return
+    }
+    setSession((prev) => ({ ...prev, entries_closed: next }))
+  }
+
+  const removeParticipant = async (p) => {
+    const label = p.name || p.external_id || 'this participant'
+    if (!confirm(`Remove ${label}? Their ${isComments ? 'comments' : 'answers'} are deleted too.`)) return
+    setActionError(null)
+    const { error } = await supabase.rpc('remove_participant', { p_participant_id: p.id })
+    if (error) {
+      setActionError(error.message || 'Could not remove this participant.')
+      return
+    }
+    setParticipants((prev) => prev.filter((x) => x.id !== p.id))
+    if (isComments) setSessionComments((prev) => prev.filter((c) => c.participant_id !== p.id))
+    loadVotes(questions)
+  }
+
+  const deleteComment = async (commentId) => {
+    if (!confirm('Delete this comment?')) return
+    setActionError(null)
+    const { error } = await supabase.rpc('delete_comment', { p_comment_id: commentId })
+    if (error) {
+      setActionError(error.message || 'Could not delete this comment.')
+      return
+    }
+    setSessionComments((prev) => prev.filter((c) => c.id !== commentId))
   }
 
   const loadSpins = async () => {
@@ -448,6 +491,17 @@ export default function SessionResultsPage() {
             </div>
           </div>
           <div className="flex items-center space-x-4">
+            {session.session_type !== 'treasure_hunt' && (
+              <button
+                onClick={toggleEntries}
+                aria-pressed={Boolean(session.entries_closed)}
+                className="inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors"
+              >
+                {isIdentified
+                  ? (session.entries_closed ? 'Open entries' : 'Close entries')
+                  : (session.entries_closed ? 'Open voting' : 'Close voting')}
+              </button>
+            )}
             <button
               onClick={exportResults}
               className="inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors"
@@ -482,6 +536,12 @@ export default function SessionResultsPage() {
           </div>
         </div>
       </div>
+
+      {actionError && (
+        <div className="mb-6 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {actionError}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="mb-8 border-b border-border">
@@ -787,7 +847,15 @@ export default function SessionResultsPage() {
                           <div key={c.id} className="rounded-lg bg-muted p-3">
                             <div className="flex items-center justify-between">
                               <span className="text-sm font-medium text-accent">{c.author}</span>
-                              <span className="text-xs text-muted-foreground">{formatDateTime(c.created_at)}</span>
+                              <span className="flex items-center gap-3">
+                                <span className="text-xs text-muted-foreground">{formatDateTime(c.created_at)}</span>
+                                <button
+                                  onClick={() => deleteComment(c.id)}
+                                  className="text-xs font-medium text-destructive hover:underline"
+                                >
+                                  Delete
+                                </button>
+                              </span>
                             </div>
                             <p className="mt-1 text-sm text-foreground">{c.body}</p>
                           </div>
@@ -868,6 +936,7 @@ export default function SessionResultsPage() {
                           Q{index + 1}
                         </th>
                       ))}
+                      <th className="px-4 py-3.5"><span className="sr-only">Actions</span></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -891,6 +960,14 @@ export default function SessionResultsPage() {
                             </td>
                           )
                         })}
+                        <td className="px-4 py-4 text-right text-sm">
+                          <button
+                            onClick={() => removeParticipant(p)}
+                            className="font-medium text-destructive hover:underline"
+                          >
+                            Remove
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

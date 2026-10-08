@@ -32,6 +32,9 @@ export default function VotingPage() {
   // Identified sessions: { id, name, external_id, join_token } from localStorage.
   const [participant, setParticipant] = useState(null)
   const [identityReady, setIdentityReady] = useState(false)
+  // Set when the host removes this device's participant mid-session.
+  const [removed, setRemoved] = useState(false)
+  const participantRef = useRef(null)
   // Scored quizzes: host-paced, so there is no personal clock. standing is
   // the participant's own score/rank, leaderboard the shared board, and
   // questionResult the correct/wrong + points for the currently revealed
@@ -49,6 +52,9 @@ export default function VotingPage() {
 
   const isScored = Boolean(session?.is_scored && session?.participation_mode === 'identified')
   const isComments = session?.session_type === 'comments'
+  participantRef.current = participant
+  // Poll has no join step, so the host closing entries closes voting instead.
+  const pollClosed = Boolean(session?.entries_closed) && session?.participation_mode === 'anonymous'
 
   const slug = params.slug
 
@@ -125,11 +131,21 @@ export default function VotingPage() {
     const refresh = async () => {
       const { data } = await supabase
         .from('sessions')
-        .select('current_question_index, results_revealed, show_leaderboard, theme, scored_closed, is_scored')
+        .select('current_question_index, results_revealed, show_leaderboard, theme, scored_closed, is_scored, entries_closed')
         .eq('id', sessionRowId)
         .maybeSingle()
       if (data) setSession((prev) => (prev ? { ...prev, ...data } : prev))
       if (resultsVisibleRef.current) loadVoteCounts(sessionRowId)
+      // The host can remove a participant mid-session; their token then matches
+      // no row. Only an explicit `false` counts - a failed request must not
+      // kick anyone.
+      const current = participantRef.current
+      if (current) {
+        const { data: exists, error: existsError } = await supabase.rpc('participant_exists', {
+          p_join_token: current.join_token,
+        })
+        if (!existsError && exists === false) handleRemoved()
+      }
     }
     const interval = setInterval(refresh, 8000)
     const onVisible = () => {
@@ -262,7 +278,22 @@ export default function VotingPage() {
     }
   }
 
+  const handleRemoved = () => {
+    try {
+      localStorage.removeItem(`participant_${slug}`)
+    } catch (error) {
+      console.error('Error clearing participant:', error)
+    }
+    setParticipant(null)
+    setVotes({})
+    setStanding(null)
+    setQuestionResult(null)
+    setReview(null)
+    setRemoved(true)
+  }
+
   const handleJoined = async (joined) => {
+    setRemoved(false)
     try {
       localStorage.setItem(`participant_${slug}`, JSON.stringify(joined))
     } catch (error) {
@@ -643,7 +674,7 @@ export default function VotingPage() {
     return (
       <SessionTheme theme={session.theme} className="min-h-screen bg-gradient-to-br from-background to-muted">
         <main className="container mx-auto px-4">
-          <JoinGate session={session} onJoined={handleJoined} />
+          <JoinGate session={session} onJoined={handleJoined} removed={removed} />
         </main>
       </SessionTheme>
     )
@@ -1194,6 +1225,12 @@ export default function VotingPage() {
               </div>
             )}
 
+            {pollClosed && (
+              <div className="mb-6 rounded-lg border border-border bg-muted p-4 text-center text-muted-foreground">
+                Voting is closed by the host.
+              </div>
+            )}
+
             {voteError && (
               <div className="mb-6 rounded-lg border border-destructive/30 bg-destructive/10 p-4">
                 <p className="text-sm font-medium text-destructive">{voteError}</p>
@@ -1212,6 +1249,7 @@ export default function VotingPage() {
                 options={currentOptions}
                 onVote={handleVote}
                 loading={submittingVote}
+                closed={pollClosed}
                 selectedOptionId={votes[currentQuestion.id]}
                 showResults={questionResultsShown}
                 resultsData={getResultsData()}

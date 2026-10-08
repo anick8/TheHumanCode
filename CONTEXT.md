@@ -47,6 +47,13 @@ The organizer's action that clears a wheel's Spin history and restores every rem
 One message in a Treasure Hunt, reached only by scanning its own QR code (never by browsing the session). Its QR code carries a random, permanent token that never changes, even when the organizer edits the Clue's message later - only deleting the Clue invalidates its printed code. The message is shown only while the session is active; scanning an inactive session's Clue, or a deleted Clue's code, shows a status message instead. A Clue may also carry an organizer-only label (default "Clue #N") printed under its QR code; finders never see it.
 _Avoid_: Question (the underlying database row a Clue reuses, but "Clue" is the organizer- and finder-facing term).
 
+**Close entries**:
+The host's manual toggle that stops new people getting in. In a Quiz or Comments session nobody new can join (a device that already joined keeps playing, and the join gate says entries are closed); a Poll has no join step, so it closes voting for everyone instead. Never automatic, and the host can reopen at any time.
+_Avoid_: "Lock" (that is a Participant committing an Answer), "end session" (the session stays active).
+
+**Remove participant**:
+The host's action to kick a Participant out of a Quiz or Comments session. A hard delete: their Answers or Comments go with them and the Leaderboard re-ranks without them. They may rejoin while entries are open. A Poll has nobody to remove (votes are anonymous). The host can also delete a single Comment.
+
 **Participant**:
 A person taking part in a Session, identified by name and/or ID in Quiz and Comments sessions. The generic term used across the UI regardless of session type - a Participant votes in a Poll, answers in a Quiz, and comments in a Comments session.
 _Avoid_: Voter, Player, Contestant, Attendee (as the primary UI term - "Participant" is canonical; "Attendee" still appears in some organizer-facing copy referring to the room in general).
