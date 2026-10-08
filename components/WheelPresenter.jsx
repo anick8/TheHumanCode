@@ -24,6 +24,7 @@ const WIND_BACK_MS = 250
 const WIND_BACK_DEG = 8
 const POLL_MS = 3000 // same cadence as the rest of the presenter's polling
 const BULBS = 24
+const QR_HIDDEN_KEY = 'wheel-qr-hidden'
 const WHEEL_R = 92
 const easeOut = (t) => 1 - Math.pow(1 - t, 4)
 
@@ -166,6 +167,13 @@ const IconClock = () => (
 const IconClose = () => (
   <svg {...iconProps}><path d="M6 6l12 12M18 6L6 18" /></svg>
 )
+const IconQr = ({ off }) => (
+  <svg {...iconProps}>
+    <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" />
+    <path d="M14 14h3v3h-3zM20 14v.01M14 20v.01M20 20v.01" />
+    {off && <path d="M3 21L21 3" />}
+  </svg>
+)
 const IconSound = ({ off }) => (
   <svg {...iconProps}>
     <path d="M4 9v6h4l5 4V5L8 9H4z" />
@@ -195,6 +203,7 @@ export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, o
   const [frozenEntries, setFrozenEntries] = useState(null) // wheel's Entries while a Spin is unresolved
   const [drawer, setDrawer] = useState(null) // null | 'entries' | 'history'
   const [muted, setMutedState] = useState(false)
+  const [showQr, setShowQr] = useState(true) // host can hide the join QR once the room has joined
   const [joinFlash, setJoinFlash] = useState(null) // { key, label }
   const [lastPickLabel, setLastPickLabel] = useState('')
 
@@ -212,6 +221,11 @@ export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, o
   }
 
   useEffect(() => setMutedState(getMuted()), [])
+  useEffect(() => {
+    try {
+      setShowQr(localStorage.getItem(QR_HIDDEN_KEY) !== '1')
+    } catch {}
+  }, [])
 
   // The wheel's rotation is written straight to the DOM every frame: re-rendering
   // hundreds of wedges at 60fps would stutter, and nothing else reads it mid-spin.
@@ -457,6 +471,14 @@ export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, o
     await refresh(true)
   }
 
+  const toggleQr = () => {
+    const next = !showQr
+    setShowQr(next)
+    try {
+      localStorage.setItem(QR_HIDDEN_KEY, next ? '0' : '1')
+    } catch {}
+  }
+
   const toggleMute = () => {
     const next = !muted
     setMutedState(next)
@@ -536,13 +558,17 @@ export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, o
 
         {/* Join plate */}
         <aside className="flex flex-col items-center justify-start gap-4 pt-2 text-center lg:pt-4">
-          <div className="rounded-2xl bg-white p-3.5 shadow-xl transition-all duration-500">
-            <QRCodeSVG value={voteUrl} size={waiting ? 248 : landed ? 150 : 184} level="M" bgColor="#ffffff" fgColor="#000000" />
-          </div>
-          <div className="min-w-0 max-w-full">
-            <p className="font-display text-xl font-bold text-foreground">Scan to join the wheel</p>
-            <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{voteUrl.replace(/^https?:\/\//, '')}</p>
-          </div>
+          {showQr && (
+            <>
+              <div className="rounded-2xl bg-white p-3.5 shadow-xl transition-all duration-500">
+                <QRCodeSVG value={voteUrl} size={waiting ? 248 : landed ? 150 : 184} level="M" bgColor="#ffffff" fgColor="#000000" />
+              </div>
+              <div className="min-w-0 max-w-full">
+                <p className="font-display text-xl font-bold text-foreground">Scan to join the wheel</p>
+                <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{voteUrl.replace(/^https?:\/\//, '')}</p>
+              </div>
+            </>
+          )}
           {isOwner && (
             <div className="min-h-[6.5rem]">
               <p className="flex items-baseline justify-center gap-2">
@@ -718,6 +744,15 @@ export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, o
               className={`${consoleBtn} ${drawer === 'history' ? 'border-primary bg-muted text-foreground' : 'border-border text-foreground hover:bg-muted'}`}
             >
               <IconClock /> History · {spins.length}
+            </button>
+            <button
+              onClick={toggleQr}
+              aria-pressed={!showQr}
+              aria-label={showQr ? 'Hide QR code' : 'Show QR code'}
+              title={showQr ? 'Hide QR code' : 'Show QR code'}
+              className={`${consoleBtn} border-border text-foreground hover:bg-muted`}
+            >
+              <IconQr off={!showQr} />
             </button>
             <button
               onClick={toggleMute}
