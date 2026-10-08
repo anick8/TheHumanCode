@@ -10,6 +10,7 @@ import QuizQuestion from '@/components/QuizQuestion'
 import ResultsChart from '@/components/ResultsChart'
 import JoinGate from '@/components/JoinGate'
 import Leaderboard from '@/components/Leaderboard'
+import WheelPhone from '@/components/WheelPhone'
 import { generateVoterToken } from '@/lib/utils'
 
 const RESULTS_MODE_LABELS = { live: 'Live results', after_all: 'After all questions' }
@@ -675,6 +676,22 @@ export default function VotingPage() {
         <main className="container mx-auto px-4">
           <JoinGate session={session} onJoined={handleJoined} removed={removed} />
         </main>
+      </SessionTheme>
+    )
+  }
+
+  // Wheel of Fortune has no questions: after joining, a phone only shows the
+  // checkmark and the latest Pick.
+  if (session.session_type === 'wheel') {
+    return (
+      <SessionTheme theme={session.theme} className="min-h-screen bg-gradient-to-br from-background to-muted">
+        <header className="border-b border-border bg-card">
+          <div className="container mx-auto flex items-center gap-4 px-4 py-4">
+            <SessionLogo theme={session.theme} className="h-10 shrink-0" />
+            <h1 className="font-display truncate text-xl font-bold text-foreground">{session.title}</h1>
+          </div>
+        </header>
+        <WheelPhone participant={participant} onSwitch={switchParticipant} />
       </SessionTheme>
     )
   }

@@ -1,5 +1,5 @@
 -- ============================================================================
--- 23. Close entries and host removal
+-- 26. Close entries and host removal
 -- ============================================================================
 
 -- The host's "close entries" switch. Quiz and Comments: nobody new can join

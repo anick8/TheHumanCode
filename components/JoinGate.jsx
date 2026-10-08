@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { generateJoinToken } from '@/lib/utils'
 import { copyFor } from '@/lib/sessionCopy'
+import { WHEEL_LABEL_MAX } from '@/lib/wheelEntries'
 
 export default function JoinGate({ session, onJoined, removed = false }) {
   const [name, setName] = useState('')
@@ -16,6 +17,7 @@ export default function JoinGate({ session, onJoined, removed = false }) {
   const requiresId = Boolean(session?.identity_requires_id)
   const collected = requiresName && requiresId ? 'name and ID' : requiresName ? 'name' : 'ID'
   const typeCopy = copyFor(session?.session_type)
+  const isWheel = session?.session_type === 'wheel'
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -87,7 +89,9 @@ export default function JoinGate({ session, onJoined, removed = false }) {
         )}
         <h1 className="font-display text-2xl font-bold text-foreground">Join this session</h1>
         <p className="mt-2 text-muted-foreground">
-          {session?.title} collects your {collected} so the organizer can see who responded.
+          {isWheel
+            ? `Enter your name to go on the wheel for ${session?.title}.`
+            : `${session?.title} collects your ${collected} so the organizer can see who responded.`}
         </p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
@@ -102,6 +106,7 @@ export default function JoinGate({ session, onJoined, removed = false }) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 autoComplete="name"
+                maxLength={isWheel ? WHEEL_LABEL_MAX : undefined}
                 className="block w-full rounded-lg border border-border px-4 py-3 text-foreground shadow-sm focus:border-ring focus:ring-2 focus:ring-ring focus:ring-opacity-20"
                 placeholder="Your name"
               />
@@ -140,10 +145,12 @@ export default function JoinGate({ session, onJoined, removed = false }) {
           </button>
         </form>
 
-        <p className="mt-4 text-xs text-muted-foreground">
-          Your answers are stored with your {collected} and visible to the organizer. Only your first answer
-          on each question is recorded.
-        </p>
+        {!isWheel && (
+          <p className="mt-4 text-xs text-muted-foreground">
+            Your answers are stored with your {collected} and visible to the organizer. Only your first answer
+            on each question is recorded.
+          </p>
+        )}
       </div>
     </div>
   )

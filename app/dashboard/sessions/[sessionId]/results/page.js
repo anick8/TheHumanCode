@@ -32,11 +32,15 @@ export default function SessionResultsPage() {
   // Comments sessions: [{id, body, created_at, question_id, author}], loaded
   // via a direct read (the owner has RLS SELECT on comments and participants).
   const [sessionComments, setSessionComments] = useState([])
+  // Wheel sessions: every Spin, newest first (owner has RLS SELECT on wheel_spins).
+  const [wheelSpins, setWheelSpins] = useState([])
   const supabase = createClient()
 
   const isIdentified = session?.participation_mode === 'identified'
   const isScored = Boolean(session?.is_scored && isIdentified)
   const isComments = session?.session_type === 'comments'
+  // A wheel has no questions or votes: no Overview / All Questions views.
+  const isWheel = session?.session_type === 'wheel'
 
   const sessionId = params.sessionId
 
@@ -76,6 +80,10 @@ export default function SessionResultsPage() {
       }
       if (data.session_type === 'comments') {
         setActiveTab('comments')
+      }
+      if (data.session_type === 'wheel') {
+        setActiveTab('spins')
+        await loadSpins()
       }
     } catch (error) {
       console.error('Error loading session:', error)
@@ -147,6 +155,20 @@ export default function SessionResultsPage() {
       return
     }
     setSessionComments((prev) => prev.filter((c) => c.id !== commentId))
+  }
+
+  const loadSpins = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('wheel_spins')
+        .select('id, label, removed, created_at')
+        .eq('session_id', sessionId)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      setWheelSpins(data || [])
+    } catch (error) {
+      console.error('Error loading spins:', error)
+    }
   }
 
   const loadParticipants = async () => {
@@ -464,7 +486,7 @@ export default function SessionResultsPage() {
             <SessionLogo theme={session.theme} className="mb-4 h-12" />
             <h1 className="font-display text-3xl font-bold text-foreground">Results: {session.title}</h1>
             <div className="mt-2 text-muted-foreground">
-              {!isComments && <span>{RESULTS_MODE_LABELS[session.results_mode] || session.results_mode} • </span>}
+              {!isComments && !isWheel && <span>{RESULTS_MODE_LABELS[session.results_mode] || session.results_mode} • </span>}
               <span>{lastUpdated ? `Updated ${formatDateTime(lastUpdated)}` : 'Loading…'}</span>
             </div>
           </div>
@@ -524,7 +546,7 @@ export default function SessionResultsPage() {
       {/* Tabs */}
       <div className="mb-8 border-b border-border">
         <nav className="-mb-px flex space-x-8">
-          {!isComments && (
+          {!isComments && !isWheel && (
             <button
               onClick={() => setActiveTab('overview')}
               className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
@@ -539,7 +561,7 @@ export default function SessionResultsPage() {
               Overview
             </button>
           )}
-          {!isComments && (
+          {!isComments && !isWheel && (
             <button
               onClick={() => setActiveTab('questions')}
               className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
@@ -567,6 +589,18 @@ export default function SessionResultsPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
               Comments ({sessionComments.length})
+            </button>
+          )}
+          {isWheel && (
+            <button
+              onClick={() => setActiveTab('spins')}
+              className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
+                activeTab === 'spins'
+                  ? 'border-ring text-accent'
+                  : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
+              }`}
+            >
+              Spins ({wheelSpins.length})
             </button>
           )}
           {isIdentified && (
@@ -616,7 +650,7 @@ export default function SessionResultsPage() {
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'overview' && !isComments && (
+      {activeTab === 'overview' && !isComments && !isWheel && (
         <div className="space-y-8">
           {/* Stats Cards - only stats the schema can actually support.
               Completion rate and average time were removed rather than
@@ -702,7 +736,7 @@ export default function SessionResultsPage() {
         </div>
       )}
 
-      {activeTab === 'questions' && !isComments && (
+      {activeTab === 'questions' && !isComments && !isWheel && (
         <div className="space-y-8">
           {questions.map((question, index) => (
             <div key={question.id} className="rounded-2xl border border-border bg-card p-8 shadow-lg">
@@ -835,6 +869,27 @@ export default function SessionResultsPage() {
           })}
           {questions.length === 0 && (
             <p className="text-muted-foreground">No images in this session yet.</p>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'spins' && isWheel && (
+        <div className="rounded-2xl border border-border bg-card p-8 shadow-lg">
+          <h2 className="font-display text-2xl font-bold text-foreground">Spins</h2>
+          <p className="mt-1 text-muted-foreground">Every Pick, newest first.</p>
+          {wheelSpins.length === 0 ? (
+            <p data-testid="spins-empty" className="mt-6 text-muted-foreground">No spins yet.</p>
+          ) : (
+            <ol data-testid="spins-list" className="mt-6 divide-y divide-border">
+              {wheelSpins.map((s) => (
+                <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
+                  <span className="font-medium text-foreground">{s.label}</span>
+                  <span className="text-sm text-muted-foreground">
+                    {formatDateTime(s.created_at)} • {s.removed ? 'Removed from wheel' : 'Kept on wheel'}
+                  </span>
+                </li>
+              ))}
+            </ol>
           )}
         </div>
       )}

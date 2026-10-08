@@ -47,5 +47,5 @@ yarn-error.log*
 test-results/
 playwright-report/
 
-# Impeccable design tooling state
+# Impeccable design tooling (live config, review screenshots)
 .impeccable/
