@@ -13,3 +13,7 @@ Default vocabulary: needs-triage, needs-info, ready-for-agent, ready-for-human, 
 ### Domain docs
 
 Single-context: one `CONTEXT.md` plus `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+### Verifying changes
+
+Database tests, the migration check, and the hosted-Supabase UI recipe are in `docs/agents/e2e.md`.

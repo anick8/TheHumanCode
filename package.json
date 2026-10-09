@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test:db": "./db-tests/scratch.sh",
+    "check:migrations": "node db-tests/check-migrations.mjs"
   },
   "dependencies": {
     "@ai-sdk/react": "^4.0.109",
