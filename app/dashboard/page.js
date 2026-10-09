@@ -7,6 +7,7 @@ import { formatDateTime, generateSlug } from '@/lib/utils'
 
 import { createClient } from '@/lib/supabase/client'
 import { copyFor } from '@/lib/sessionCopy'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 export default function DashboardHome() {
   const [sessions, setSessions] = useState([])
@@ -14,8 +15,36 @@ export default function DashboardHome() {
   const [aiPrompt, setAiPrompt] = useState('')
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState(null)
+  // The session whose Delete confirmation is open.
+  const [pendingDelete, setPendingDelete] = useState(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState(null)
   const router = useRouter()
   const supabase = createClient()
+
+  // Deleting a session removes it with its questions and every response. The
+  // card is a link, so the click must not also navigate.
+  const askDeleteSession = (event, session) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setDeleteError(null)
+    setPendingDelete(session)
+  }
+
+  const deleteSession = async () => {
+    if (!pendingDelete) return
+    setDeleting(true)
+    setDeleteError(null)
+    const { error } = await supabase.from('sessions').delete().eq('id', pendingDelete.id)
+    setDeleting(false)
+    if (error) {
+      console.error('Error deleting session:', error)
+      setDeleteError('Failed to delete session. Please try again.')
+      return
+    }
+    setSessions((prev) => prev.filter((s) => s.id !== pendingDelete.id))
+    setPendingDelete(null)
+  }
 
   // "Create with AI" makes an empty quiz session with the same payload the
   // normal New Session form submits, then hands the prompt to the assistant in
@@ -263,13 +292,16 @@ export default function DashboardHome() {
               </div>
 
               <div className="mt-6 flex items-center justify-between border-t border-border pt-4">
-                <div className="flex items-center text-xs text-muted-foreground">
+                <button
+                  type="button"
+                  onClick={(event) => askDeleteSession(event, session)}
+                  className="inline-flex items-center rounded-md px-2 py-1 -ml-2 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
+                >
                   <svg className="mr-1.5 h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
-                  Manage Poll
-                </div>
+                  Delete
+                </button>
                 <div className="text-xs font-medium text-accent group-hover:translate-x-0.5 transition-transform">
                   View details →
                 </div>
@@ -278,6 +310,22 @@ export default function DashboardHome() {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={Boolean(pendingDelete)}
+        title={`Delete "${pendingDelete?.title ?? ''}"?`}
+        confirmLabel="Delete"
+        busyLabel="Deleting…"
+        busy={deleting}
+        error={deleteError}
+        onConfirm={deleteSession}
+        onCancel={() => setPendingDelete(null)}
+      >
+        <p className="mt-3 text-sm text-foreground">
+          This deletes the session, its questions and all responses.
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">This cannot be undone.</p>
+      </ConfirmDialog>
 
       {/* Setup Instructions Helper */}
       {/*<div className="mt-12 rounded-xl border border-border bg-muted/70 p-6">

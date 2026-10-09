@@ -654,7 +654,7 @@ export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, o
                 </ol>
                 <div className="mt-3 border-t border-border pt-3">
                   {confirmReset ? (
-                    <div role="alertdialog" aria-label="Reset wheel" data-testid="reset-confirm" className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm">
+                    <div role="alertdialog" aria-label="Reset spins" data-testid="reset-confirm" className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm">
                       <p className="text-foreground">Clear the Spin history and put every removed Entry back on the wheel? Joined Participants stay.</p>
                       <div className="mt-2 flex gap-2">
                         <button onClick={doReset} disabled={phase !== 'idle' || busy} className={`rounded-lg bg-destructive px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50 ${focus}`}>Yes, reset</button>
@@ -663,7 +663,7 @@ export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, o
                     </div>
                   ) : (
                     <button onClick={() => setConfirmReset(true)} disabled={phase !== 'idle' || busy} className={`text-sm font-medium text-destructive hover:underline disabled:opacity-40 disabled:cursor-not-allowed ${focus}`}>
-                      Reset wheel
+                      Reset spins
                     </button>
                   )}
                 </div>
