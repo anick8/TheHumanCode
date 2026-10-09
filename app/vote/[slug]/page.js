@@ -65,6 +65,38 @@ export default function VotingPage() {
     }
   }, [slug])
 
+  // The host cleared this session's responses (sessions.responses_cleared_at
+  // changed). Identified: a device whose participant is gone quietly returns to
+  // the join form. Poll: votes were deleted, so the open question is votable
+  // again. The value seen on first load is the baseline, not a Clear.
+  const clearedAtRef = useRef(undefined)
+  useEffect(() => {
+    if (!session?.id) return
+    const value = session.responses_cleared_at ?? null
+    if (clearedAtRef.current === undefined) {
+      clearedAtRef.current = value
+      return
+    }
+    if (clearedAtRef.current === value) return
+    clearedAtRef.current = value
+
+    if (session.participation_mode === 'identified') {
+      const current = participantRef.current
+      if (!current) return
+      supabase
+        .rpc('participant_exists', { p_join_token: current.join_token })
+        .then(({ data: exists, error }) => {
+          if (!error && exists === false) switchParticipant()
+        })
+    } else {
+      setVotes({})
+      setShowResults(false)
+      setVoteError(null)
+      if (!hostMode) setCurrentQuestionIndex(0)
+      loadVoteCounts(session.id)
+    }
+  }, [session?.id, session?.responses_cleared_at])
+
   // Host-driven mode: the organizer's presenter screen (/present/[sessionId])
   // sets sessions.current_question_index and every attendee follows it.
   //   NULL = self-paced, -1 = lobby, 0..n-1 = question, n = finished
@@ -131,7 +163,7 @@ export default function VotingPage() {
     const refresh = async () => {
       const { data } = await supabase
         .from('sessions')
-        .select('current_question_index, results_revealed, show_leaderboard, theme, scored_closed, is_scored, entries_closed')
+        .select('current_question_index, results_revealed, show_leaderboard, theme, scored_closed, is_scored, entries_closed, responses_cleared_at')
         .eq('id', sessionRowId)
         .maybeSingle()
       if (data) setSession((prev) => (prev ? { ...prev, ...data } : prev))
@@ -144,7 +176,15 @@ export default function VotingPage() {
         const { data: exists, error: existsError } = await supabase.rpc('participant_exists', {
           p_join_token: current.join_token,
         })
-        if (!existsError && exists === false) handleRemoved()
+        if (!existsError && exists === false) {
+          // A host Clear deletes every participant at once. Tell it apart from
+          // one removal: this device joined before the latest Clear.
+          const clearedAfterJoin =
+            Boolean(data?.responses_cleared_at) &&
+            data.responses_cleared_at !== (current.cleared_seen ?? null)
+          if (clearedAfterJoin) switchParticipant()
+          else handleRemoved()
+        }
       }
     }
     const interval = setInterval(refresh, 8000)
@@ -294,6 +334,7 @@ export default function VotingPage() {
 
   const handleJoined = async (joined) => {
     setRemoved(false)
+    joined = { ...joined, cleared_seen: session?.responses_cleared_at ?? null }
     try {
       localStorage.setItem(`participant_${slug}`, JSON.stringify(joined))
     } catch (error) {

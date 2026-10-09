@@ -8,6 +8,7 @@ import { formatDateTime } from '@/lib/utils'
 import { tiedScores, tieNote } from '@/lib/tiebreak'
 import SessionTheme from '@/components/SessionTheme'
 import SessionLogo from '@/components/SessionLogo'
+import ClearResponsesButton from '@/components/ClearResponsesButton'
 
 const RESULTS_MODE_LABELS = { live: 'Live results', after_all: 'After all questions' }
 
@@ -155,6 +156,20 @@ export default function SessionResultsPage() {
       return
     }
     setSessionComments((prev) => prev.filter((c) => c.id !== commentId))
+  }
+
+  // After a Clear the roster, answers, comments and spins are all gone; reload
+  // them (and the session, whose quiz state was rewound).
+  const reloadAfterClear = async () => {
+    setActionError(null)
+    setParticipants([])
+    setParticipantAnswers({})
+    setSessionComments([])
+    setWheelSpins([])
+    setVoteCounts({})
+    setUniqueVoters(0)
+    await loadSession()
+    await loadQuestionsAndOptions()
   }
 
   const loadSpins = async () => {
@@ -501,6 +516,13 @@ export default function SessionResultsPage() {
                   ? (session.entries_closed ? 'Open entries' : 'Close entries')
                   : (session.entries_closed ? 'Open voting' : 'Close voting')}
               </button>
+            )}
+            {session.session_type !== 'treasure_hunt' && (
+              <ClearResponsesButton
+                sessionId={sessionId}
+                rewindsQuiz={Boolean(session.is_scored)}
+                onCleared={reloadAfterClear}
+              />
             )}
             <button
               onClick={exportResults}
