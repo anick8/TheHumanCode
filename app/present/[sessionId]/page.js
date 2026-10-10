@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useQuestionClock } from '@/lib/useQuestionClock'
 import ResultsChart from '@/components/ResultsChart'
 import Leaderboard from '@/components/Leaderboard'
+import { RoundBoard, RoundRecap } from '@/components/RoundBoard'
 import { getAppUrl } from '@/lib/utils'
 import SessionTheme from '@/components/SessionTheme'
 import SessionLogo from '@/components/SessionLogo'
@@ -44,6 +45,9 @@ export default function PresentPage() {
   const [participantCount, setParticipantCount] = useState(0)
   const [participantNames, setParticipantNames] = useState([])
   const [leaderboard, setLeaderboard] = useState([])
+  // Round-by-round quiz: the board for the open question, and the end recap.
+  const [roundBoard, setRoundBoard] = useState([])
+  const [roundRecap, setRoundRecap] = useState([])
   const [commentCounts, setCommentCounts] = useState({}) // {questionId: count}
   const [commentWall, setCommentWall] = useState([]) // owner-only, current image
   // Scored quiz: the answer key (owner-only, fetched once) to highlight the
@@ -252,6 +256,7 @@ export default function PresentPage() {
   const lobby = session?.current_question_index === -1
   const identified = session?.participation_mode === 'identified'
   const isScored = Boolean(session?.is_scored)
+  const isRound = isScored && session?.quiz_format === 'round_by_round'
   useEffect(() => {
     if (!identified || !lobby || !sessionId) return
     let cancelled = false
@@ -300,7 +305,7 @@ export default function PresentPage() {
 
   // Scored quiz: the live ranked board shown on the presenter screen.
   useEffect(() => {
-    if (!isScored || !sessionId) return
+    if (!isScored || isRound || !sessionId) return
     let cancelled = false
     const load = async () => {
       // Ranked server-side (Score, then cumulative Response time) so the
@@ -326,7 +331,7 @@ export default function PresentPage() {
       cancelled = true
       clearInterval(interval)
     }
-  }, [isScored, sessionId])
+  }, [isScored, isRound, sessionId])
 
   // How many participants have locked an answer for the currently open
   // question - a total only, so it never leaks the option split before
@@ -353,6 +358,59 @@ export default function PresentPage() {
       clearInterval(interval)
     }
   }, [isScored, currentQuestionId, revealed])
+
+  // Round-by-round: only the open question's board, and only once revealed.
+  useEffect(() => {
+    if (!isRound || !currentQuestionId || !revealed) {
+      setRoundBoard([])
+      return
+    }
+    let cancelled = false
+    const load = async () => {
+      const { data } = await supabase.rpc('get_question_leaderboard', {
+        p_session_id: sessionId,
+        p_question_id: currentQuestionId,
+      })
+      if (!cancelled) {
+        setRoundBoard(
+          (data || []).map((p) => ({
+            participant_id: p.participant_id,
+            display_name: p.display_name,
+            response_ms: Number(p.response_ms),
+            rank: Number(p.rank),
+          }))
+        )
+      }
+    }
+    load()
+    const interval = setInterval(load, 3000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [isRound, sessionId, currentQuestionId, revealed])
+
+  // Round-by-round: the recap replaces the final leaderboard once closed.
+  const closedForRecap = Boolean(session?.scored_closed)
+  useEffect(() => {
+    if (!isRound || !closedForRecap) return
+    let cancelled = false
+    supabase.rpc('get_round_recap', { p_session_id: sessionId }).then(({ data }) => {
+      if (cancelled) return
+      setRoundRecap(
+        (data || []).map((r) => ({
+          question_id: r.question_id,
+          question_text: r.question_text,
+          winner_ids: r.winner_ids || [],
+          winner_names: r.winner_names || [],
+          winner_ms: r.winner_ms == null ? null : Number(r.winner_ms),
+        }))
+      )
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [isRound, closedForRecap, sessionId])
 
   // RLS turns an unauthorized UPDATE into "0 rows affected" rather than an
   // error, so check the returned rows - otherwise a non-owner's click would
@@ -598,7 +656,11 @@ export default function PresentPage() {
             <p className="text-sm font-semibold uppercase tracking-widest text-accent">Final results</p>
             <h1 className="mt-3 font-display text-4xl font-bold text-foreground md:text-5xl">{session.title}</h1>
             <div className="mt-10">
-              <Leaderboard entries={leaderboard} podium total={total} />
+              {isRound ? (
+                <RoundRecap rows={roundRecap} />
+              ) : (
+                <Leaderboard entries={leaderboard} podium total={total} />
+              )}
             </div>
           </div>
         ) : index < 0 ? (
@@ -708,7 +770,11 @@ export default function PresentPage() {
             {showLeaderboardStep ? (
               <div className="mt-10 rounded-2xl border border-border bg-card p-6">
                 <h2 className="font-display mb-4 text-2xl font-bold text-foreground">Leaderboard</h2>
-                <Leaderboard entries={leaderboard} total={total} />
+                {isRound ? (
+                  <RoundBoard entries={roundBoard} limit={10} />
+                ) : (
+                  <Leaderboard entries={leaderboard} total={total} />
+                )}
               </div>
             ) : (
               <div className="mt-10 grid gap-4 sm:grid-cols-2">

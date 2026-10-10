@@ -787,6 +787,7 @@ export default function SessionDetailPage() {
             questionKeys={questionKeys}
             onQuestionKeysChange={updateQuestionKey}
             isScored={Boolean(session?.is_scored)}
+            hidePoints={session?.quiz_format === 'round_by_round'}
             sessionType={session?.session_type}
             onImageUpload={uploadQuestionImage}
             locked={hasVotes && Boolean(session?.is_scored)}

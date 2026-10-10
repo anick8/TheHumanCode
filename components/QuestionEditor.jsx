@@ -14,6 +14,7 @@ export default function QuestionEditor({
   questionKeys = {},
   onQuestionKeysChange,
   isScored = false,
+  hidePoints = false,
   sessionType = 'poll',
   onImageUpload,
   locked = false,
@@ -491,6 +492,7 @@ export default function QuestionEditor({
                                     className="mt-2 flex flex-wrap items-center gap-3"
                                     onClick={(e) => e.stopPropagation()}
                                   >
+                                    {!hidePoints && (
                                     <label className="flex items-center gap-2 text-xs text-muted-foreground">
                                       Points
                                       <input
@@ -505,6 +507,7 @@ export default function QuestionEditor({
                                         className="w-20 rounded-lg border border-border px-2 py-1 text-sm text-foreground shadow-sm focus:border-ring focus:ring-2 focus:ring-ring focus:ring-opacity-20 disabled:opacity-60"
                                       />
                                     </label>
+                                    )}
                                     <label className="flex items-center gap-2 text-xs text-muted-foreground">
                                       Time limit (s)
                                       <input
