@@ -17,6 +17,7 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
     identity_requires_id: initialData?.identity_requires_id ?? false,
     is_scored: initialData?.is_scored ?? false,
     score_time_limit_seconds: initialData?.score_time_limit_seconds ?? null,
+    max_participants: initialData?.max_participants ?? null,
     is_active: initialData?.is_active ?? true,
   }))
   const [formError, setFormError] = useState(null)
@@ -43,6 +44,8 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
       participation_mode: (type === 'poll' || type === 'treasure_hunt') ? 'anonymous' : 'identified',
       is_scored: type === 'quiz',
       ...(type !== 'quiz' ? { score_time_limit_seconds: null } : {}),
+      // The join limit is exposed for wheels only.
+      ...(type !== 'wheel' ? { max_participants: null } : {}),
       // A wheel always requires a name and never an ID (DB-enforced preset).
       ...(type === 'wheel' ? { identity_requires_name: true, identity_requires_id: false } : {}),
     }))
@@ -67,6 +70,9 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
         next.is_scored = values.session_type === 'quiz'
         if (values.session_type !== 'quiz') {
           next.score_time_limit_seconds = null
+        }
+        if (values.session_type !== 'wheel') {
+          next.max_participants = null
         }
         if (values.session_type === 'wheel') {
           next.identity_requires_name = true
@@ -414,6 +420,31 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
           </p>
           {formError && (
             <p className="mt-2 text-sm font-medium text-destructive">{formError}</p>
+          )}
+
+          {formData.session_type === 'wheel' && (
+            <div className="mt-4 border-t border-border pt-4">
+              <label htmlFor="max_participants" className="block text-sm font-medium text-foreground mb-2">
+                Max participants <span className="font-normal text-muted-foreground">(optional)</span>
+              </label>
+              <input
+                type="number"
+                id="max_participants"
+                min={1}
+                step={1}
+                inputMode="numeric"
+                value={formData.max_participants ?? ''}
+                onChange={(e) => {
+                  const n = parseInt(e.target.value, 10)
+                  updateField('max_participants', Number.isFinite(n) && n > 0 ? n : null)
+                }}
+                placeholder="No limit"
+                className="w-40 rounded-lg border border-border bg-background px-3 py-2 text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              />
+              <p className="mt-2 text-sm text-muted-foreground">
+                Once this many people have joined, new joins are refused. Leave blank for no limit. Entries you add yourself don&apos;t count.
+              </p>
+            </div>
           )}
         </div>
 

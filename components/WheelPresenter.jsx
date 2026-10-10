@@ -11,6 +11,7 @@
 
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, memo } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
+import InstagramBadge from '@/components/InstagramBadge'
 import { createClient } from '@/lib/supabase/client'
 import { finalRotation, entryAtPointer, LABEL_HIDE_ABOVE } from '@/lib/wheel'
 import { WHEEL_LABEL_MAX } from '@/lib/wheelEntries'
@@ -184,7 +185,7 @@ const IconSound = ({ off }) => (
 // Stage + host console for a Wheel of Fortune session on the presenter screen.
 // phase: 'idle' (wheel follows the Entries) -> 'spinning' (Entry list frozen,
 // rotation animating) -> 'landed' (Pick shown, awaiting Remove/Keep) -> 'idle'.
-export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, onError }) {
+export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, onError, entriesClosed = false, onToggleEntries, togglingEntries = false, instagramHandle = null }) {
   const supabase = useMemo(() => createClient(), [])
   const theme = session?.theme
   const palette = useMemo(() => wheelPalette(theme), [theme])
@@ -492,6 +493,13 @@ export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, o
   const consoleBtn = `inline-flex items-center gap-2 whitespace-nowrap rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors ${focus}`
   const bandBottom = isOwner ? '6.5rem' : '2.5rem'
   const joinedCount = activeEntries.length
+  // The join limit counts Participants, so a joined Entry the organizer removed
+  // still holds its place; manual Entries never count.
+  const participantCount = useMemo(() => allEntries.filter((e) => e.kind === 'joined').length, [allEntries])
+  const maxParticipants = session?.max_participants ?? null
+  const full = maxParticipants != null && participantCount >= maxParticipants
+  const joinsStopped = entriesClosed || full
+  const stoppedLabel = entriesClosed ? 'Entries closed' : 'Wheel is full'
   const nameSize = `clamp(1.75rem, calc(96cqi / ${Math.max(8, lastPickLabel.length)}), 4.5rem)`
 
   const drawerShell = (open) =>
@@ -560,11 +568,26 @@ export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, o
         <aside className="flex flex-col items-center justify-start gap-4 pt-2 text-center lg:pt-4">
           {showQr && (
             <>
-              <div className="rounded-2xl bg-white p-3.5 shadow-xl transition-all duration-500">
-                <QRCodeSVG value={voteUrl} size={waiting ? 248 : landed ? 150 : 184} level="M" bgColor="#ffffff" fgColor="#000000" />
+              <div className="relative rounded-2xl bg-white p-3.5 shadow-xl transition-all duration-500">
+                <div className={joinsStopped ? 'opacity-20' : ''}>
+                  <QRCodeSVG
+                    value={voteUrl}
+                    size={waiting ? 248 : landed ? 150 : 184}
+                    level="M"
+                    bgColor="#ffffff"
+                    fgColor="#000000"
+                    // Short screens: leave room for the Instagram badge under the plate.
+                    className={instagramHandle ? '[@media(max-height:800px)]:h-40 [@media(max-height:800px)]:w-40' : undefined}
+                  />
+                </div>
+                {joinsStopped && (
+                  <span className="absolute inset-0 flex items-center justify-center text-center font-display text-xl font-bold text-black">
+                    {stoppedLabel}
+                  </span>
+                )}
               </div>
               <div className="min-w-0 max-w-full">
-                <p className="font-display text-xl font-bold text-foreground">Scan to join the wheel</p>
+                <p className="font-display text-xl font-bold text-foreground">{joinsStopped ? stoppedLabel : 'Scan to join the wheel'}</p>
                 <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{voteUrl.replace(/^https?:\/\//, '')}</p>
               </div>
             </>
@@ -577,11 +600,17 @@ export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, o
                 </span>
                 <span className="text-sm text-muted-foreground">on the wheel</span>
               </p>
+              {maxParticipants != null && (
+                <p data-testid="join-limit" className="mt-1 text-sm text-muted-foreground">
+                  {participantCount} / {maxParticipants} joined
+                </p>
+              )}
               <p aria-live="polite" className="mt-2 min-h-6 text-sm font-medium text-accent">
                 {joinFlash && <span key={joinFlash.key} className="animate-fade-in inline-block">{joinFlash.label} joined</span>}
               </p>
             </div>
           )}
+          {instagramHandle && <InstagramBadge handle={instagramHandle} className="mt-auto" />}
         </aside>
 
         {/* Drawers (stay mounted so their contents are always in the DOM) */}
@@ -731,6 +760,14 @@ export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, o
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={onToggleEntries}
+              disabled={togglingEntries}
+              aria-pressed={entriesClosed}
+              className={`${consoleBtn} border-border text-foreground hover:bg-muted disabled:opacity-50`}
+            >
+              {entriesClosed ? 'Open entries' : 'Close entries'}
+            </button>
             <button
               onClick={() => setDrawer(drawer === 'entries' ? null : 'entries')}
               aria-expanded={drawer === 'entries'}

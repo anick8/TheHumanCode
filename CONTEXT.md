@@ -32,7 +32,7 @@ A Session type for a random draw: attendees join with a name (required, trimmed,
 _Avoid_: "Winner" and "prize" (a Pick is not necessarily a win - it may be a cold call or a presenter order), "segment" (only the visual slice of an Entry).
 
 **Entry**:
-One item on the wheel: either *joined* (created when a Participant joins, labelled with their name) or *manual* (organizer-typed text, single or pasted one per line). Active until removed; a removed Entry stays listed greyed out and can be Restored. Removing an Entry never rewrites past Spins. There is no cap on Entries and duplicate labels are kept.
+One item on the wheel: either *joined* (created when a Participant joins, labelled with their name) or *manual* (organizer-typed text, single or pasted one per line). Active until removed; a removed Entry stays listed greyed out and can be Restored. Removing an Entry never rewrites past Spins. There is no cap on Entries (the Join limit caps joined Participants only) and duplicate labels are kept.
 
 **Spin**:
 One server-side random choice of a Pick among the Entries active at that moment (uniform; refused with fewer than 2 active Entries; organizer only). Recorded with a snapshot of the Pick's label, its time, and whether the organizer then removed the Pick. The full list of Spins is the wheel's history.
@@ -48,8 +48,11 @@ One message in a Treasure Hunt, reached only by scanning its own QR code (never 
 _Avoid_: Question (the underlying database row a Clue reuses, but "Clue" is the organizer- and finder-facing term).
 
 **Close entries**:
-The host's manual toggle that stops new people getting in. In a Quiz or Comments session nobody new can join (a device that already joined keeps playing, and the join gate says entries are closed); a Poll has no join step, so it closes voting for everyone instead. Never automatic, and the host can reopen at any time.
+The host's manual toggle that stops new people getting in. In a Quiz, Comments or Wheel of Fortune session nobody new can join (a device that already joined keeps playing, and the join gate says entries are closed; on a wheel the organizer can still add manual Entries); a Poll has no join step, so it closes voting for everyone instead. Never automatic, and the host can reopen at any time.
 _Avoid_: "Lock" (that is a Participant committing an Answer), "end session" (the session stays active).
+
+**Join limit**:
+An optional cap the organizer sets on a Wheel of Fortune session (`max_participants`; blank means no limit) on how many Participants may join. Once that many have joined, new joins are refused and the join gate says the wheel is full; the presenter shows "Wheel is full". Manual Entries never count, and a joined Entry the organizer removed still holds its Participant's place. The organizer can raise or clear the limit at any time. Unlike Close entries it is not a switch: it applies by count.
 
 **Remove participant**:
 The host's action to kick a Participant out of a Quiz or Comments session. A hard delete: their Answers or Comments go with them and the Leaderboard re-ranks without them. They may rejoin while entries are open. A Poll has nobody to remove (votes are anonymous). The host can also delete a single Comment.

@@ -12,6 +12,8 @@ import { getAppUrl } from '@/lib/utils'
 import SessionTheme from '@/components/SessionTheme'
 import SessionLogo from '@/components/SessionLogo'
 import WheelPresenter from '@/components/WheelPresenter'
+import InstagramBadge, { InstagramGlyph } from '@/components/InstagramBadge'
+import { parseInstagramHandle } from '@/lib/instagram'
 
 // Full-screen presenter view for projecting a session. The host's position
 // lives in sessions.current_question_index, and every attendee device on
@@ -33,6 +35,10 @@ export default function PresentPage() {
   const [optionsByQuestion, setOptionsByQuestion] = useState({})
   const [voteCounts, setVoteCounts] = useState({})
   const [userId, setUserId] = useState(null)
+  // The organizer's Instagram, kept on their account (see /dashboard/account).
+  const [instagramHandle, setInstagramHandle] = useState(null)
+  // The host can hide the badge mid-session; remembered on this device.
+  const [showInstagram, setShowInstagram] = useState(true)
   const [advancing, setAdvancing] = useState(false)
   const [error, setError] = useState(null)
   const [participantCount, setParticipantCount] = useState(0)
@@ -63,6 +69,20 @@ export default function PresentPage() {
       if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
     }
   }, [])
+
+  useEffect(() => {
+    try {
+      setShowInstagram(localStorage.getItem('presenter-instagram-hidden') !== '1')
+    } catch {}
+  }, [])
+
+  const toggleInstagram = () => {
+    const next = !showInstagram
+    setShowInstagram(next)
+    try {
+      localStorage.setItem('presenter-instagram-hidden', next ? '0' : '1')
+    } catch {}
+  }
 
   const toggleFullscreen = () => {
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
@@ -116,6 +136,7 @@ export default function PresentPage() {
 
         if (cancelled) return
         setUserId(user?.id ?? null)
+        setInstagramHandle(parseInstagramHandle(user?.user_metadata?.instagram))
         setSession(sessionData)
         setQuestions(questionsData || [])
         setOptionsByQuestion(optionsMap)
@@ -445,6 +466,9 @@ export default function PresentPage() {
       } else if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault()
         toggleFullscreen()
+      } else if ((e.key === 'i' || e.key === 'I') && !e.ctrlKey && !e.metaKey && !e.altKey && isOwner && instagramHandle) {
+        e.preventDefault()
+        toggleInstagram()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -523,6 +547,17 @@ export default function PresentPage() {
         </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {isOwner && instagramHandle && (
+            <button
+              onClick={toggleInstagram}
+              aria-pressed={!showInstagram}
+              title={showInstagram ? 'Hide Instagram code (I)' : 'Show Instagram code (I)'}
+              className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+            >
+              <InstagramGlyph className="h-4 w-4" />
+              {showInstagram ? 'Hide Instagram' : 'Show Instagram'}
+            </button>
+          )}
           {canFullscreen && (
             <button
               onClick={toggleFullscreen}
@@ -555,9 +590,9 @@ export default function PresentPage() {
       )}
 
       {/* Stage */}
-      <main className={isWheel ? 'flex flex-1 flex-col lg:min-h-0' : 'flex flex-1 items-center justify-center px-6 py-10'}>
+      <main className={isWheel ? 'flex flex-1 flex-col lg:min-h-0' : 'relative flex flex-1 items-center justify-center px-6 py-10'}>
         {isWheel ? (
-          <WheelPresenter sessionId={sessionId} session={session} isOwner={isOwner} voteUrl={voteUrl} onError={setError} />
+          <WheelPresenter sessionId={sessionId} session={session} isOwner={isOwner} voteUrl={voteUrl} onError={setError} entriesClosed={entriesClosed} onToggleEntries={toggleEntries} togglingEntries={advancing} instagramHandle={isOwner && showInstagram ? instagramHandle : null} />
         ) : closed ? (
           <div className="text-center w-full max-w-4xl">
             <p className="text-sm font-semibold uppercase tracking-widest text-accent">Final results</p>
@@ -787,6 +822,9 @@ export default function PresentPage() {
               </div>
             )}
           </div>
+        )}
+        {!isWheel && isOwner && instagramHandle && showInstagram && (
+          <InstagramBadge handle={instagramHandle} className="absolute bottom-6 left-6 hidden lg:flex" />
         )}
       </main>
 
