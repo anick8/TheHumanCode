@@ -557,7 +557,7 @@ export default function PresentPage() {
       {/* Stage */}
       <main className={isWheel ? 'flex flex-1 flex-col lg:min-h-0' : 'flex flex-1 items-center justify-center px-6 py-10'}>
         {isWheel ? (
-          <WheelPresenter sessionId={sessionId} session={session} isOwner={isOwner} voteUrl={voteUrl} onError={setError} />
+          <WheelPresenter sessionId={sessionId} session={session} isOwner={isOwner} voteUrl={voteUrl} onError={setError} entriesClosed={entriesClosed} onToggleEntries={toggleEntries} togglingEntries={advancing} />
         ) : closed ? (
           <div className="text-center w-full max-w-4xl">
             <p className="text-sm font-semibold uppercase tracking-widest text-accent">Final results</p>

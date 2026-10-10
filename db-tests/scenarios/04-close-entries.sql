@@ -72,4 +72,33 @@ BEGIN
   END IF;
 END $$;
 
+-- A wheel: closed refuses a new join (no Entry left behind), lets a joined
+-- token through, and reopens.
+DO $$
+DECLARE
+  v_session uuid := pg_temp.make_wheel();
+  v_token text;
+  v_err text;
+BEGIN
+  v_token := pg_temp.join_as(v_session, 'Ada');
+
+  UPDATE public.sessions SET entries_closed = true WHERE id = v_session;
+
+  v_err := pg_temp.error_of(format('SELECT public.join_session(%L, %L, NULL, %L)', v_session, 'Late', 'tok-late'));
+  IF v_err IS DISTINCT FROM 'Entries are closed for this session' THEN
+    RAISE EXCEPTION 'a new wheel join was not refused while closed (got %)', v_err;
+  END IF;
+  IF (SELECT count(*) FROM public.wheel_entries WHERE session_id = v_session) <> 1 THEN
+    RAISE EXCEPTION 'a refused wheel join left an Entry';
+  END IF;
+
+  PERFORM public.join_session(v_session, 'Ada', NULL, v_token);
+
+  UPDATE public.sessions SET entries_closed = false WHERE id = v_session;
+  PERFORM pg_temp.join_as(v_session, 'Late');
+  IF (SELECT count(*) FROM public.wheel_entries WHERE session_id = v_session) < 2 THEN
+    RAISE EXCEPTION 'expected 2 Entries after reopening';
+  END IF;
+END $$;
+
 ROLLBACK;

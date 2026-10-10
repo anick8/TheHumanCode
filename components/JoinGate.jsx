@@ -11,6 +11,7 @@ export default function JoinGate({ session, onJoined, removed = false }) {
   const [externalId, setExternalId] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
+  const [full, setFull] = useState(false)
   const supabase = createClient()
 
   const requiresName = session?.identity_requires_name !== false
@@ -53,13 +54,32 @@ export default function JoinGate({ session, onJoined, removed = false }) {
         join_token: joinToken,
       })
     } catch (err) {
-      setError(err.message || 'Could not join. Please try again.')
+      if (err.message === 'This session is full') {
+        setFull(true)
+      } else {
+        setError(err.message || 'Could not join. Please try again.')
+      }
     } finally {
       setSubmitting(false)
     }
   }
 
   const entriesClosed = Boolean(session?.entries_closed)
+
+  if (full) {
+    return (
+      <div className="mx-auto max-w-md py-8">
+        <div className="rounded-2xl border border-border bg-card p-8 text-center shadow-lg">
+          <h1 className="font-display text-2xl font-bold text-foreground">
+            {isWheel ? 'The wheel is full' : 'This session is full'}
+          </h1>
+          <p className="mt-2 text-muted-foreground">
+            {session?.title} has reached its participant limit.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   if (entriesClosed) {
     return (
