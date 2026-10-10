@@ -16,6 +16,7 @@ export default function DashboardNav({ session, user: propUser }) {
   const navigation = [
     { name: 'Sessions', href: '/dashboard' },
     { name: 'New Session', href: '/dashboard/sessions/new' },
+    { name: 'Account', href: '/dashboard/account' },
   ]
 
   const isActive = (path) => {

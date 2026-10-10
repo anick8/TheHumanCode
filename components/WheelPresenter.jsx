@@ -11,6 +11,7 @@
 
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, memo } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
+import InstagramBadge from '@/components/InstagramBadge'
 import { createClient } from '@/lib/supabase/client'
 import { finalRotation, entryAtPointer, LABEL_HIDE_ABOVE } from '@/lib/wheel'
 import { WHEEL_LABEL_MAX } from '@/lib/wheelEntries'
@@ -184,7 +185,7 @@ const IconSound = ({ off }) => (
 // Stage + host console for a Wheel of Fortune session on the presenter screen.
 // phase: 'idle' (wheel follows the Entries) -> 'spinning' (Entry list frozen,
 // rotation animating) -> 'landed' (Pick shown, awaiting Remove/Keep) -> 'idle'.
-export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, onError, entriesClosed = false, onToggleEntries, togglingEntries = false }) {
+export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, onError, entriesClosed = false, onToggleEntries, togglingEntries = false, instagramHandle = null }) {
   const supabase = useMemo(() => createClient(), [])
   const theme = session?.theme
   const palette = useMemo(() => wheelPalette(theme), [theme])
@@ -575,6 +576,8 @@ export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, o
                     level="M"
                     bgColor="#ffffff"
                     fgColor="#000000"
+                    // Short screens: leave room for the Instagram badge under the plate.
+                    className={instagramHandle ? '[@media(max-height:800px)]:h-40 [@media(max-height:800px)]:w-40' : undefined}
                   />
                 </div>
                 {joinsStopped && (
@@ -607,6 +610,7 @@ export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, o
               </p>
             </div>
           )}
+          {instagramHandle && <InstagramBadge handle={instagramHandle} className="mt-auto" />}
         </aside>
 
         {/* Drawers (stay mounted so their contents are always in the DOM) */}
