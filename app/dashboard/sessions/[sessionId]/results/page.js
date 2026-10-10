@@ -39,6 +39,9 @@ export default function SessionResultsPage() {
 
   const isIdentified = session?.participation_mode === 'identified'
   const isScored = Boolean(session?.is_scored && isIdentified)
+  // Round-by-round quizzes have no cumulative result, so no Scores tab, Score
+  // or Time columns - only per-question answers.
+  const showScores = isScored && session?.quiz_format !== 'round_by_round'
   const isComments = session?.session_type === 'comments'
   // A wheel has no questions or votes: no Overview / All Questions views.
   const isWheel = session?.session_type === 'wheel'
@@ -423,7 +426,7 @@ export default function SessionResultsPage() {
     const header = [
       'Participant',
       'ID',
-      ...(isScored ? ['Score', 'Time'] : []),
+      ...(showScores ? ['Score', 'Time'] : []),
       ...questions.map((q, i) => `Q${i + 1}: ${q.text}`)
     ]
     const rows = [header.map(escape)]
@@ -431,7 +434,7 @@ export default function SessionResultsPage() {
       const row = [
         p.name || '',
         p.external_id || '',
-        ...(isScored ? [String(p.score || 0), formatDuration(elapsedSeconds(p))] : [])
+        ...(showScores ? [String(p.score || 0), formatDuration(elapsedSeconds(p))] : [])
       ]
       for (const q of questions) {
         const optId = participantAnswers[p.id]?.[q.id]
@@ -640,7 +643,7 @@ export default function SessionResultsPage() {
               Participants ({participants.length})
             </button>
           )}
-          {isScored && (
+          {showScores && (
             <button
               onClick={() => setActiveTab('scores')}
               className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
@@ -950,7 +953,7 @@ export default function SessionResultsPage() {
                       {hasParticipantIds && (
                         <th className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">ID</th>
                       )}
-                      {isScored && (
+                      {showScores && (
                         <th className="px-4 py-3.5 text-left text-sm font-semibold text-foreground">Score</th>
                       )}
                       {questions.map((question, index) => (
@@ -970,7 +973,7 @@ export default function SessionResultsPage() {
                         {hasParticipantIds && (
                           <td className="px-4 py-4 text-sm text-muted-foreground">{p.external_id || '—'}</td>
                         )}
-                        {isScored && (
+                        {showScores && (
                           <td className="px-4 py-4 text-sm font-bold text-accent">{p.score || 0}</td>
                         )}
                         {questions.map((question) => {
@@ -1000,7 +1003,7 @@ export default function SessionResultsPage() {
         </div>
       )}
 
-      {activeTab === 'scores' && isScored && (
+      {activeTab === 'scores' && showScores && (
         <div className="space-y-8">
           <div className="rounded-2xl border border-border bg-card p-8 shadow-lg">
             <div className="mb-6 flex flex-wrap items-start justify-between gap-4">

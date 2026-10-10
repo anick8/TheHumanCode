@@ -29,6 +29,7 @@ export default function NewSessionPage() {
             identity_requires_id: formData.identity_requires_id,
             is_scored: formData.is_scored,
             score_time_limit_seconds: formData.score_time_limit_seconds,
+            quiz_format: formData.quiz_format,
             max_participants: formData.max_participants,
             is_active: formData.is_active,
             owner_id: user?.id,

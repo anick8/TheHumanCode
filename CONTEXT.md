@@ -89,8 +89,21 @@ _Avoid_: speed, answer time.
 How Participants on the same Score are ordered: lowest cumulative Response time first. Speed never changes Score, and Participants with exactly the same Score and cumulative Response time share a rank. A Legacy quiz still orders ties by when each Participant finished.
 _Avoid_: speed bonus - no bonus points exist.
 
+**Quiz format**:
+A setting on a Quiz: Classic (the default, everything above) or Round-by-round. Chosen at creation or in settings and locked once the Quiz has its first Answer. Join, Lock, Reveal, Time limit, Close entries and Remove participant behave the same in both.
+
+**Round-by-round**:
+A Quiz format with no cumulative result. After each Reveal the Question board shows only the Participants who got that question right, fastest first; the next question starts a fresh board. Points and Score are not shown or entered. The quiz ends with a Round recap, never a total.
+_Avoid_: "Sprint", "rapid fire"; calling its board "the Leaderboard" (that is the cumulative Classic ranking).
+
+**Question board**:
+The ranking of one revealed question in a Round-by-round Quiz: only correct Participants, ordered by Response time, exactly equal times share a rank. The presenter shows the top 10 and "+N more got it right"; phones show everyone with their own row highlighted.
+
+**Round recap**:
+The end-of-quiz list for a Round-by-round Quiz: each revealed question with its fastest correct Participant(s) and time ("Nobody got this one" when none). Joint winners on an exact tie. There is deliberately no tally of wins.
+
 **Score**:
-A Participant's running total of points earned from correct Quiz Answers. Only exists on Quiz sessions.
+A Participant's running total of points earned from correct Quiz Answers. Only exists on Classic Quiz sessions (it is still accrued under the hood in Round-by-round but never shown).
 
 **Leaderboard**:
-The ranking of Quiz Participants by Score, then by Tiebreak, shown between questions and as the final ranking once the quiz is closed.
+The ranking of Classic Quiz Participants by Score, then by Tiebreak, shown between questions and as the final ranking once the quiz is closed. A Round-by-round Quiz has a Question board per question and a Round recap instead.

@@ -17,6 +17,7 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
     identity_requires_id: initialData?.identity_requires_id ?? false,
     is_scored: initialData?.is_scored ?? false,
     score_time_limit_seconds: initialData?.score_time_limit_seconds ?? null,
+    quiz_format: initialData?.quiz_format || 'classic',
     max_participants: initialData?.max_participants ?? null,
     is_active: initialData?.is_active ?? true,
   }))
@@ -43,7 +44,7 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
       session_type: type,
       participation_mode: (type === 'poll' || type === 'treasure_hunt') ? 'anonymous' : 'identified',
       is_scored: type === 'quiz',
-      ...(type !== 'quiz' ? { score_time_limit_seconds: null } : {}),
+      ...(type !== 'quiz' ? { score_time_limit_seconds: null, quiz_format: 'classic' } : {}),
       // The join limit is exposed for wheels only.
       ...(type !== 'wheel' ? { max_participants: null } : {}),
       // A wheel always requires a name and never an ID (DB-enforced preset).
@@ -70,6 +71,7 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
         next.is_scored = values.session_type === 'quiz'
         if (values.session_type !== 'quiz') {
           next.score_time_limit_seconds = null
+          next.quiz_format = 'classic'
         }
         if (values.session_type !== 'wheel') {
           next.max_participants = null
@@ -404,6 +406,39 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
                     it from the presenter screen. Participants pick an answer and lock it in; you reveal each
                     question when ready, and they see a leaderboard between questions and a final ranking.
                   </p>
+                  <div role="radiogroup" aria-label="Quiz format" className="space-y-2">
+                    {[
+                      {
+                        value: 'classic',
+                        label: 'Classic',
+                        hint: 'Points add up across questions; one running leaderboard and a final ranking.',
+                      },
+                      {
+                        value: 'round_by_round',
+                        label: 'Round-by-round',
+                        hint: 'Each question gets its own fresh leaderboard of who got it right, fastest first. Nothing adds up.',
+                      },
+                    ].map((option) => (
+                      <label
+                        key={option.value}
+                        className={`flex items-start gap-3 ${lockParticipation ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}
+                      >
+                        <input
+                          type="radio"
+                          name="quiz_format"
+                          value={option.value}
+                          checked={formData.quiz_format === option.value}
+                          onChange={() => updateField('quiz_format', option.value)}
+                          disabled={lockParticipation}
+                          className="mt-1 h-4 w-4 border-border text-accent focus:ring-ring"
+                        />
+                        <span>
+                          <span className="block text-sm font-medium text-foreground">{option.label}</span>
+                          <span className="block text-sm text-muted-foreground">{option.hint}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

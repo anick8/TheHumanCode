@@ -10,6 +10,7 @@ import QuizQuestion from '@/components/QuizQuestion'
 import ResultsChart from '@/components/ResultsChart'
 import JoinGate from '@/components/JoinGate'
 import Leaderboard from '@/components/Leaderboard'
+import { RoundBoard, RoundRecap } from '@/components/RoundBoard'
 import WheelPhone from '@/components/WheelPhone'
 import { generateVoterToken } from '@/lib/utils'
 
@@ -43,6 +44,9 @@ export default function VotingPage() {
   const [leaderboard, setLeaderboard] = useState([])
   const [questionResult, setQuestionResult] = useState(null)
   const [review, setReview] = useState(null)
+  // Round-by-round quiz: the board for the revealed question, and the recap.
+  const [roundBoard, setRoundBoard] = useState([])
+  const [roundRecap, setRoundRecap] = useState([])
   // Image & comments sessions: { [questionId]: [{comment_id, comment_body, author_name, comment_created_at}] }.
   const [comments, setComments] = useState({})
   const [commentDraft, setCommentDraft] = useState('')
@@ -51,6 +55,7 @@ export default function VotingPage() {
   const supabase = createClient()
 
   const isScored = Boolean(session?.is_scored && session?.participation_mode === 'identified')
+  const isRound = isScored && session?.quiz_format === 'round_by_round'
   const isComments = session?.session_type === 'comments'
   participantRef.current = participant
   // Poll has no join step, so the host closing entries closes voting instead.
@@ -163,7 +168,7 @@ export default function VotingPage() {
     const refresh = async () => {
       const { data } = await supabase
         .from('sessions')
-        .select('current_question_index, results_revealed, show_leaderboard, theme, scored_closed, is_scored, entries_closed, responses_cleared_at')
+        .select('current_question_index, results_revealed, show_leaderboard, theme, scored_closed, is_scored, quiz_format, entries_closed, responses_cleared_at')
         .eq('id', sessionRowId)
         .maybeSingle()
       if (data) setSession((prev) => (prev ? { ...prev, ...data } : prev))
@@ -203,25 +208,25 @@ export default function VotingPage() {
   // Scored sessions are host-paced (see hostMode/hostIndex above): fetch the
   // participant's own standing whenever they've joined.
   useEffect(() => {
-    if (!isScored || !participant) return
+    if (!isScored || isRound || !participant) return
     loadStanding(participant.join_token)
-  }, [isScored, participant])
+  }, [isScored, isRound, participant])
 
   // Keep the participant's own rank current without a public leaderboard feed.
   useEffect(() => {
-    if (!isScored || !participant) return
+    if (!isScored || isRound || !participant) return
     const timer = setInterval(() => loadStanding(participant.join_token), 5000)
     return () => clearInterval(timer)
-  }, [isScored, participant])
+  }, [isScored, isRound, participant])
 
   // Poll the full leaderboard so the board stays competitive without a
   // realtime feed (rows are owner-only; the RPC returns aggregates only).
   useEffect(() => {
-    if (!isScored || !session?.id) return
+    if (!isScored || isRound || !session?.id) return
     loadLeaderboard(session.id)
     const timer = setInterval(() => loadLeaderboard(session.id), 5000)
     return () => clearInterval(timer)
-  }, [isScored, session?.id])
+  }, [isScored, isRound, session?.id])
 
   // The host revealed the current question: fetch this participant's own
   // correct/wrong + points for it. Nothing is fetched, and the RPC returns no
@@ -244,6 +249,62 @@ export default function VotingPage() {
     load()
     return () => { cancelled = true }
   }, [quizRevealed, participant, quizCurrentQuestionId])
+
+  // Round-by-round: the board for the question just revealed. Same visibility
+  // rule as questionResult - the RPC returns nothing before Reveal.
+  useEffect(() => {
+    if (!isRound || !quizRevealed || !quizCurrentQuestionId || !session?.id) {
+      setRoundBoard([])
+      return
+    }
+    let cancelled = false
+    const load = async () => {
+      const { data, error } = await supabase.rpc('get_question_leaderboard', {
+        p_session_id: session.id,
+        p_question_id: quizCurrentQuestionId,
+      })
+      if (!error && !cancelled) {
+        setRoundBoard(
+          (data || []).map((p) => ({
+            participant_id: p.participant_id,
+            display_name: p.display_name,
+            response_ms: Number(p.response_ms),
+            rank: Number(p.rank),
+          }))
+        )
+      }
+    }
+    load()
+    const timer = setInterval(load, 5000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [isRound, quizRevealed, quizCurrentQuestionId, session?.id])
+
+  // Round-by-round: the recap once the host has ended the last question or
+  // closed the quiz.
+  const quizEnded = isRound && (Boolean(session?.scored_closed) || (hostMode && hostIndex >= questions.length))
+  useEffect(() => {
+    if (!quizEnded || !session?.id) return
+    let cancelled = false
+    const load = async () => {
+      const { data, error } = await supabase.rpc('get_round_recap', { p_session_id: session.id })
+      if (!error && !cancelled) {
+        setRoundRecap(
+          (data || []).map((r) => ({
+            question_id: r.question_id,
+            question_text: r.question_text,
+            winner_ids: r.winner_ids || [],
+            winner_names: r.winner_names || [],
+            winner_ms: r.winner_ms == null ? null : Number(r.winner_ms),
+          }))
+        )
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [quizEnded, session?.id])
 
   // Correct answers are released only when the host closes the quiz.
   useEffect(() => {
@@ -750,6 +811,7 @@ export default function VotingPage() {
     const lockedOptionId = scoredQuestion ? votes[scoredQuestion.id] || null : null
     const revealed = Boolean(scoredQuestion) && quizRevealed
     const showLeaderboardStep = Boolean(scoredQuestion) && hostMode && Boolean(session?.show_leaderboard)
+    const ownRoundEntry = isRound ? roundBoard.find((e) => e.participant_id === participant?.id) : null
 
     return (
       <SessionTheme theme={session.theme} className="min-h-screen bg-gradient-to-br from-background to-muted">
@@ -766,10 +828,12 @@ export default function VotingPage() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <div className="rounded-full bg-muted px-3 py-1 text-sm text-foreground">
-                  {standing?.total_score ?? 0} pts
-                </div>
-                {standing?.participant_rank && (
+                {!isRound && (
+                  <div className="rounded-full bg-muted px-3 py-1 text-sm text-foreground">
+                    {standing?.total_score ?? 0} pts
+                  </div>
+                )}
+                {!isRound && standing?.participant_rank && (
                   <div className="rounded-full bg-primary/15 px-3 py-1 text-sm font-medium text-accent">
                     #{standing.participant_rank}
                   </div>
@@ -789,14 +853,20 @@ export default function VotingPage() {
                 <p className="text-sm font-semibold uppercase tracking-widest text-accent">
                   {closed ? 'Quiz closed' : 'Quiz complete'}
                 </p>
-                <h1 className="font-display mt-3 text-4xl font-bold text-foreground">
-                  {standing?.total_score ?? 0} points
-                </h1>
-                <p className="mt-2 text-muted-foreground">
-                  {standing?.participant_rank
-                    ? `Rank #${standing.participant_rank} of ${standing.total_participants}`
-                    : ''}
-                </p>
+                {isRound ? (
+                  <h1 className="font-display mt-3 text-4xl font-bold text-foreground">Thanks for playing</h1>
+                ) : (
+                  <>
+                    <h1 className="font-display mt-3 text-4xl font-bold text-foreground">
+                      {standing?.total_score ?? 0} points
+                    </h1>
+                    <p className="mt-2 text-muted-foreground">
+                      {standing?.participant_rank
+                        ? `Rank #${standing.participant_rank} of ${standing.total_participants}`
+                        : ''}
+                    </p>
+                  </>
+                )}
                 <p className="mt-4 text-sm text-muted-foreground">
                   {closed
                     ? 'The host has closed the quiz.'
@@ -806,14 +876,18 @@ export default function VotingPage() {
 
               <div className="mt-6 rounded-2xl border border-border bg-card p-6 shadow-lg">
                 <h2 className="font-display mb-6 text-center text-xl font-bold text-foreground">
-                  Final Leaderboard
+                  {isRound ? 'Question winners' : 'Final Leaderboard'}
                 </h2>
-                <Leaderboard
-                  entries={leaderboard}
-                  currentId={participant?.id}
-                  podium
-                  total={totalQuestions}
-                />
+                {isRound ? (
+                  <RoundRecap rows={roundRecap} currentId={participant?.id} />
+                ) : (
+                  <Leaderboard
+                    entries={leaderboard}
+                    currentId={participant?.id}
+                    podium
+                    total={totalQuestions}
+                  />
+                )}
               </div>
 
               {closed && review && review.length > 0 && (
@@ -831,7 +905,7 @@ export default function VotingPage() {
                             ? 'text-emerald-300'
                             : 'text-destructive'
                         }`}>
-                          Correct: {r.correct_option_text || '—'} • {r.review_awarded_points ?? 0} pts
+                          Correct: {r.correct_option_text || '—'}{isRound ? '' : ` • ${r.review_awarded_points ?? 0} pts`}
                         </p>
                       </div>
                     ))}
@@ -860,12 +934,12 @@ export default function VotingPage() {
                   <div className="mb-6">
                     <div className="mb-2 flex justify-between text-sm text-muted-foreground">
                       <span>Question {hostIndex + 1} of {totalQuestions}</span>
-                      <span>{answeredCount} answered</span>
+                      {!isRound && <span>{answeredCount} answered</span>}
                     </div>
                     <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                       <div
                         className="h-full rounded-full bg-gradient-to-r from-primary to-accent transition-all duration-500"
-                        style={{ width: `${(answeredCount / totalQuestions) * 100}%` }}
+                        style={{ width: `${((isRound ? hostIndex + 1 : answeredCount) / totalQuestions) * 100}%` }}
                       />
                     </div>
                   </div>
@@ -873,8 +947,14 @@ export default function VotingPage() {
 
                 {showLeaderboardStep ? (
                   <div className="rounded-2xl border border-border bg-card p-6 shadow-lg">
-                    <h2 className="font-display mb-6 text-center text-xl font-bold text-foreground">Leaderboard</h2>
-                    <Leaderboard entries={leaderboard} currentId={participant?.id} total={totalQuestions} />
+                    <h2 className="font-display mb-6 text-center text-xl font-bold text-foreground">
+                      {isRound ? 'Who got it right' : 'Leaderboard'}
+                    </h2>
+                    {isRound ? (
+                      <RoundBoard entries={roundBoard} currentId={participant?.id} />
+                    ) : (
+                      <Leaderboard entries={leaderboard} currentId={participant?.id} total={totalQuestions} />
+                    )}
                     <p className="mt-6 text-center text-sm text-muted-foreground">
                       Waiting for the host to continue…
                     </p>
@@ -886,8 +966,14 @@ export default function VotingPage() {
                       {questionResult
                         ? questionResult.chosen_option_id
                           ? questionResult.is_correct
-                            ? `Correct! +${questionResult.awarded_points} pts`
-                            : 'Not quite.'
+                            ? isRound
+                              ? ownRoundEntry
+                                ? `You were #${ownRoundEntry.rank} of ${roundBoard.length} who got it · ${(ownRoundEntry.response_ms / 1000).toFixed(1)}s`
+                                : 'Correct!'
+                              : `Correct! +${questionResult.awarded_points} pts`
+                            : isRound
+                              ? `Not this time - the answer was ${scoredOptions.find((o) => o.id === questionResult.correct_option_id)?.text ?? 'revealed below'}`
+                              : 'Not quite.'
                           : 'No answer locked.'
                         : 'Revealing…'}
                     </p>
