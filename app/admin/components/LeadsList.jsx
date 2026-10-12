@@ -1,5 +1,7 @@
 'use client'
 
+import { formatDay } from '@/lib/accessStatus'
+
 // People who signed up without a Grant. "Grant access" pre-fills the add form.
 export default function LeadsList({ leads, onGrant }) {
   return (
@@ -20,11 +22,7 @@ export default function LeadsList({ leads, onGrant }) {
                 <p className="truncate text-sm font-medium text-foreground">{lead.email}</p>
                 <p className="text-xs text-muted-foreground">
                   Signed up{' '}
-                  {new Date(lead.created_at).toLocaleDateString(undefined, {
-                    day: 'numeric',
-                    month: 'short',
-                    year: 'numeric',
-                  })}
+                  {formatDay(lead.created_at)}
                 </p>
               </div>
               <button

@@ -55,7 +55,7 @@ export default function GrantForm({ initialEmail = '', onSubmit }) {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="renter@example.com"
+            placeholder="organizer@example.com"
             className={`mt-1 ${inputClass}`}
           />
         </label>

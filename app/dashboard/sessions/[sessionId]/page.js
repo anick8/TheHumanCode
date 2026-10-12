@@ -77,8 +77,8 @@ export default function SessionDetailPage() {
   const isOwner = Boolean(userId && session && userId === session.owner_id)
   // Expired, revoked or upcoming access: everything stays viewable, nothing writes.
   const { access } = useAccess()
-  const lapsed = access.readOnly
-  const canEdit = isOwner && !lapsed
+  const readOnly = access.readOnly
+  const canEdit = isOwner && !readOnly
   const isComments = session?.session_type === 'comments'
   const isTreasureHunt = session?.session_type === 'treasure_hunt'
   const isWheel = session?.session_type === 'wheel'
@@ -202,7 +202,7 @@ export default function SessionDetailPage() {
   // page's logo upload: storage RLS only allows writes under the uploader's
   // own uid folder, so the path is keyed by userId, not the question.
   const uploadQuestionImage = async (file, questionId) => {
-    if (lapsed) throw new Error('Uploads are unavailable while your account is read-only.')
+    if (readOnly) throw new Error('Uploads are unavailable while your account is read-only.')
     const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
     const IMAGE_MAX_BYTES = 5 * 1024 * 1024
     if (!IMAGE_TYPES.includes(file.type)) {
@@ -223,7 +223,7 @@ export default function SessionDetailPage() {
   }
 
   const updateSession = async (formData) => {
-    if (lapsed) return false
+    if (readOnly) return false
     try {
       const { data, error } = await supabase
         .from('sessions')
@@ -339,7 +339,7 @@ export default function SessionDetailPage() {
   // removed in the editor are deleted. Deleting a question cascades to its
   // options and any votes cast on them.
   const saveQuestions = async () => {
-    if (lapsed) return
+    if (readOnly) return
     // RLS rejects writes to sessions the user doesn't own (including the
     // ownerless demo sessions); say so plainly instead of surfacing the
     // raw "violates row-level security policy" error.
@@ -555,7 +555,7 @@ export default function SessionDetailPage() {
   // Start (or resume) a host-driven presentation; the lobby reset lives in
   // lib/presenting.js so the dashboard inspector behaves identically.
   const startPresenting = async () => {
-    if (lapsed) return
+    if (readOnly) return
     const { error } = await startPresentation(supabase, session, questions.length)
     if (error) {
       alert(error)
@@ -662,7 +662,7 @@ export default function SessionDetailPage() {
             </div>
           </div>
           <div className="flex flex-wrap gap-3">
-            {!isTreasureHunt && !lapsed && (
+            {!isTreasureHunt && !readOnly && (
               <button
                 onClick={startPresenting}
                 className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity"
@@ -684,7 +684,7 @@ export default function SessionDetailPage() {
                 AI Assistant
               </button>
             )}
-            {!lapsed && (
+            {!readOnly && (
             <button
               onClick={() => router.push(`/dashboard/sessions/${sessionId}/design`)}
               className="inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors"
@@ -706,7 +706,7 @@ export default function SessionDetailPage() {
                 View Results
               </button>
             )}
-            {!isTreasureHunt && !lapsed && (
+            {!isTreasureHunt && !readOnly && (
               <ClearResponsesButton
                 sessionId={sessionId}
                 rewindsQuiz={Boolean(session.is_scored)}
@@ -774,7 +774,7 @@ export default function SessionDetailPage() {
 
       {activeTab === 'questions' && !isWheel && (
         <div className="space-y-8">
-          <fieldset disabled={lapsed} className={lapsed ? 'min-w-0 opacity-70' : 'min-w-0'}>
+          <fieldset disabled={readOnly} className={readOnly ? 'min-w-0 opacity-70' : 'min-w-0'}>
           <QuestionEditor
             questions={questions}
             optionsByQuestion={optionsByQuestion}
@@ -791,7 +791,7 @@ export default function SessionDetailPage() {
           </fieldset>
 
           {/* Save bar */}
-          {!lapsed && (
+          {!readOnly && (
           <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
             <div className="flex items-center justify-between gap-6">
               <div className="min-w-0">
@@ -867,7 +867,7 @@ export default function SessionDetailPage() {
             </div>
           )}
 
-          <fieldset disabled={lapsed} className={lapsed ? 'min-w-0 opacity-70' : 'min-w-0'}>
+          <fieldset disabled={readOnly} className={readOnly ? 'min-w-0 opacity-70' : 'min-w-0'}>
             <SessionForm
               initialData={session}
               onSubmit={updateSession}

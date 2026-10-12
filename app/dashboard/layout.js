@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import DashboardNav from './components/DashboardNav'
 import AccessBanner from './components/AccessBanner'
+import { accessStateOf } from '@/lib/accessStatus'
 
 export default async function DashboardLayout({ children }) {
   const supabase = await createClient()
@@ -18,7 +19,7 @@ export default async function DashboardLayout({ children }) {
   // actually stops writes). Lapsed and upcoming accounts may view the
   // dashboard read-only; the client AccessProvider carries the details.
   const { data: statusRows } = await supabase.rpc('organizer_access_status')
-  const state = Array.isArray(statusRows) ? statusRows[0]?.state : statusRows?.state
+  const state = accessStateOf(statusRows)
   if (!state || state === 'none') {
     redirect('/pending')
   }

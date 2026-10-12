@@ -6,6 +6,7 @@ import { generateSlug } from '@/lib/utils'
 
 import { createClient } from '@/lib/supabase/client'
 import { useAccess } from '@/app/components/AccessProvider'
+import { AI_ALLOWANCE_CODE, AI_ALLOWANCE_MESSAGE } from '@/lib/ai/rateLimit'
 import { startPresentation } from '@/lib/presenting'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import CreateBar from './components/CreateBar'
@@ -301,6 +302,16 @@ export default function DashboardHome() {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ prompt }),
         })
+        if (titleRes.status === 403) {
+          // A spent AI allowance is a real answer, not a title failure: say so
+          // rather than creating an "Untitled Session" the user did not ask for.
+          const body = await titleRes.json().catch(() => null)
+          if (body?.code === AI_ALLOWANCE_CODE) {
+            setCreateError(AI_ALLOWANCE_MESSAGE)
+            setCreating(false)
+            return
+          }
+        }
         if (titleRes.ok) {
           const titleData = await titleRes.json()
           if (titleData.title) title = titleData.title

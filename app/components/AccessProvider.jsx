@@ -32,7 +32,7 @@ export function AccessProvider({ children }) {
     try {
       const { data, error } = await createClient().rpc('organizer_access_status')
       if (error) throw error
-      setRow(Array.isArray(data) ? data[0] ?? null : data ?? null)
+      setRow((Array.isArray(data) ? data[0] : data) ?? null)
     } catch (error) {
       console.error('Access status error:', error)
       setRow(null)

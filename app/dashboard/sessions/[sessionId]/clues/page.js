@@ -16,7 +16,7 @@ export default function CluesPage() {
   const params = useParams()
   const sessionId = params.sessionId
   const { access } = useAccess()
-  const lapsed = access.readOnly
+  const readOnly = access.readOnly
   const [loading, setLoading] = useState(true)
   const [session, setSession] = useState(null)
   const [clues, setClues] = useState([])
@@ -58,7 +58,7 @@ export default function CluesPage() {
     (labels[clue.id] ?? clue.clue_label ?? '').trim() || `Clue #${index + 1}`
 
   const saveLabel = async (clue) => {
-    if (lapsed) return
+    if (readOnly) return
     const value = (labels[clue.id] || '').trim()
     if (value === (clue.clue_label || '')) return
     setLabelStatus((s) => ({ ...s, [clue.id]: 'saving' }))
@@ -200,7 +200,7 @@ export default function CluesPage() {
                 type="text"
                 value={labels[clue.id] ?? ''}
                 maxLength={60}
-                readOnly={lapsed}
+                readOnly={readOnly}
                 placeholder={`Clue #${index + 1}`}
                 onChange={(e) => {
                   setLabels((l) => ({ ...l, [clue.id]: e.target.value }))

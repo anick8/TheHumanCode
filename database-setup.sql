@@ -3391,38 +3391,6 @@ REVOKE ALL ON FUNCTION public.admin_list_grants() FROM public;
 GRANT EXECUTE ON FUNCTION public.admin_list_grants() TO authenticated;
 
 -- ============================================================================
--- 32. Rentals AI allowance
--- ============================================================================
-
--- How many assistant calls the signed-in user's Grant still allows: null is
--- unlimited (no cap, or a Super admin), 0 is spent. Calls are counted from the
--- Grant start, so changing the Grant's dates restarts the count. Takes no
--- user argument, so it can only ever answer for the caller. SECURITY DEFINER
--- because ai_usage is only readable by current Organizers.
-CREATE OR REPLACE FUNCTION public.ai_allowance_left()
-RETURNS integer
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path = ''
-STABLE
-AS $$
-  SELECT CASE
-    WHEN auth.uid() IS NULL THEN 0
-    WHEN public.is_super_admin() THEN NULL
-    ELSE (
-      SELECT CASE WHEN a.ai_allowance IS NULL THEN NULL
-        ELSE greatest(a.ai_allowance - public.ai_calls_in_window(auth.uid()), 0) END
-      FROM auth.users u
-      JOIN public.allowed_emails a ON a.email = lower(u.email)
-      WHERE u.id = auth.uid()
-    )
-  END;
-$$;
-
-REVOKE ALL ON FUNCTION public.ai_allowance_left() FROM public;
-GRANT EXECUTE ON FUNCTION public.ai_allowance_left() TO authenticated;
-
--- ============================================================================
 -- 31. Rentals soft lock
 -- ============================================================================
 
@@ -4573,3 +4541,63 @@ $$;
 
 REVOKE ALL ON FUNCTION public.get_wheel_latest_pick(text) FROM public;
 GRANT EXECUTE ON FUNCTION public.get_wheel_latest_pick(text) TO anon, authenticated;
+
+-- ============================================================================
+-- 32. Rentals AI allowance
+-- ============================================================================
+
+-- How many assistant calls the signed-in user's Grant still allows: null is
+-- unlimited (no cap, or a Super admin), 0 is spent. Calls are counted from the
+-- Grant start, so changing the Grant's dates restarts the count. Takes no
+-- user argument, so it can only ever answer for the caller. SECURITY DEFINER
+-- because ai_usage is only readable by current Organizers.
+CREATE OR REPLACE FUNCTION public.ai_allowance_left()
+RETURNS integer
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+STABLE
+AS $$
+  SELECT CASE
+    WHEN auth.uid() IS NULL THEN 0
+    WHEN public.is_super_admin() THEN NULL
+    ELSE (
+      SELECT CASE WHEN a.ai_allowance IS NULL THEN NULL
+        ELSE greatest(a.ai_allowance - public.ai_calls_in_window(auth.uid()), 0) END
+      FROM auth.users u
+      JOIN public.allowed_emails a ON a.email = lower(u.email)
+      WHERE u.id = auth.uid()
+    )
+  END;
+$$;
+
+REVOKE ALL ON FUNCTION public.ai_allowance_left() FROM public;
+GRANT EXECUTE ON FUNCTION public.ai_allowance_left() TO authenticated;
+
+-- ============================================================================
+-- 33. Rentals review fixes
+-- ============================================================================
+
+-- AI calls a user has made inside their Grant window: from the Grant start
+-- through its end plus the organizer grace, open-ended without one. A call
+-- made during the grace (the event running late) counts against the allowance.
+-- All calls for an account with no Grant.
+CREATE OR REPLACE FUNCTION public.ai_calls_in_window(p_user uuid)
+RETURNS integer
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+STABLE
+AS $$
+  SELECT count(*)::integer
+  FROM public.ai_usage au
+  LEFT JOIN auth.users u ON u.id = au.user_id
+  LEFT JOIN public.allowed_emails a ON a.email = lower(u.email)
+  WHERE au.user_id = p_user
+    AND (a.email IS NULL OR (
+      au.created_at >= a.starts_at
+      AND (a.expires_at IS NULL OR au.created_at <= a.expires_at + public.organizer_grace())
+    ));
+$$;
+
+REVOKE ALL ON FUNCTION public.ai_calls_in_window(uuid) FROM public, anon, authenticated;
