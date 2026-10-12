@@ -49,6 +49,7 @@ DECLARE
   v_participant uuid := gen_random_uuid();
 BEGIN
   INSERT INTO auth.users (id, email) VALUES (v_owner, v_owner || '@test.local');
+  PERFORM pg_temp.grant_to(v_owner, now() - interval '1 day', NULL);
   INSERT INTO public.sessions (id, owner_id, title, slug, session_type, participation_mode)
   VALUES (v_session, v_owner, 'Scenario poll', 'scn-' || v_session, 'poll', 'anonymous');
   INSERT INTO public.participants (id, session_id, name, join_token)
@@ -75,6 +76,7 @@ DECLARE
   v_b uuid;
 BEGIN
   INSERT INTO auth.users (id, email) VALUES (v_owner, v_owner || '@test.local');
+  PERFORM pg_temp.grant_to(v_owner, now() - interval '1 day', NULL);
   INSERT INTO public.sessions (id, owner_id, title, slug, session_type, participation_mode)
   VALUES (v_session, v_owner, 'Scenario comments', 'scn-' || v_session, 'comments', 'identified');
   INSERT INTO public.questions (id, session_id, text, order_index) VALUES (v_question, v_session, 'Img', 0);
