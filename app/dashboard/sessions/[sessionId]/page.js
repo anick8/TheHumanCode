@@ -11,6 +11,7 @@ import AssistantPanel from '@/components/AssistantPanel'
 import ClearResponsesButton from '@/components/ClearResponsesButton'
 import { formatDateTime, getAppUrl, clampTimeLimit } from '@/lib/utils'
 import { copyFor } from '@/lib/sessionCopy'
+import { startPresentation, presentLabel } from '@/lib/presenting'
 
 const RESULTS_MODE_LABELS = { live: 'Live results', after_all: 'After all questions' }
 
@@ -543,27 +544,13 @@ export default function SessionDetailPage() {
     router.push(`/dashboard/sessions/${sessionId}/results`)
   }
 
-  // Start (or resume) a host-driven presentation. An unfinished run resumes
-  // where it left off; otherwise reset to the lobby (-1), which puts every
-  // attendee device on the "waiting for the host" screen.
+  // Start (or resume) a host-driven presentation; the lobby reset lives in
+  // lib/presenting.js so the dashboard inspector behaves identically.
   const startPresenting = async () => {
-    // A wheel has no questions to step through: straight to the presenter.
-    if (isWheel) {
-      router.push(`/present/${sessionId}`)
+    const { error } = await startPresentation(supabase, session, questions.length)
+    if (error) {
+      alert(error)
       return
-    }
-    const idx = session?.current_question_index
-    const inProgress = idx !== null && idx !== undefined && idx < questions.length
-    if (!inProgress) {
-      const { data, error } = await supabase
-        .from('sessions')
-        .update({ current_question_index: -1, results_revealed: false })
-        .eq('id', sessionId)
-        .select('id')
-      if (error || !data?.length) {
-        alert(error?.message || 'Could not start the presentation.')
-        return
-      }
     }
     router.push(`/present/${sessionId}`)
   }
@@ -674,11 +661,7 @@ export default function SessionDetailPage() {
                 <svg className="mr-2 h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
                 </svg>
-                {session.current_question_index !== null &&
-                session.current_question_index !== undefined &&
-                session.current_question_index < questions.length
-                  ? 'Resume'
-                  : 'Start'}
+                {presentLabel(session, questions.length)}
               </button>
             )}
             {isOwner && !isWheel && (

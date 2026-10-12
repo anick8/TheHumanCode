@@ -119,6 +119,13 @@ Rounded but not soft: 0.75rem (12px) for buttons and inputs, 1rem to 1.25rem for
 ### Inputs / Fields
 - **Style:** Stage Charcoal fill, Hairline border, 0.5rem radius, primary outline on focus.
 
+### Dashboard (organizer run sheet)
+- **Nav:** 56px Card Slate bar, Hairline bottom. Tabs are Quiet Grey with a 2px Paper White underline on the active one; no orange. The account chip is Muted Slate and opens a menu with the email and Sign out.
+- **Create bar:** one Card Slate panel with the AI prompt, **Draft it** and **New**. Draft it is tonal, and fills Paper White once there is text, so it never competes with Present.
+- **Filters:** search (`/` focuses it) and a radiogroup of type chips with counts; the selected chip is filled Paper White.
+- **Session row:** Active dot (filled Paper White, or a Hairline ring when closed), title in Orbitron, type and slug beneath, date at the right. The selected row is Muted Slate; there is no side stripe.
+- **Inspector:** a sticky Card Slate panel (below `lg`, expanded inline under the row). It holds the QR on a white plate, the join link, the Active switch, Present/Resume as the single orange action, then Edit / Results / Design and a quiet Delete.
+
 ### Wheel (signature)
 A dark-metal rim with marquee bulbs, pegs on wedge borders, a kicking flapper and a hub cap. Wedges are six tones of the session primary colour with a fixed sheen. The Pick lands on a full-bleed primary band in the display face; other wedges dim.
 
