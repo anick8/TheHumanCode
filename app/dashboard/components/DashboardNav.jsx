@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useAuth } from '@/app/components/AuthProvider'
+import { createClient } from '@/lib/supabase/client'
 
 const NAVIGATION = [
   { name: 'Sessions', href: '/dashboard' },
@@ -17,6 +18,8 @@ export default function DashboardNav({ session, user: propUser }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
   const menuId = useId()
+  // Admin link is for Super admins only; one cheap RPC, UX only (RLS gates /admin).
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
 
   const currentUser = authUser || authSession?.user || propUser || session?.user
   const userEmail = currentUser?.email || 'User'
@@ -30,6 +33,20 @@ export default function DashboardNav({ session, user: propUser }) {
     }
     return pathname.startsWith(href)
   }
+
+  const currentUserId = currentUser?.id
+  useEffect(() => {
+    if (!currentUserId) return
+    let cancelled = false
+    createClient()
+      .rpc('is_super_admin')
+      .then(({ data }) => {
+        if (!cancelled) setIsSuperAdmin(data === true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [currentUserId])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -121,6 +138,16 @@ export default function DashboardNav({ session, user: propUser }) {
               >
                 Account
               </Link>
+              {isSuperAdmin && (
+                <Link
+                  href="/admin"
+                  role="menuitem"
+                  onClick={() => setMenuOpen(false)}
+                  className="block rounded-lg px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted"
+                >
+                  Admin
+                </Link>
+              )}
               <button
                 type="button"
                 role="menuitem"
