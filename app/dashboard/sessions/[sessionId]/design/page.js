@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { useAccess } from '@/app/components/AccessProvider'
 import PollQuestion from '@/components/PollQuestion'
 import ResultsChart from '@/components/ResultsChart'
 import SessionTheme from '@/components/SessionTheme'
@@ -48,6 +49,13 @@ export default function SessionDesignPage() {
   const params = useParams()
   const sessionId = params.sessionId
   const supabase = createClient()
+  const router = useRouter()
+  const { access } = useAccess()
+
+  // Read-only accounts cannot change the design; RLS and storage refuse it too.
+  useEffect(() => {
+    if (access.readOnly && sessionId) router.replace(`/dashboard/sessions/${sessionId}`)
+  }, [access.readOnly, sessionId, router])
 
   const [session, setSession] = useState(null)
   const [userId, setUserId] = useState(null)

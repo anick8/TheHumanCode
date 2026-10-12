@@ -9,6 +9,7 @@ import { tiedScores, tieNote } from '@/lib/tiebreak'
 import SessionTheme from '@/components/SessionTheme'
 import SessionLogo from '@/components/SessionLogo'
 import ClearResponsesButton from '@/components/ClearResponsesButton'
+import { useAccess } from '@/app/components/AccessProvider'
 
 const RESULTS_MODE_LABELS = { live: 'Live results', after_all: 'After all questions' }
 
@@ -36,6 +37,9 @@ export default function SessionResultsPage() {
   // Wheel sessions: every Spin, newest first (owner has RLS SELECT on wheel_spins).
   const [wheelSpins, setWheelSpins] = useState([])
   const supabase = createClient()
+  // Lapsed access: results stay viewable, every control that writes is hidden.
+  const { access } = useAccess()
+  const lapsed = access.readOnly
 
   const isIdentified = session?.participation_mode === 'identified'
   const isScored = Boolean(session?.is_scored && isIdentified)
@@ -122,6 +126,7 @@ export default function SessionResultsPage() {
   // Close entries: Quiz/Comments refuse new joins, Poll refuses new votes.
   // RLS turns a non-owner's UPDATE into zero rows, so check what came back.
   const toggleEntries = async () => {
+    if (lapsed) return
     setActionError(null)
     const next = !session.entries_closed
     const { data, error } = await supabase
@@ -137,6 +142,7 @@ export default function SessionResultsPage() {
   }
 
   const removeParticipant = async (p) => {
+    if (lapsed) return
     const label = p.name || p.external_id || 'this participant'
     if (!confirm(`Remove ${label}? Their ${isComments ? 'comments' : 'answers'} are deleted too.`)) return
     setActionError(null)
@@ -151,6 +157,7 @@ export default function SessionResultsPage() {
   }
 
   const deleteComment = async (commentId) => {
+    if (lapsed) return
     if (!confirm('Delete this comment?')) return
     setActionError(null)
     const { error } = await supabase.rpc('delete_comment', { p_comment_id: commentId })
@@ -509,7 +516,7 @@ export default function SessionResultsPage() {
             </div>
           </div>
           <div className="flex items-center space-x-4">
-            {session.session_type !== 'treasure_hunt' && (
+            {session.session_type !== 'treasure_hunt' && !lapsed && (
               <button
                 onClick={toggleEntries}
                 aria-pressed={Boolean(session.entries_closed)}
@@ -520,7 +527,7 @@ export default function SessionResultsPage() {
                   : (session.entries_closed ? 'Open voting' : 'Close voting')}
               </button>
             )}
-            {session.session_type !== 'treasure_hunt' && (
+            {session.session_type !== 'treasure_hunt' && !lapsed && (
               <ClearResponsesButton
                 sessionId={sessionId}
                 rewindsQuiz={Boolean(session.is_scored)}
@@ -874,12 +881,14 @@ export default function SessionResultsPage() {
                               <span className="text-sm font-medium text-accent">{c.author}</span>
                               <span className="flex items-center gap-3">
                                 <span className="text-xs text-muted-foreground">{formatDateTime(c.created_at)}</span>
-                                <button
-                                  onClick={() => deleteComment(c.id)}
-                                  className="text-xs font-medium text-destructive hover:underline"
-                                >
-                                  Delete
-                                </button>
+                                {!lapsed && (
+                                  <button
+                                    onClick={() => deleteComment(c.id)}
+                                    className="text-xs font-medium text-destructive hover:underline"
+                                  >
+                                    Delete
+                                  </button>
+                                )}
                               </span>
                             </div>
                             <p className="mt-1 text-sm text-foreground">{c.body}</p>
@@ -986,12 +995,14 @@ export default function SessionResultsPage() {
                           )
                         })}
                         <td className="px-4 py-4 text-right text-sm">
-                          <button
-                            onClick={() => removeParticipant(p)}
-                            className="font-medium text-destructive hover:underline"
-                          >
-                            Remove
-                          </button>
+                          {!lapsed && (
+                            <button
+                              onClick={() => removeParticipant(p)}
+                              className="font-medium text-destructive hover:underline"
+                            >
+                              Remove
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}

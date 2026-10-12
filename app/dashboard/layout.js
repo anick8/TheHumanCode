@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import DashboardNav from './components/DashboardNav'
+import AccessBanner from './components/AccessBanner'
 
 export default async function DashboardLayout({ children }) {
   const supabase = await createClient()
@@ -12,11 +13,13 @@ export default async function DashboardLayout({ children }) {
     redirect('/login')
   }
 
-  // Middleware already redirects non-organizers away from /dashboard; this
-  // is a defense-in-depth repeat of that check, not the primary gate (RLS
-  // via is_organizer() is what actually stops a non-organizer's writes).
-  const { data: isOrganizer } = await supabase.rpc('is_organizer')
-  if (!isOrganizer) {
+  // Middleware already redirects accounts with no access at all; this is a
+  // defense-in-depth repeat of that check, not the primary gate (RLS is what
+  // actually stops writes). Lapsed and upcoming accounts may view the
+  // dashboard read-only; the client AccessProvider carries the details.
+  const { data: statusRows } = await supabase.rpc('organizer_access_status')
+  const state = Array.isArray(statusRows) ? statusRows[0]?.state : statusRows?.state
+  if (!state || state === 'none') {
     redirect('/pending')
   }
 
@@ -25,6 +28,7 @@ export default async function DashboardLayout({ children }) {
       <DashboardNav user={user} />
       <main className="py-6">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <AccessBanner />
           {children}
         </div>
       </main>

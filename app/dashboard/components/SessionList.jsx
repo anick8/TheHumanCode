@@ -17,6 +17,7 @@ export default function SessionList({
   renderInline,
   totalCount,
   onClearFilters,
+  readOnly = false,
 }) {
   const listRef = useRef(null)
 
@@ -25,14 +26,18 @@ export default function SessionList({
       <div className="rounded-2xl border border-dashed border-border px-6 py-14 text-center">
         <p className="font-display text-lg font-bold text-foreground">No sessions yet</p>
         <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
-          Describe one above and the assistant will draft it, or start from a blank form.
+          {readOnly
+            ? 'New sessions are unavailable while your account is read-only.'
+            : 'Describe one above and the assistant will draft it, or start from a blank form.'}
         </p>
-        <Link
-          href="/dashboard/sessions/new"
-          className="mt-5 inline-flex h-10 items-center justify-center rounded-xl border border-border px-4 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
-        >
-          Create your first session
-        </Link>
+        {!readOnly && (
+          <Link
+            href="/dashboard/sessions/new"
+            className="mt-5 inline-flex h-10 items-center justify-center rounded-xl border border-border px-4 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
+          >
+            Create your first session
+          </Link>
+        )}
       </div>
     )
   }
