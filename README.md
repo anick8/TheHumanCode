@@ -156,6 +156,21 @@ The two AI keys are **server-only** and must not carry the `NEXT_PUBLIC_` prefix
 a value into the browser bundle, which is correct for the Supabase anon key (public by design,
 guarded by RLS) and would leak a billing credential for these. Set both in Vercel as well as locally.
 
+## Managing Super admins
+
+Super admins (who can manage Rentals access) live in the `super_admins` table, which the app
+cannot read or write. Manage them from your machine with `psql` through three npm scripts:
+
+```bash
+npm run admin:add -- someone@example.com     # idempotent; email is lowercased
+npm run admin:remove -- someone@example.com  # refuses to remove the last Super admin
+npm run admin:list
+```
+
+These need `SUPABASE_DB_URL` (Supabase dashboard > Project Settings > Database > Connection
+string). Put it **only** in `.env.local` (or export it in your shell). Do **not** add it to Vercel;
+the deployed app never needs it. Requires `psql` on your PATH.
+
 ## Deployment
 
 ### Deploy to Vercel
