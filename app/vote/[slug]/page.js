@@ -21,6 +21,9 @@ export default function VotingPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [session, setSession] = useState(null)
+  // True when the session's owner has no access. Shown as a neutral closed
+  // message; the page never learns why.
+  const [closed, setClosed] = useState(false)
   const [questions, setQuestions] = useState([])
   const [optionsByQuestion, setOptionsByQuestion] = useState({})
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
@@ -172,6 +175,9 @@ export default function VotingPage() {
         .eq('id', sessionRowId)
         .maybeSingle()
       if (data) setSession((prev) => (prev ? { ...prev, ...data } : prev))
+      const { data: open } = await supabase.rpc('session_owner_has_access', { p_session_id: sessionRowId })
+      if (open === false) setClosed(true)
+      else if (open === true) setClosed(false)
       if (resultsVisibleRef.current) loadVoteCounts(sessionRowId)
       // The host can remove a participant mid-session; their token then matches
       // no row. Only an explicit `false` counts - a failed request must not
@@ -331,6 +337,12 @@ export default function VotingPage() {
 
       if (error) throw error
       setSession(data)
+
+      const { data: open } = await supabase.rpc('session_owner_has_access', { p_session_id: data.id })
+      if (open === false) {
+        setClosed(true)
+        return
+      }
 
       // Identified sessions resume a stored participant (and their answers)
       // before the join gate renders.
@@ -744,6 +756,16 @@ export default function VotingPage() {
           <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
           <h1 className="font-display mt-6 text-2xl font-bold text-foreground">Loading session...</h1>
           <p className="mt-2 text-muted-foreground">Please wait while we prepare the session.</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (closed) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background to-muted">
+        <div className="container mx-auto px-4 py-16 text-center">
+          <h1 className="font-display text-3xl font-bold text-foreground">This session is closed</h1>
         </div>
       </div>
     )

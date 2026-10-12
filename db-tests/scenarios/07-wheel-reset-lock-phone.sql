@@ -89,6 +89,7 @@ DO $$
 DECLARE v_owner uuid := gen_random_uuid(); v_session uuid := gen_random_uuid();
 BEGIN
   INSERT INTO auth.users (id, email) VALUES (v_owner, v_owner || '@test.local');
+  PERFORM pg_temp.grant_to(v_owner, now() - interval '1 day', NULL);
   INSERT INTO public.sessions (id, owner_id, title, slug, session_type, participation_mode)
   VALUES (v_session, v_owner, 'p', 'scn-' || v_session, 'poll', 'anonymous');
   UPDATE public.sessions SET session_type = 'treasure_hunt' WHERE id = v_session;
