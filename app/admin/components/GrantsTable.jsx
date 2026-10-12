@@ -2,6 +2,7 @@
 
 import { Fragment, useState } from 'react'
 import { addDays, istDay } from '@/lib/grantDates'
+import { formatDay } from '@/lib/accessStatus'
 
 const STATUS_STYLE = {
   active: 'text-foreground',
@@ -21,10 +22,7 @@ const fmt = (value) =>
       })
     : null
 
-const fmtDay = (value) =>
-  value
-    ? new Date(value).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
-    : 'Never'
+const fmtDay = (value) => (value ? formatDay(value) : 'Never')
 
 const btn =
   'rounded-md border border-border px-2.5 py-1 text-xs font-semibold text-foreground transition-colors hover:bg-muted disabled:opacity-50'
@@ -35,11 +33,13 @@ function ExtendPanel({ grant, onExtend, onDone }) {
   const base = currentEnd > today ? currentEnd : today
   const [endDay, setEndDay] = useState(grant.expires_at ? currentEnd : '')
   const [never, setNever] = useState(!grant.expires_at)
+  const [allowance, setAllowance] = useState(grant.ai_allowance == null ? '' : String(grant.ai_allowance))
   const [saving, setSaving] = useState(false)
 
   const save = async () => {
     setSaving(true)
-    const ok = await onExtend(grant, never ? null : endDay)
+    const aiAllowance = allowance.trim() === '' ? null : Math.max(0, parseInt(allowance, 10) || 0)
+    const ok = await onExtend(grant, never ? null : endDay, aiAllowance)
     setSaving(false)
     if (ok) onDone()
   }
@@ -67,6 +67,18 @@ function ExtendPanel({ grant, onExtend, onDone }) {
         <input type="checkbox" checked={never} onChange={(e) => setNever(e.target.checked)} />
         Never
       </label>
+      <label className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+        AI allowance
+        <input
+          type="number"
+          min="0"
+          inputMode="numeric"
+          value={allowance}
+          placeholder="Unlimited"
+          onChange={(e) => setAllowance(e.target.value)}
+          className="h-8 w-24 rounded-md border border-border bg-background px-2 text-xs text-foreground"
+        />
+      </label>
       <button
         type="button"
         disabled={saving || (!never && !endDay)}
@@ -79,8 +91,8 @@ function ExtendPanel({ grant, onExtend, onDone }) {
         Cancel
       </button>
       <p className="basis-full text-xs text-muted-foreground">
-        Extending restarts this renter&apos;s access window from now, so their AI allowance count
-        starts again from zero.
+        Saving moves the start to now, which restarts this Organizer&apos;s access window, so their
+        AI allowance count starts again from zero. Leave the allowance blank for unlimited.
       </p>
     </div>
   )
@@ -114,7 +126,7 @@ export default function GrantsTable({ grants, onExtend, onRevoke, onUnrevoke, on
           <table className="w-full min-w-[860px] text-left text-sm">
             <thead>
               <tr className="border-y border-border text-xs text-muted-foreground">
-                <th className="px-4 py-2 font-semibold sm:px-5">Renter</th>
+                <th className="px-4 py-2 font-semibold sm:px-5">Organizer</th>
                 <th className="px-3 py-2 font-semibold">Status</th>
                 <th className="px-3 py-2 font-semibold">Start</th>
                 <th className="px-3 py-2 font-semibold">End</th>

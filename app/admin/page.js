@@ -61,14 +61,16 @@ export default function AdminPage() {
       })
     )
 
-  // Extending also moves starts_at to now so the AI allowance window restarts.
-  const extendGrant = (grant, endDay) =>
+  // Extending also moves starts_at to now so the AI allowance window restarts;
+  // the allowance (null = unlimited) is saved with the dates.
+  const extendGrant = (grant, endDay, aiAllowance) =>
     write(
       supabase
         .from('allowed_emails')
         .update({
           starts_at: renewalStartsAt(grant.starts_at),
           expires_at: endDay ? endOfDayIst(endDay) : null,
+          ai_allowance: aiAllowance,
         })
         .eq('email', grant.email)
     )

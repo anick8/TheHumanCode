@@ -76,4 +76,21 @@ BEGIN
   IF v_left IS DISTINCT FROM 0 THEN RAISE EXCEPTION 'signed-out caller should have 0 left, got %', v_left; END IF;
 END $$;
 
+-- A call made inside the grace (the event ran late) counts; one made after the
+-- grace has closed does not.
+DO $$
+DECLARE
+  v_user uuid := pg_temp.make_user('grace');
+  v_left integer;
+BEGIN
+  PERFORM pg_temp.grant_to(v_user, now() - interval '5 days', now() - interval '1 hour', NULL, 5);
+  INSERT INTO public.ai_usage (user_id, created_at) VALUES
+    (v_user, now() - interval '2 days'),
+    (v_user, now() - interval '30 minutes'),  -- after expires_at, inside the grace
+    (v_user, now() + interval '7 hours');     -- past expires_at + grace
+  PERFORM pg_temp.act_as_user(v_user);
+  v_left := public.ai_allowance_left();
+  IF v_left IS DISTINCT FROM 3 THEN RAISE EXCEPTION 'grace call should count, post-grace should not: expected 3 left, got %', v_left; END IF;
+END $$;
+
 ROLLBACK;

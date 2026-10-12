@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
+import { accessStateOf } from '@/lib/accessStatus'
 
 export async function middleware(request) {
   let supabaseResponse = NextResponse.next({
@@ -55,7 +56,7 @@ export async function middleware(request) {
   // - none: /pending.
   if (isProtected && user) {
     const { data: statusRows } = await supabase.rpc('organizer_access_status')
-    const state = Array.isArray(statusRows) ? statusRows[0]?.state : statusRows?.state
+    const state = accessStateOf(statusRows)
     const canWrite = state === 'active' || state === 'admin'
     const lapsed = state === 'expired' || state === 'revoked' || state === 'upcoming'
     if (!canWrite) {
