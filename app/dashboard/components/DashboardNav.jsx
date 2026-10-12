@@ -1,30 +1,51 @@
 'use client'
 
+import { useEffect, useId, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useAuth } from '@/app/components/AuthProvider'
+
+const NAVIGATION = [
+  { name: 'Sessions', href: '/dashboard' },
+  { name: 'Account', href: '/dashboard/account' },
+]
 
 export default function DashboardNav({ session, user: propUser }) {
   const pathname = usePathname()
   const router = useRouter()
   const { user: authUser, session: authSession, signOut } = useAuth()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef(null)
+  const menuId = useId()
 
   const currentUser = authUser || authSession?.user || propUser || session?.user
   const userEmail = currentUser?.email || 'User'
   const userInitial = userEmail.charAt(0).toUpperCase()
 
-  const navigation = [
-    { name: 'Sessions', href: '/dashboard' },
-    { name: 'New Session', href: '/dashboard/sessions/new' },
-    { name: 'Account', href: '/dashboard/account' },
-  ]
-
-  const isActive = (path) => {
-    if (path === '/dashboard') {
-      return pathname === '/dashboard'
+  // "Sessions" owns the home route and every session sub-page; "Account" only
+  // itself. Exact match for home so the two tabs never both light up.
+  const isActive = (href) => {
+    if (href === '/dashboard') {
+      return pathname === '/dashboard' || pathname.startsWith('/dashboard/sessions')
     }
-    return pathname.startsWith(path)
+    return pathname.startsWith(href)
   }
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const onPointer = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) setMenuOpen(false)
+    }
+    const onKey = (event) => {
+      if (event.key === 'Escape') setMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointer)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onPointer)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [menuOpen])
 
   const handleSignOut = async () => {
     try {
@@ -38,70 +59,78 @@ export default function DashboardNav({ session, user: propUser }) {
   }
 
   return (
-    <nav className="border-b border-border bg-card sticky top-0 z-30 shadow-2xs">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex h-16 justify-between items-center">
-          <div className="flex items-center">
-            <div className="flex flex-shrink-0 items-center">
-              <Link href="/dashboard" className="flex items-center">
-                <img src="/mcgenie.png" alt="" className="h-9 w-9 rounded-xl object-cover shadow-xs" />
-                <span className="ml-3 text-xl font-bold text-foreground">MC Genie</span>
-                <span className="ml-2 hidden md:inline-block text-xs font-semibold bg-primary/15 text-accent px-2 py-0.5 rounded-full">
-                  Dashboard
-                </span>
-              </Link>
-            </div>
-            <div className="hidden sm:ml-8 sm:flex sm:space-x-4">
-              {navigation.map((item) => (
+    <nav className="sticky top-0 z-30 border-b border-border bg-card" aria-label="Dashboard">
+      <div className="mx-auto flex h-14 max-w-7xl items-stretch justify-between gap-4 px-4 sm:px-6 lg:px-8">
+        <div className="flex min-w-0 items-stretch gap-4 sm:gap-8">
+          <Link href="/dashboard" aria-label="MC Genie dashboard" className="flex shrink-0 items-center gap-2.5">
+            <img src="/mcgenie.png" alt="" className="h-8 w-8 rounded-lg object-cover" />
+            <span className="hidden font-display text-base font-bold tracking-wide text-foreground sm:inline">
+              MC Genie
+            </span>
+          </Link>
+
+          <div className="flex items-stretch">
+            {NAVIGATION.map((item) => {
+              const active = isActive(item.href)
+              return (
                 <Link
                   key={item.name}
                   href={item.href}
-                  className={`inline-flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
-                    isActive(item.href)
-                      ? 'bg-muted text-accent font-semibold'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                  aria-current={active ? 'page' : undefined}
+                  className={`relative flex items-center px-2.5 text-sm sm:px-3 font-medium transition-colors ${
+                    active
+                      ? 'text-foreground after:absolute after:inset-x-2.5 after:bottom-0 sm:after:inset-x-3 after:h-0.5 after:bg-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
                   {item.name}
                 </Link>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center">
-              <div className="h-8 w-8 rounded-full bg-gradient-to-r from-primary to-accent flex items-center justify-center text-white text-xs font-bold shadow-xs">
-                {userInitial}
-              </div>
-              <span className="ml-2.5 text-sm font-medium text-foreground max-w-[200px] truncate hidden lg:inline-block">
-                {userEmail}
-              </span>
-            </div>
-
-            <button
-              onClick={handleSignOut}
-              className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs sm:text-sm font-medium text-foreground shadow-2xs hover:bg-muted hover:text-destructive transition-colors"
-            >
-              Sign Out
-            </button>
+              )
+            })}
           </div>
         </div>
 
-        {/* Mobile navigation */}
-        <div className="sm:hidden border-t border-border py-2 flex space-x-2">
-          {navigation.map((item) => (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md ${
-                isActive(item.href)
-                  ? 'bg-muted text-accent font-semibold'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
+        <div ref={menuRef} className="relative flex items-center">
+          <button
+            type="button"
+            onClick={() => setMenuOpen((open) => !open)}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            aria-controls={menuId}
+            aria-label={`Account menu for ${userEmail}`}
+            className="flex h-9 items-center gap-2 rounded-full border border-border bg-muted pl-1 pr-1 text-sm font-medium text-foreground transition-colors hover:border-muted-foreground sm:pr-3"
+          >
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-background font-display text-xs font-bold">
+              {userInitial}
+            </span>
+            <span className="hidden max-w-[180px] truncate sm:inline">{userEmail}</span>
+          </button>
+
+          {menuOpen && (
+            <div
+              id={menuId}
+              role="menu"
+              className="absolute right-0 top-full mt-2 w-60 rounded-xl border border-border bg-card p-1.5 shadow-[0_12px_28px_rgba(0,0,0,0.45)]"
             >
-              {item.name}
-            </Link>
-          ))}
+              <p className="truncate px-3 py-2 text-xs text-muted-foreground">{userEmail}</p>
+              <Link
+                href="/dashboard/account"
+                role="menuitem"
+                onClick={() => setMenuOpen(false)}
+                className="block rounded-lg px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted"
+              >
+                Account
+              </Link>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={handleSignOut}
+                className="block w-full rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted hover:text-destructive"
+              >
+                Sign out
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </nav>
