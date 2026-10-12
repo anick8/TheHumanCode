@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport, lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import AssistantProposal from './AssistantProposal'
+import { assistantErrorText } from '@/lib/ai/rateLimit'
 
 const ENTER_EASE = 'cubic-bezier(0.16, 1, 0.3, 1)'
 
@@ -329,7 +330,7 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
 
           {error && (
             <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              {error.message || 'Something went wrong. Try again.'}
+              {assistantErrorText(error)}
             </p>
           )}
         </div>
