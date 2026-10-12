@@ -28,7 +28,7 @@ psql "$PG_URL/$NAME" -X -q -v ON_ERROR_STOP=1 <<'SQL'
 CREATE SCHEMA extensions;
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
 CREATE SCHEMA auth;
-CREATE TABLE auth.users (id uuid PRIMARY KEY, email text, raw_user_meta_data jsonb);
+CREATE TABLE auth.users (id uuid PRIMARY KEY, email text, raw_user_meta_data jsonb, last_sign_in_at timestamptz);
 CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE
   AS $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
 CREATE FUNCTION auth.jwt() RETURNS jsonb LANGUAGE sql STABLE

@@ -68,3 +68,10 @@ provider seam.
   hourly limit in `ai_usage`.
 - The schema rules in `lib/ai/prompt.js` duplicate constraints in `database-setup.sql`. Nothing
   enforces that they stay in sync; changing a constraint means updating the prompt too.
+
+## Addendum (2026-10-13): per-Grant AI allowance
+
+A per-Grant AI allowance now sits beside the hourly limit. Each route checks the hourly limit first,
+then the allowance (`ai_allowance_left()` in the database, counted from the Grant start through its
+end plus the grace), and only then writes the `ai_usage` row. The allowance check fails open on an
+RPC error, like the hourly check, so an outage does not lock Organizers out of the assistant.

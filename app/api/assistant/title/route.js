@@ -1,7 +1,7 @@
 import { generateText } from 'ai'
 import { createClient } from '@/lib/supabase/server'
 import { getModel } from '@/lib/ai/provider'
-import { isOverAiLimit } from '@/lib/ai/rateLimit'
+import { isOverAiLimit, isAiAllowanceSpent, aiAllowanceResponse } from '@/lib/ai/rateLimit'
 
 // Names and types (poll or quiz) a new session from the organizer's prompt.
 // A single non-streaming generation, not an agent turn — deliberately separate
@@ -30,6 +30,11 @@ export async function POST(request) {
       { error: 'You have reached the hourly limit for the assistant. Try again later.' },
       { status: 429 }
     )
+  }
+
+  // Grant allowance: after the hourly limit, before usage is recorded.
+  if (await isAiAllowanceSpent(supabase)) {
+    return aiAllowanceResponse()
   }
 
   let body

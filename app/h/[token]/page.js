@@ -59,6 +59,8 @@ export default function CluePage() {
                 {result.clue_message}
               </p>
             </>
+          ) : status === 'closed' ? (
+            <h1 className="font-display text-2xl font-bold text-foreground">This session is closed</h1>
           ) : status === 'not_live' ? (
             <>
               <div className="mx-auto mb-4 h-12 w-12 rounded-full bg-muted flex items-center justify-center">

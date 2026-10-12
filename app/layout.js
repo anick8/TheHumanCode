@@ -1,6 +1,7 @@
 import { Montserrat, Orbitron } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "./components/AuthProvider";
+import { AccessProvider } from "./components/AccessProvider";
 
 // Self-hosted via next/font rather than the reference's Google Fonts @import,
 // which avoids a render-blocking request and the attendant layout shift.
@@ -40,7 +41,9 @@ export default function RootLayout({ children }) {
       className={`${montserrat.variable} ${orbitron.variable} h-full`}
     >
       <body className="min-h-full bg-background text-foreground font-sans antialiased">
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <AccessProvider>{children}</AccessProvider>
+        </AuthProvider>
       </body>
     </html>
   );

@@ -107,3 +107,23 @@ A Participant's running total of points earned from correct Quiz Answers. Only e
 
 **Leaderboard**:
 The ranking of Classic Quiz Participants by Score, then by Tiebreak, shown between questions and as the final ranking once the quiz is closed. A Round-by-round Quiz has a Question board per question and a Round recap instead.
+
+**Organizer**:
+A signed-in person who may create, edit and present Sessions. Access comes from a Grant (or from being a Super admin). Attendees are not Organizers and need no account.
+_Avoid_: Renter, host (host names the Organizer acting on the presenter screen), admin (that is the Super admin).
+
+**Super admin**:
+An Organizer who also manages everyone else's access from `/admin`: grants, extends, revokes and deletes Grants and sees Leads. Always has access and unlimited AI, needing no Grant of their own. Added and removed from the backend, never from the app.
+
+**Grant**:
+One email's permission to be an Organizer, for a date range (start, optional end; blank end never expires) with an optional AI allowance. Statuses: active, upcoming, expired, revoked. Extending a Grant moves its start to the renewal moment, which restarts the AI allowance count. Revoking takes effect at once with no grace; an expired Grant keeps a short grace so a live event can finish. Payment happens outside the app.
+
+**Lead**:
+Someone who signed in without a Grant. Listed on `/admin` so a Super admin can turn them into a Grant.
+
+**Lapsed Organizer**:
+An Organizer whose Grant has expired (past the grace) or been revoked. Soft-locked: read-only, nothing deleted. They can still sign in and view their own Sessions and results but cannot create, edit, present, upload or use the AI assistant, and their attendees see "This session is closed". Renewing the Grant restores everything as it was.
+_Avoid_: "Deleted" or "suspended" account (no data is removed and the account still signs in).
+
+**AI allowance**:
+The number of assistant calls a Grant permits, counted from the Grant's start through its end plus the grace; blank means unlimited. Checked after the hourly limit and before usage is recorded. Super admins are exempt.

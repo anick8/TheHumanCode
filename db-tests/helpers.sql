@@ -1,7 +1,7 @@
 -- Fixtures shared by the scenario scripts. Everything lives in pg_temp, so it
 -- disappears with the transaction each scenario rolls back.
 
--- A scored quiz owned by a fresh organizer, with p_questions questions that
+-- A scored quiz owned by a fresh organizer (a never-expiring Grant), with p_questions questions that
 -- each have two options; option 0 is the correct answer. Returns the session id.
 CREATE FUNCTION pg_temp.make_quiz(p_questions integer DEFAULT 2) RETURNS uuid
 LANGUAGE plpgsql AS $$
@@ -12,6 +12,7 @@ DECLARE
   v_option uuid;
 BEGIN
   INSERT INTO auth.users (id, email) VALUES (v_owner, v_owner || '@test.local');
+  PERFORM pg_temp.grant_to(v_owner, now() - interval '1 day', NULL);
   INSERT INTO public.sessions (id, owner_id, title, slug, session_type, participation_mode, is_scored, current_question_index)
   VALUES (v_session, v_owner, 'Scenario quiz', 'scn-' || v_session, 'quiz', 'identified', true, -1);
   FOR i IN 0..p_questions - 1 LOOP
@@ -95,6 +96,7 @@ DECLARE
   v_session uuid := gen_random_uuid();
 BEGIN
   INSERT INTO auth.users (id, email) VALUES (v_owner, v_owner || '@test.local');
+  PERFORM pg_temp.grant_to(v_owner, now() - interval '1 day', NULL);
   INSERT INTO public.sessions (id, owner_id, title, slug, session_type, participation_mode,
                                identity_requires_name, identity_requires_id, is_scored, is_active)
   VALUES (v_session, v_owner, 'Scenario wheel', 'scn-' || v_session, 'wheel', 'identified',
@@ -128,4 +130,92 @@ LANGUAGE plpgsql AS $$
 BEGIN
   RETURN (SELECT coalesce(array_agg(label ORDER BY label), '{}') FROM public.wheel_entries
            WHERE session_id = p_session AND removed_at IS NULL);
+END $$;
+
+
+-- ============================================================================
+-- Rentals access fixtures
+-- ============================================================================
+
+-- A fresh account with a unique email. Returns the user id.
+CREATE FUNCTION pg_temp.make_user(p_label text DEFAULT 'user') RETURNS uuid
+LANGUAGE plpgsql AS $$
+DECLARE v_user uuid := gen_random_uuid();
+BEGIN
+  INSERT INTO auth.users (id, email) VALUES (v_user, p_label || '-' || v_user || '@test.local');
+  RETURN v_user;
+END $$;
+
+-- Acts as the given account for auth.uid()-based predicates and RPCs.
+CREATE FUNCTION pg_temp.act_as_user(p_user uuid) RETURNS void
+LANGUAGE plpgsql AS $$
+BEGIN
+  PERFORM set_config('request.jwt.claim.sub', p_user::text, true);
+  PERFORM set_config('request.jwt.claims', json_build_object('sub', p_user)::text, true);
+END $$;
+
+-- A fresh Super admin account, already acted as. Returns the user id.
+CREATE FUNCTION pg_temp.act_as_super_admin() RETURNS uuid
+LANGUAGE plpgsql AS $$
+DECLARE v_user uuid := pg_temp.make_user('admin');
+BEGIN
+  INSERT INTO public.super_admins (email) SELECT lower(email) FROM auth.users WHERE id = v_user;
+  PERFORM pg_temp.act_as_user(v_user);
+  RETURN v_user;
+END $$;
+
+-- Gives an account a Grant with explicit dates (null end = never expires,
+-- null allowance = unlimited). Replaces any Grant the account already has.
+CREATE FUNCTION pg_temp.grant_to(
+  p_user uuid, p_starts timestamptz, p_expires timestamptz,
+  p_revoked timestamptz DEFAULT NULL, p_allowance integer DEFAULT NULL
+) RETURNS void LANGUAGE plpgsql AS $$
+DECLARE v_email text;
+BEGIN
+  SELECT lower(email) INTO v_email FROM auth.users WHERE id = p_user;
+  DELETE FROM public.allowed_emails WHERE email = v_email;
+  INSERT INTO public.allowed_emails (email, starts_at, expires_at, revoked_at, ai_allowance)
+  VALUES (v_email, p_starts, p_expires, p_revoked, p_allowance);
+END $$;
+
+-- is_organizer() as seen by the given account.
+CREATE FUNCTION pg_temp.organizer_as(p_user uuid) RETURNS boolean
+LANGUAGE plpgsql AS $$
+BEGIN
+  PERFORM pg_temp.act_as_user(p_user);
+  RETURN public.is_organizer();
+END $$;
+
+-- organizer_access_status().state as seen by the given account.
+CREATE FUNCTION pg_temp.access_state_as(p_user uuid) RETURNS text
+LANGUAGE plpgsql AS $$
+BEGIN
+  PERFORM pg_temp.act_as_user(p_user);
+  RETURN (SELECT state FROM public.organizer_access_status());
+END $$;
+
+-- ============================================================================
+-- Soft lock fixtures
+-- ============================================================================
+
+-- Moves a session owner's Grant into a state: 'active', 'grace' (ended one
+-- hour ago), 'expired' (ended 7 hours ago), 'revoked' or 'upcoming'.
+CREATE FUNCTION pg_temp.set_owner_state(p_session uuid, p_state text) RETURNS void
+LANGUAGE plpgsql AS $$
+DECLARE v_owner uuid;
+BEGIN
+  SELECT owner_id INTO v_owner FROM public.sessions WHERE id = p_session;
+  IF p_state = 'active' THEN
+    PERFORM pg_temp.grant_to(v_owner, now() - interval '5 days', now() + interval '1 day');
+  ELSIF p_state = 'grace' THEN
+    PERFORM pg_temp.grant_to(v_owner, now() - interval '5 days', now() - interval '1 hour');
+  ELSIF p_state = 'expired' THEN
+    PERFORM pg_temp.grant_to(v_owner, now() - interval '5 days', now() - interval '7 hours');
+  ELSIF p_state = 'revoked' THEN
+    PERFORM pg_temp.grant_to(v_owner, now() - interval '5 days', now() + interval '1 day', now() - interval '1 minute');
+  ELSIF p_state = 'upcoming' THEN
+    PERFORM pg_temp.grant_to(v_owner, now() + interval '1 day', now() + interval '8 days');
+  ELSE
+    RAISE EXCEPTION 'unknown state %', p_state;
+  END IF;
 END $$;

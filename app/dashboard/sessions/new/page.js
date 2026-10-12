@@ -1,15 +1,22 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import SessionForm from '@/components/SessionForm'
 import Link from 'next/link'
+import { useAccess } from '@/app/components/AccessProvider'
 
 export default function NewSessionPage() {
   const [loading, setLoading] = useState(false)
   const router = useRouter()
   const supabase = createClient()
+  const { access } = useAccess()
+
+  // Read-only accounts cannot create sessions; RLS refuses it regardless.
+  useEffect(() => {
+    if (access.readOnly) router.replace('/dashboard')
+  }, [access.readOnly, router])
 
   const handleCreateSession = async (formData) => {
     setLoading(true)

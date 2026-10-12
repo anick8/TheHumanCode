@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { generateSlug } from '@/lib/utils'
 
 import { createClient } from '@/lib/supabase/client'
+import { useAccess } from '@/app/components/AccessProvider'
+import { AI_ALLOWANCE_CODE, AI_ALLOWANCE_MESSAGE } from '@/lib/ai/rateLimit'
 import { startPresentation } from '@/lib/presenting'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import CreateBar from './components/CreateBar'
@@ -65,6 +67,8 @@ export default function DashboardHome() {
   const supabase = useMemo(() => createClient(), [])
   const searchRef = useRef(null)
   const isDesktop = useIsDesktop()
+  const { access } = useAccess()
+  const readOnly = access.readOnly
 
   // ----- data ---------------------------------------------------------------
 
@@ -211,7 +215,7 @@ export default function DashboardHome() {
   const openEditor = (session) => router.push(`/dashboard/sessions/${session.id}`)
 
   const present = async (session) => {
-    if (presenting) return
+    if (presenting || readOnly) return
     setPresenting(true)
     setInspectorError(null)
 
@@ -236,6 +240,7 @@ export default function DashboardHome() {
   }
 
   const toggleActive = async (session) => {
+    if (readOnly) return
     const next = !session.is_active
     setInspectorError(null)
     setSessions((prev) => prev.map((s) => (s.id === session.id ? { ...s, is_active: next } : s)))
@@ -258,7 +263,7 @@ export default function DashboardHome() {
   }
 
   const deleteSession = async () => {
-    if (!pendingDelete) return
+    if (!pendingDelete || readOnly) return
     setDeleting(true)
     setDeleteError(null)
     const { error } = await supabase.from('sessions').delete().eq('id', pendingDelete.id)
@@ -278,7 +283,7 @@ export default function DashboardHome() {
   const createWithAi = async (event) => {
     event.preventDefault()
     const prompt = aiPrompt.trim()
-    if (!prompt || creating) return
+    if (!prompt || creating || readOnly) return
 
     setCreating(true)
     setCreateError(null)
@@ -297,6 +302,16 @@ export default function DashboardHome() {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ prompt }),
         })
+        if (titleRes.status === 403) {
+          // A spent AI allowance is a real answer, not a title failure: say so
+          // rather than creating an "Untitled Session" the user did not ask for.
+          const body = await titleRes.json().catch(() => null)
+          if (body?.code === AI_ALLOWANCE_CODE) {
+            setCreateError(AI_ALLOWANCE_MESSAGE)
+            setCreating(false)
+            return
+          }
+        }
         if (titleRes.ok) {
           const titleData = await titleRes.json()
           if (titleData.title) title = titleData.title
@@ -364,12 +379,18 @@ export default function DashboardHome() {
       onPresent={present}
       onToggleActive={toggleActive}
       onDelete={askDelete}
+      readOnly={readOnly}
     />
   )
 
   return (
     <div className="space-y-5 py-2">
       <h1 className="sr-only">Your sessions</h1>
+      {access.untilLabel && (
+        <p className="text-xs text-muted-foreground" data-access-until>
+          {access.untilLabel}
+        </p>
+      )}
 
       <CreateBar
         value={aiPrompt}
@@ -377,6 +398,7 @@ export default function DashboardHome() {
         onSubmit={createWithAi}
         creating={creating}
         error={createError}
+        readOnly={readOnly}
       />
 
       {sessions.length > 0 && (
@@ -400,6 +422,7 @@ export default function DashboardHome() {
           onPresent={present}
           renderInline={isDesktop ? null : inspector}
           totalCount={sessions.length}
+          readOnly={readOnly}
           onClearFilters={clearFilters}
         />
         {isDesktop && selected && (
