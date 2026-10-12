@@ -9,7 +9,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getModel, MAX_OUTPUT_TOKENS, MAX_STEPS } from '@/lib/ai/provider'
 import { buildTools } from '@/lib/ai/tools'
 import { buildInstructions } from '@/lib/ai/prompt'
-import { isOverAiLimit } from '@/lib/ai/rateLimit'
+import { isOverAiLimit, isAiAllowanceSpent, aiAllowanceResponse } from '@/lib/ai/rateLimit'
 
 export const maxDuration = 60
 
@@ -67,6 +67,11 @@ export async function POST(request) {
       { error: 'You have reached the hourly limit for the assistant. Try again later.' },
       { status: 429 }
     )
+  }
+
+  // Grant allowance: after the hourly limit, before usage is recorded.
+  if (await isAiAllowanceSpent(supabase)) {
+    return aiAllowanceResponse()
   }
 
   // A session id from the client is never trusted. It is re-read through the
