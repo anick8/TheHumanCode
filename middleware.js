@@ -47,14 +47,23 @@ export async function middleware(request) {
     return supabaseResponse
   }
 
-  // Organizer capabilities (owning/presenting sessions) are restricted to an
-  // allowlist enforced in RLS via is_organizer() - this redirect is UX only,
-  // not the actual gate. A non-organizer who bypasses this still can't own
-  // or edit anything at the database level.
+  // Access is decided in the database (organizer_access_status). This is a
+  // UX redirect, not the gate: RLS refuses every write from a lapsed owner.
+  // - active / admin: everything.
+  // - expired / revoked / upcoming: /dashboard read-only; /present is for
+  //   active Organizers only, so a lapsed owner goes back to the dashboard.
+  // - none: /pending.
   if (isProtected && user) {
-    const { data: isOrganizer } = await supabase.rpc('is_organizer')
-    if (!isOrganizer) {
-      return NextResponse.redirect(new URL('/pending', request.url))
+    const { data: statusRows } = await supabase.rpc('organizer_access_status')
+    const state = Array.isArray(statusRows) ? statusRows[0]?.state : statusRows?.state
+    const canWrite = state === 'active' || state === 'admin'
+    const lapsed = state === 'expired' || state === 'revoked' || state === 'upcoming'
+    if (!canWrite) {
+      if (lapsed && pathname.startsWith('/dashboard')) {
+        return supabaseResponse
+      }
+      const target = lapsed ? '/dashboard' : '/pending'
+      return NextResponse.redirect(new URL(target, request.url))
     }
   }
 

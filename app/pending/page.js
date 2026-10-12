@@ -1,11 +1,32 @@
 'use client'
 
 import { useAuth } from '@/app/components/AuthProvider'
+import { useAccess } from '@/app/components/AccessProvider'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
 export default function PendingPage() {
   const { signOut } = useAuth()
+  const { access, loading } = useAccess()
+  const hasDashboard = ['expired', 'revoked', 'upcoming', 'active', 'admin'].includes(access.state)
+  // 'none' keeps the original copy; the others say where the account stands.
+  const copy = {
+    expired: {
+      title: 'Your access has expired',
+      body: 'Access expired, contact us to renew. Your sessions and results are still there to view.',
+    },
+    revoked: {
+      title: 'Your access has been withdrawn',
+      body: 'Contact us if you think this is a mistake. Your sessions and results are still there to view.',
+    },
+    upcoming: {
+      title: 'Your access has not started yet',
+      body: access.banner?.message ?? 'Your access has not started yet.',
+    },
+  }[access.state] ?? {
+    title: "You're on the list",
+    body: "MC Genie is invite-only right now. We've got your account, and we'll be in touch if that changes.",
+  }
   const router = useRouter()
 
   const handleSignOut = async () => {
@@ -33,15 +54,22 @@ export default function PendingPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        <h2 className="font-display text-xl font-bold text-foreground">You&apos;re on the list</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          MC Genie is invite-only right now. We&apos;ve got your account, and we&apos;ll be in touch if
-          that changes.
-        </p>
+        <h2 className="font-display text-xl font-bold text-foreground">
+          {loading ? '\u00a0' : copy.title}
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground">{loading ? '' : copy.body}</p>
+        {!loading && hasDashboard && (
+          <Link
+            href="/dashboard"
+            className="mt-6 block w-full rounded-lg border border-foreground bg-foreground px-4 py-2.5 text-sm font-semibold text-background hover:bg-foreground/90 transition-colors"
+          >
+            Go to your dashboard
+          </Link>
+        )}
         <button
           type="button"
           onClick={handleSignOut}
-          className="mt-6 w-full rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground shadow-xs hover:bg-muted transition-colors"
+          className="mt-3 w-full rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground shadow-xs hover:bg-muted transition-colors"
         >
           Sign out
         </button>

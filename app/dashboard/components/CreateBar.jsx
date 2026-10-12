@@ -6,8 +6,19 @@ import { PlusIcon, SparkleIcon } from './icons'
 // The create row: describe a session and let the assistant draft it, or open
 // the blank form. Draft it stays a tonal control (filled Paper White once there
 // is text) so Present keeps the page's only orange.
-export default function CreateBar({ value, onChange, onSubmit, creating, error }) {
+export default function CreateBar({ value, onChange, onSubmit, creating, error, readOnly = false }) {
   const hasText = value.trim().length > 0
+
+  if (readOnly) {
+    return (
+      <div
+        aria-disabled="true"
+        className="rounded-2xl border border-border bg-card p-3 text-sm text-muted-foreground sm:p-4"
+      >
+        New sessions are unavailable while your account is read-only.
+      </div>
+    )
+  }
 
   return (
     <form onSubmit={onSubmit} className="rounded-2xl border border-border bg-card p-3 sm:p-4">

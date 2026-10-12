@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { QRCodeSVG } from 'qrcode.react'
 import { createClient } from '@/lib/supabase/client'
 import { getAppUrl } from '@/lib/utils'
+import { useAccess } from '@/app/components/AccessProvider'
 
 // Printable sheet of every clue's QR code. Each clue reuses the `questions`
 // row's clue_token - a random, permanent value set at creation (see
@@ -14,6 +15,8 @@ import { getAppUrl } from '@/lib/utils'
 export default function CluesPage() {
   const params = useParams()
   const sessionId = params.sessionId
+  const { access } = useAccess()
+  const lapsed = access.readOnly
   const [loading, setLoading] = useState(true)
   const [session, setSession] = useState(null)
   const [clues, setClues] = useState([])
@@ -55,6 +58,7 @@ export default function CluesPage() {
     (labels[clue.id] ?? clue.clue_label ?? '').trim() || `Clue #${index + 1}`
 
   const saveLabel = async (clue) => {
+    if (lapsed) return
     const value = (labels[clue.id] || '').trim()
     if (value === (clue.clue_label || '')) return
     setLabelStatus((s) => ({ ...s, [clue.id]: 'saving' }))
@@ -196,6 +200,7 @@ export default function CluesPage() {
                 type="text"
                 value={labels[clue.id] ?? ''}
                 maxLength={60}
+                readOnly={lapsed}
                 placeholder={`Clue #${index + 1}`}
                 onChange={(e) => {
                   setLabels((l) => ({ ...l, [clue.id]: e.target.value }))

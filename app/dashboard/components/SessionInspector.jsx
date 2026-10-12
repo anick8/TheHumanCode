@@ -32,6 +32,7 @@ export default function SessionInspector({
   onPresent,
   onToggleActive,
   onDelete,
+  readOnly = false,
 }) {
   const [copied, setCopied] = useState(false)
   const typeCopy = copyFor(session.session_type)
@@ -109,7 +110,8 @@ export default function SessionInspector({
           aria-checked={session.is_active}
           aria-labelledby={`active-${session.id}`}
           onClick={() => onToggleActive(session)}
-          className={`relative h-6 w-11 shrink-0 rounded-full border transition-colors ${
+          disabled={readOnly}
+          className={`disabled:cursor-not-allowed disabled:opacity-50 relative h-6 w-11 shrink-0 rounded-full border transition-colors ${
             session.is_active ? 'border-foreground bg-foreground' : 'border-border bg-muted'
           }`}
         >
@@ -141,7 +143,7 @@ export default function SessionInspector({
         </div>
       </dl>
 
-      {!isHunt && (
+      {!isHunt && !readOnly && (
         <button
           type="button"
           onClick={() => onPresent(session)}
@@ -161,7 +163,7 @@ export default function SessionInspector({
       <div className={`mt-3 grid gap-2 ${isHunt ? 'grid-cols-2' : 'grid-cols-3'}`}>
         <Link href={`/dashboard/sessions/${session.id}`} className={secondaryButton}>
           <PencilIcon className="hidden h-4 w-4 sm:block" />
-          Edit
+          {readOnly ? 'View' : 'Edit'}
         </Link>
         {!isHunt && (
           <Link href={`/dashboard/sessions/${session.id}/results`} className={secondaryButton}>
@@ -169,22 +171,26 @@ export default function SessionInspector({
             Results
           </Link>
         )}
-        <Link href={`/dashboard/sessions/${session.id}/design`} className={secondaryButton}>
-          <PaletteIcon className="hidden h-4 w-4 sm:block" />
-          Design
-        </Link>
+        {!readOnly && (
+          <Link href={`/dashboard/sessions/${session.id}/design`} className={secondaryButton}>
+            <PaletteIcon className="hidden h-4 w-4 sm:block" />
+            Design
+          </Link>
+        )}
       </div>
 
-      <div className="mt-5 border-t border-border pt-4">
-        <button
-          type="button"
-          onClick={() => onDelete(session)}
-          className="inline-flex items-center gap-2 rounded-lg px-2 py-1.5 -ml-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
-        >
-          <TrashIcon />
-          Delete session
-        </button>
-      </div>
+      {!readOnly && (
+        <div className="mt-5 border-t border-border pt-4">
+          <button
+            type="button"
+            onClick={() => onDelete(session)}
+            className="inline-flex items-center gap-2 rounded-lg px-2 py-1.5 -ml-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
+          >
+            <TrashIcon />
+            Delete session
+          </button>
+        </div>
+      )}
     </div>
   )
 }
