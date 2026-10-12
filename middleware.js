@@ -30,9 +30,21 @@ export async function middleware(request) {
 
   // Protect dashboard and presenter routes - redirect to home if not authenticated
   const { pathname } = request.nextUrl
-  const isProtected = pathname.startsWith('/dashboard') || pathname.startsWith('/present')
+  const isAdminRoute = pathname.startsWith('/admin')
+  const isProtected =
+    pathname.startsWith('/dashboard') || pathname.startsWith('/present') || isAdminRoute
   if (isProtected && !user) {
     return NextResponse.redirect(new URL('/', request.url))
+  }
+
+  // /admin is for Super admins only. UX redirect; the RLS policies on
+  // allowed_emails / leads and the admin RPC guard are the real gate.
+  if (isAdminRoute && user) {
+    const { data: isSuperAdmin } = await supabase.rpc('is_super_admin')
+    if (!isSuperAdmin) {
+      return NextResponse.redirect(new URL('/dashboard', request.url))
+    }
+    return supabaseResponse
   }
 
   // Organizer capabilities (owning/presenting sessions) are restricted to an
@@ -50,5 +62,5 @@ export async function middleware(request) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/present/:path*']
+  matcher: ['/dashboard/:path*', '/present/:path*', '/admin/:path*']
 }
