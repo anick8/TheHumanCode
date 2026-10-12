@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "test:db": "./db-tests/scratch.sh",
-    "check:migrations": "node db-tests/check-migrations.mjs"
+    "check:migrations": "node db-tests/check-migrations.mjs",
+    "admin:add": "./scripts/super-admin.sh add",
+    "admin:remove": "./scripts/super-admin.sh remove",
+    "admin:list": "./scripts/super-admin.sh list"
   },
   "dependencies": {
     "@ai-sdk/react": "^4.0.109",
