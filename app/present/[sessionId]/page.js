@@ -58,6 +58,7 @@ export default function PresentPage() {
   const [lockedCount, setLockedCount] = useState(0)
   const [roster, setRoster] = useState([]) // owner-only participant list for the Remove drawer
   const [showRoster, setShowRoster] = useState(false)
+  const [joinQrVisible, setJoinQrVisible] = useState(true)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [canFullscreen, setCanFullscreen] = useState(false)
 
@@ -558,6 +559,10 @@ export default function PresentPage() {
   }
 
   const voteUrl = `${getAppUrl()}/vote/${session.slug}`
+  // Round-by-round has no running total, so latecomers can join any time:
+  // keep a join QR in the corner while questions are on screen.
+  const canJoinMidGame = isRound && identified && !entriesClosed && !closed && index >= 0 && index < total
+  const showJoinCorner = canJoinMidGame && joinQrVisible
   const currentQuestion = index >= 0 && index < total ? questions[index] : null
   const currentOptions = currentQuestion ? optionsByQuestion[currentQuestion.id] || [] : []
   const questionVotes = currentOptions.reduce((sum, o) => sum + (voteCounts[o.id] || 0), 0)
@@ -892,6 +897,13 @@ export default function PresentPage() {
         {!isWheel && isOwner && instagramHandle && showInstagram && (
           <InstagramBadge handle={instagramHandle} className="absolute bottom-6 left-6 hidden lg:flex" />
         )}
+        {!isWheel && showJoinCorner && (
+          <div className="absolute bottom-6 right-6 hidden flex-col items-center gap-2 rounded-xl bg-white p-3 shadow-2xl lg:flex">
+            <QRCodeSVG value={voteUrl} size={140} level="M" bgColor="#ffffff" fgColor="#000000" />
+            <p className="text-xs font-semibold uppercase tracking-widest text-black">Scan to join</p>
+            <p className="max-w-[140px] break-all text-center font-mono text-[10px] leading-tight text-black/70">{voteUrl}</p>
+          </div>
+        )}
       </main>
 
       {/* Controls - the session owner only */}
@@ -933,6 +945,15 @@ export default function PresentPage() {
                   className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
                 >
                   Participants
+                </button>
+              )}
+              {isRound && identified && !entriesClosed && index >= 0 && (
+                <button
+                  onClick={() => setJoinQrVisible((v) => !v)}
+                  aria-pressed={joinQrVisible}
+                  className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                >
+                  {joinQrVisible ? 'Hide join QR' : 'Show join QR'}
                 </button>
               )}
               <button

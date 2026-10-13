@@ -65,6 +65,11 @@ export default function JoinGate({ session, onJoined, removed = false }) {
   }
 
   const entriesClosed = Boolean(session?.entries_closed)
+  // Round-by-round has no running total, so arriving late costs nothing.
+  const joiningMidGame =
+    Boolean(session?.is_scored) &&
+    session?.quiz_format === 'round_by_round' &&
+    (session?.current_question_index ?? -1) >= 0
 
   if (full) {
     return (
@@ -112,6 +117,7 @@ export default function JoinGate({ session, onJoined, removed = false }) {
           {isWheel
             ? `Enter your name to go on the wheel for ${session?.title}.`
             : `${session?.title} collects your ${collected} so the organizer can see who responded.`}
+          {joiningMidGame && " The quiz has started - you'll join on the current question."}
         </p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">

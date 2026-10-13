@@ -97,7 +97,7 @@ _Avoid_: speed bonus - no bonus points exist.
 A setting on a Quiz: Classic (the default, everything above) or Round-by-round. Chosen at creation or in settings and locked once the Quiz has its first Answer. Join, Lock, Reveal, Time limit, Close entries and Remove participant behave the same in both.
 
 **Round-by-round**:
-A Quiz format with no cumulative result. After each Reveal the Question board shows only the Participants who got that question right, fastest first; the next question starts a fresh board. Points and Score are not shown or entered. The quiz ends with a Round recap, never a total.
+A Quiz format with no cumulative result. After each Reveal the Question board shows only the Participants who got that question right, fastest first; the next question starts a fresh board. Points and Score are not shown or entered. The quiz ends with a Round recap, never a total. Because nothing accumulates, Participants may join mid-game while entries are open: the presenter keeps a small join QR in the corner during questions (the host can hide it) and a latecomer plays from the current question. Classic shows the QR only in the lobby.
 _Avoid_: "Sprint", "rapid fire"; calling its board "the Leaderboard" (that is the cumulative Classic ranking).
 
 **Question board**:
