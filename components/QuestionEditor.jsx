@@ -190,6 +190,7 @@ export default function QuestionEditor({
       options: [],
       image_url: isComments ? null : undefined,
       clue_label: isTreasureHunt ? '' : undefined,
+      clue_choices: isTreasureHunt ? null : undefined,
       // A default ramp makes "compounding" scores one step; editable per question.
       points: isScored ? (questions.length + 1) * 10 : 10,
       time_limit_seconds: TIME_LIMIT_DEFAULT
@@ -235,6 +236,37 @@ export default function QuestionEditor({
       q.id === questionId ? { ...q, [field]: value } : q
     )
     onQuestionsChange(updatedQuestions, optionsByQuestion)
+  }
+
+  // Clue choices (Treasure Hunt): 2-4 {label, reveal} buttons per clue, or
+  // null for a plain clue. Rows may be blank mid-edit; saving rejects those.
+  const CHOICES_MIN = 2
+  const CHOICES_MAX = 4
+  const CHOICE_LABEL_MAX = 40
+  const CHOICE_REVEAL_MAX = 500
+
+  const setClueChoices = (questionId, choices) =>
+    updateQuestion(questionId, 'clue_choices', choices)
+
+  const enableClueChoices = (questionId) =>
+    setClueChoices(
+      questionId,
+      Array.from({ length: CHOICES_MIN }, () => ({ label: '', reveal: '' }))
+    )
+
+  const updateClueChoice = (question, index, field, value) =>
+    setClueChoices(
+      question.id,
+      question.clue_choices.map((c, i) => (i === index ? { ...c, [field]: value } : c))
+    )
+
+  const addClueChoice = (question) =>
+    setClueChoices(question.id, [...question.clue_choices, { label: '', reveal: '' }])
+
+  // Removing below the minimum turns choices off rather than leaving one.
+  const removeClueChoice = (question, index) => {
+    const next = question.clue_choices.filter((_, i) => i !== index)
+    setClueChoices(question.id, next.length < CHOICES_MIN ? null : next)
   }
 
   const deleteQuestion = (questionId) => {
@@ -644,7 +676,99 @@ export default function QuestionEditor({
                               </div>
                             )}
 
-                            {isTreasureHunt ? null : isComments ? (
+                            {isTreasureHunt ? (
+                              /* Clue choices */
+                              <div>
+                                <div className="flex items-center justify-between mb-4">
+                                  <h4 className="text-lg font-semibold text-foreground">Choices</h4>
+                                  {question.clue_choices?.length > 0 ? (
+                                    <button
+                                      type="button"
+                                      disabled={locked}
+                                      onClick={() => setClueChoices(question.id, null)}
+                                      className="text-sm font-medium text-muted-foreground hover:text-destructive disabled:opacity-50"
+                                    >
+                                      Turn off choices
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      disabled={locked}
+                                      onClick={() => enableClueChoices(question.id)}
+                                      className="inline-flex items-center text-sm font-medium text-accent transition-transform duration-150 hover:text-accent active:scale-[0.97] disabled:opacity-50 motion-reduce:transition-none"
+                                    >
+                                      <svg className="mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                      </svg>
+                                      Add choices
+                                    </button>
+                                  )}
+                                </div>
+                                {question.clue_choices?.length > 0 ? (
+                                  <div className="space-y-4">
+                                    {question.clue_choices.map((choice, choiceIndex) => (
+                                      <div key={choiceIndex} className="rounded-lg border border-border p-4">
+                                        <div className="mb-3 flex items-center justify-between">
+                                          <span className="text-sm font-medium text-foreground">
+                                            Choice {choiceIndex + 1}
+                                          </span>
+                                          <button
+                                            type="button"
+                                            disabled={locked}
+                                            onClick={() => removeClueChoice(question, choiceIndex)}
+                                            className="text-sm text-muted-foreground hover:text-destructive disabled:opacity-50"
+                                            aria-label={`Remove choice ${choiceIndex + 1}`}
+                                          >
+                                            Remove
+                                          </button>
+                                        </div>
+                                        <input
+                                          type="text"
+                                          value={choice.label}
+                                          maxLength={CHOICE_LABEL_MAX}
+                                          disabled={locked}
+                                          onChange={(e) => updateClueChoice(question, choiceIndex, 'label', e.target.value)}
+                                          placeholder="Button label, e.g. Go left"
+                                          aria-label={`Choice ${choiceIndex + 1} button label`}
+                                          className="mb-3 block w-full rounded-lg border border-border px-4 py-2 text-foreground shadow-sm focus:border-ring focus:ring-2 focus:ring-ring focus:ring-opacity-20"
+                                        />
+                                        <textarea
+                                          value={choice.reveal}
+                                          maxLength={CHOICE_REVEAL_MAX}
+                                          disabled={locked}
+                                          onChange={(e) => updateClueChoice(question, choiceIndex, 'reveal', e.target.value)}
+                                          rows="2"
+                                          placeholder="The further clue shown after tapping this button"
+                                          aria-label={`Choice ${choiceIndex + 1} reveal text`}
+                                          className="block w-full rounded-lg border border-border px-4 py-3 text-foreground shadow-sm focus:border-ring focus:ring-2 focus:ring-ring focus:ring-opacity-20 resize-none"
+                                        />
+                                      </div>
+                                    ))}
+                                    {question.clue_choices.length < CHOICES_MAX && (
+                                      <button
+                                        type="button"
+                                        disabled={locked}
+                                        onClick={() => addClueChoice(question)}
+                                        className="inline-flex items-center text-sm font-medium text-accent hover:text-accent disabled:opacity-50"
+                                      >
+                                        <svg className="mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                        </svg>
+                                        Add choice
+                                      </button>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="rounded-lg bg-muted p-4">
+                                    <p className="text-sm text-muted-foreground">
+                                      Optional. Give this clue 2 to 4 buttons; each one reveals a different further clue,
+                                      so teams can be sent down different paths. The choice stays on the finder&apos;s phone
+                                      and nothing is recorded.
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            ) : isComments ? (
                               /* Image upload */
                               <div>
                                 <h4 className="text-lg font-semibold text-foreground mb-4">Image</h4>
