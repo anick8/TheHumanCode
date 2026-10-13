@@ -1,142 +1,145 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import InstagramBadge from '@/components/InstagramBadge'
-import { parseInstagramHandle } from '@/lib/instagram'
+import { useAuth } from '@/app/components/AuthProvider'
+import { useAccess } from '@/app/components/AccessProvider'
+import { normalizeStats } from '@/lib/accountStats'
+import AccountHeader from './components/AccountHeader'
+import StatsLedger from './components/StatsLedger'
+import ActivityChart from './components/ActivityChart'
+import SessionMix from './components/SessionMix'
+import TopSessions from './components/TopSessions'
+import PlanCard from './components/PlanCard'
+import ProfileCard from './components/ProfileCard'
+import SecurityCard from './components/SecurityCard'
+import DataCard from './components/DataCard'
+
+function Skeleton() {
+  return (
+    <div className="mx-auto max-w-6xl animate-pulse py-8" aria-busy="true" aria-label="Loading your account">
+      <div className="flex items-center gap-5">
+        <div className="h-16 w-16 rounded-2xl bg-muted" />
+        <div className="space-y-2">
+          <div className="h-8 w-56 rounded bg-muted" />
+          <div className="h-4 w-72 rounded bg-muted" />
+        </div>
+      </div>
+      <div className="mt-8 grid gap-6 lg:grid-cols-3">
+        <div className="h-96 rounded-2xl bg-muted lg:col-span-2" />
+        <div className="h-96 rounded-2xl bg-muted" />
+      </div>
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <div className="h-72 rounded-2xl bg-muted" />
+        <div className="h-72 rounded-2xl bg-muted" />
+      </div>
+    </div>
+  )
+}
 
 export default function AccountPage() {
   const supabase = useMemo(() => createClient(), [])
-  const [loading, setLoading] = useState(true)
-  const [saved, setSaved] = useState(null) // handle currently stored, or null
-  const [text, setText] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState(null)
+  const { user, loading: authLoading } = useAuth()
+  const { access, row, loading: accessLoading } = useAccess()
+  const [stats, setStats] = useState(null)
+  const [statsError, setStatsError] = useState(false)
 
+  const userId = user?.id
   useEffect(() => {
-    const load = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      const handle = parseInstagramHandle(user?.user_metadata?.instagram)
-      setSaved(handle)
-      setText(handle ? `@${handle}` : '')
-      setLoading(false)
+    if (!userId) return
+    let cancelled = false
+    supabase.rpc('account_stats').then(({ data, error }) => {
+      if (cancelled) return
+      if (error) {
+        console.error('Account stats error:', error)
+        setStatsError(true)
+      } else {
+        setStats(normalizeStats(data))
+      }
+    })
+    return () => {
+      cancelled = true
     }
-    load()
-  }, [supabase])
+  }, [supabase, userId])
 
-  const parsed = parseInstagramHandle(text)
-  const blank = text.trim() === ''
-  const invalid = !blank && parsed === null
-  const dirty = (parsed ?? null) !== saved && !invalid
-
-  const write = async (handle) => {
-    setSaving(true)
-    setMessage(null)
-    const { error } = await supabase.auth.updateUser({ data: { instagram: handle } })
-    if (error) {
-      setMessage({ type: 'error', text: error.message || 'Could not save your Instagram.' })
-    } else {
-      setSaved(handle)
-      setText(handle ? `@${handle}` : '')
-      setMessage({
-        type: 'success',
-        text: handle ? 'Saved. It shows on the presenter screen the next time you open one.' : 'Removed. Presenter screens no longer show an Instagram code.',
-      })
-    }
-    setSaving(false)
-  }
-
-  if (loading) {
-    return (
-      <div className="py-8 animate-pulse">
-        <div className="mb-8 h-8 w-48 rounded bg-muted"></div>
-        <div className="h-64 rounded-lg bg-muted"></div>
-      </div>
-    )
-  }
+  if (authLoading || accessLoading || !user) return <Skeleton />
 
   return (
-    <div className="mx-auto max-w-2xl py-8">
-      <h1 className="font-display text-3xl font-bold text-foreground">Account</h1>
-      <p className="mt-1 text-muted-foreground">Settings that follow you across every session.</p>
+    <div className="mx-auto max-w-6xl py-8">
+      <AccountHeader user={user} access={access} />
 
-      {message && (
-        <div
-          className={`mt-6 rounded-lg border px-4 py-3 text-sm ${
-            message.type === 'error'
-              ? 'border-destructive/30 bg-destructive/10 text-destructive'
-              : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-          }`}
+      <div className="mt-8 grid gap-6 lg:grid-cols-3">
+        <section
+          className="rounded-2xl border border-border bg-card p-6 lg:col-span-2"
+          aria-labelledby="stage-heading"
         >
-          {message.text}
-        </div>
-      )}
+          <h2 id="stage-heading" className="font-display text-lg font-bold text-foreground">
+            Your stage
+          </h2>
 
-      <form
-        className="mt-6 rounded-2xl border border-border bg-card p-6"
-        onSubmit={(e) => {
-          e.preventDefault()
-          if (dirty && !saving) write(parsed)
-        }}
-      >
-        <h2 className="font-display text-lg font-bold text-foreground">Instagram</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Shown as a small QR code in the corner of every presenter screen you run, so the room can follow you.
-        </p>
+          {statsError ? (
+            <p role="alert" className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              Couldn&apos;t load your numbers. Refresh the page to try again.
+            </p>
+          ) : !stats ? (
+            <div className="mt-4 animate-pulse space-y-6" aria-busy="true">
+              <div className="h-20 rounded-lg bg-muted" />
+              <div className="h-40 rounded-lg bg-muted" />
+            </div>
+          ) : (
+            <>
+              <div className="mt-4">
+                <StatsLedger totals={stats.totals} />
+              </div>
 
-        <label htmlFor="instagram" className="mt-5 block text-sm font-medium text-foreground">
-          Handle or profile link
-        </label>
-        <input
-          id="instagram"
-          type="text"
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value)
-            setMessage(null)
-          }}
-          placeholder="@yourhandle"
-          autoComplete="off"
-          spellCheck={false}
-          aria-invalid={invalid}
-          aria-describedby="instagram-hint"
-          className="mt-2 w-full rounded-lg border border-border bg-input px-3 py-2 text-foreground focus:border-primary focus:outline-none"
-        />
-        <p id="instagram-hint" className={`mt-2 text-sm ${invalid ? 'text-destructive' : 'text-muted-foreground'}`}>
-          {invalid
-            ? "That doesn't look like an Instagram handle. Use @name or a profile link."
-            : parsed
-              ? `Will show as @${parsed}`
-              : 'Leave blank to show nothing.'}
-        </p>
+              {stats.totals.sessions === 0 ? (
+                <p className="mt-6 rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                  You haven&apos;t created a session yet.{' '}
+                  <Link href="/dashboard" className="font-semibold text-accent underline underline-offset-4">
+                    Start one from the dashboard
+                  </Link>
+                  .
+                </p>
+              ) : (
+                <>
+                  <div className="mt-6 border-t border-border pt-6">
+                    <h3 className="mb-3 text-sm font-semibold text-foreground">Activity, last 12 weeks</h3>
+                    <ActivityChart weekly={stats.weekly} />
+                  </div>
 
-        {parsed && (
-          <div className="mt-5">
-            <p className="mb-2 text-sm font-medium text-foreground">What the room sees</p>
-            <InstagramBadge handle={parsed} className="inline-flex" />
-          </div>
-        )}
+                  <div className="mt-6 border-t border-border pt-6">
+                    <h3 className="mb-3 text-sm font-semibold text-foreground">What you run</h3>
+                    <SessionMix byType={stats.totals.byType} />
+                  </div>
 
-        <div className="mt-6 flex flex-wrap gap-3">
-          <button
-            type="submit"
-            disabled={!dirty || saving}
-            className="rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 font-semibold text-white shadow-sm hover:opacity-90 transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {saving ? 'Saving…' : dirty ? 'Save' : 'Saved'}
-          </button>
-          {saved && (
-            <button
-              type="button"
-              onClick={() => write(null)}
-              disabled={saving}
-              className="rounded-lg border border-border px-5 py-3 font-semibold text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
-            >
-              Remove
-            </button>
+                  <div className="mt-6 border-t border-border pt-6">
+                    <h3 className="mb-1 text-sm font-semibold text-foreground">Busiest sessions</h3>
+                    <TopSessions sessions={stats.top} />
+                  </div>
+
+                  <p className="mt-6 text-xs text-muted-foreground">
+                    Counts what&apos;s stored now. Responses you&apos;ve cleared aren&apos;t included.
+                  </p>
+                </>
+              )}
+            </>
           )}
-        </div>
-      </form>
+        </section>
+
+        <aside className="rounded-2xl border border-border bg-card p-6">
+          <PlanCard access={access} row={row} />
+        </aside>
+      </div>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <ProfileCard user={user} />
+        <SecurityCard user={user} />
+      </div>
+
+      <div className="mt-6">
+        <DataCard user={user} stats={stats} />
+      </div>
     </div>
   )
 }

@@ -5,11 +5,11 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useAuth } from '@/app/components/AuthProvider'
 import { createClient } from '@/lib/supabase/client'
+import { displayNameOf, initialOf } from '@/lib/accountStats'
 
-const NAVIGATION = [
-  { name: 'Sessions', href: '/dashboard' },
-  { name: 'Account', href: '/dashboard/account' },
-]
+// Account is personal settings, not a workspace: it lives in the avatar menu.
+const NAVIGATION = [{ name: 'Sessions', href: '/dashboard' }]
+const ACCOUNT_HREF = '/dashboard/account'
 
 export default function DashboardNav({ session, user: propUser }) {
   const pathname = usePathname()
@@ -23,16 +23,14 @@ export default function DashboardNav({ session, user: propUser }) {
 
   const currentUser = authUser || authSession?.user || propUser || session?.user
   const userEmail = currentUser?.email || 'User'
-  const userInitial = userEmail.charAt(0).toUpperCase()
+  // The display name from Account when there is one, else the email.
+  const userLabel = currentUser ? displayNameOf(currentUser) : userEmail
+  const userInitial = currentUser ? initialOf(currentUser) : userEmail.charAt(0).toUpperCase()
 
-  // "Sessions" owns the home route and every session sub-page; "Account" only
-  // itself. Exact match for home so the two tabs never both light up.
-  const isActive = (href) => {
-    if (href === '/dashboard') {
-      return pathname === '/dashboard' || pathname.startsWith('/dashboard/sessions')
-    }
-    return pathname.startsWith(href)
-  }
+  // "Sessions" owns the home route and every session sub-page.
+  const isActive = (href) =>
+    pathname === href || pathname.startsWith('/dashboard/sessions')
+  const onAccount = pathname.startsWith(ACCOUNT_HREF)
 
   const currentUserId = currentUser?.id
   useEffect(() => {
@@ -115,12 +113,14 @@ export default function DashboardNav({ session, user: propUser }) {
             aria-expanded={menuOpen}
             aria-controls={menuId}
             aria-label={`Account menu for ${userEmail}`}
-            className="flex h-9 items-center gap-2 rounded-full border border-border bg-muted pl-1 pr-1 text-sm font-medium text-foreground transition-colors hover:border-muted-foreground sm:pr-3"
+            className={`flex h-9 items-center gap-2 rounded-full border bg-muted pl-1 pr-1 text-sm font-medium text-foreground transition-colors hover:border-muted-foreground sm:pr-3 ${
+              onAccount ? 'border-muted-foreground' : 'border-border'
+            }`}
           >
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-background font-display text-xs font-bold">
               {userInitial}
             </span>
-            <span className="hidden max-w-[180px] truncate sm:inline">{userEmail}</span>
+            <span className="hidden max-w-[180px] truncate sm:inline">{userLabel}</span>
           </button>
 
           {menuOpen && (
@@ -129,14 +129,23 @@ export default function DashboardNav({ session, user: propUser }) {
               role="menu"
               className="absolute right-0 top-full mt-2 w-60 rounded-xl border border-border bg-card p-1.5 shadow-[0_12px_28px_rgba(0,0,0,0.45)]"
             >
-              <p className="truncate px-3 py-2 text-xs text-muted-foreground">{userEmail}</p>
+              <div className="px-3 py-2">
+                <p className="truncate text-sm font-semibold text-foreground">{userLabel}</p>
+                {userLabel !== userEmail && (
+                  <p className="truncate text-xs text-muted-foreground">{userEmail}</p>
+                )}
+              </div>
+              <hr className="my-1 border-border" />
               <Link
-                href="/dashboard/account"
+                href={ACCOUNT_HREF}
                 role="menuitem"
+                aria-current={onAccount ? 'page' : undefined}
                 onClick={() => setMenuOpen(false)}
-                className="block rounded-lg px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted"
+                className={`block rounded-lg px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted ${
+                  onAccount ? 'bg-muted' : ''
+                }`}
               >
-                Account
+                Account settings
               </Link>
               {isSuperAdmin && (
                 <Link
