@@ -12,8 +12,12 @@ export default function CluePage() {
   const params = useParams()
   const token = params.token
   const [loading, setLoading] = useState(true)
-  const [result, setResult] = useState(null) // { status, clue_message, clue_number, session_title }
+  const [result, setResult] = useState(null) // { status, clue_message, clue_number, session_title, choices }
+  const [picked, setPicked] = useState(null) // { index, reveal } once a choice is revealed
+  const [revealing, setRevealing] = useState(false)
+  const [revealError, setRevealError] = useState('')
   const supabase = createClient()
+  const storageKey = `clue-choice:${token}`
 
   useEffect(() => {
     if (token) load()
@@ -24,12 +28,56 @@ export default function CluePage() {
     try {
       const { data, error } = await supabase.rpc('get_clue', { p_token: token })
       if (error) throw error
-      setResult(data?.[0] || { status: 'missing' })
+      const clue = data?.[0] || { status: 'missing' }
+      setResult(clue)
+      // A phone that already chose here gets its choice back (kept per phone,
+      // never sent to the server). The reveal text is re-fetched, not cached.
+      if (clue.status === 'live' && clue.choices?.length) {
+        const saved = readSavedChoice()
+        if (saved !== null && saved < clue.choices.length) await reveal(saved, false)
+      }
     } catch (error) {
       console.error('Error loading clue:', error)
       setResult({ status: 'missing' })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const readSavedChoice = () => {
+    try {
+      const raw = window.localStorage.getItem(storageKey)
+      const index = raw === null ? NaN : Number(raw)
+      return Number.isInteger(index) && index >= 0 ? index : null
+    } catch {
+      return null
+    }
+  }
+
+  const reveal = async (index, persist) => {
+    setRevealing(true)
+    setRevealError('')
+    try {
+      const { data, error } = await supabase.rpc('reveal_clue_choice', { p_token: token, p_index: index })
+      if (error) throw error
+      const row = data?.[0]
+      if (row?.status === 'live' && row.reveal) {
+        setPicked({ index, reveal: row.reveal })
+        if (persist) {
+          try {
+            window.localStorage.setItem(storageKey, String(index))
+          } catch {}
+        }
+      } else if (row?.status === 'closed' || row?.status === 'not_live') {
+        setResult((prev) => ({ ...prev, status: row.status }))
+      } else {
+        setRevealError('Could not load this choice. Please try again.')
+      }
+    } catch (error) {
+      console.error('Error revealing clue choice:', error)
+      setRevealError('Could not load this choice. Please try again.')
+    } finally {
+      setRevealing(false)
     }
   }
 
@@ -58,6 +106,36 @@ export default function CluePage() {
               <p className="font-display mt-4 whitespace-pre-wrap text-2xl font-bold text-foreground">
                 {result.clue_message}
               </p>
+              {result.choices?.length > 0 && (
+                <div className="mt-6 space-y-3">
+                  {result.choices.map((label, index) => {
+                    const isPicked = picked?.index === index
+                    const isLocked = picked !== null || revealing
+                    return (
+                      <button
+                        key={index}
+                        type="button"
+                        disabled={isLocked}
+                        onClick={() => reveal(index, true)}
+                        className={
+                          'w-full rounded-xl border px-4 py-3 text-base font-semibold transition-colors ' +
+                          (isPicked
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'border-border bg-card text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50')
+                        }
+                      >
+                        {label}
+                      </button>
+                    )
+                  })}
+                  {picked && (
+                    <p className="font-display mt-4 whitespace-pre-wrap rounded-xl bg-muted p-4 text-xl font-bold text-foreground">
+                      {picked.reveal}
+                    </p>
+                  )}
+                  {revealError && <p className="text-sm text-destructive">{revealError}</p>}
+                </div>
+              )}
             </>
           ) : status === 'closed' ? (
             <h1 className="font-display text-2xl font-bold text-foreground">This session is closed</h1>

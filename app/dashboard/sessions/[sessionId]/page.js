@@ -16,6 +16,16 @@ import { startPresentation, presentLabel } from '@/lib/presenting'
 
 const RESULTS_MODE_LABELS = { live: 'Live results', after_all: 'After all questions' }
 
+// A clue's choices as saved: trimmed {label, reveal} pairs, or null when the
+// clue has none. The editor may hold blank rows mid-edit; saving rejects those.
+function cleanClueChoices(choices) {
+  if (!Array.isArray(choices) || choices.length === 0) return null
+  return choices.map((c) => ({
+    label: (c?.label ?? '').trim(),
+    reveal: (c?.reveal ?? '').trim(),
+  }))
+}
+
 // Comparable form of the editor's contents, used to tell whether anything
 // differs from what was last loaded/saved. Only fields the editor can change
 // (and saveQuestions writes) are included; blank/absent values are normalised
@@ -30,6 +40,7 @@ function snapshotEditor(questions, optionsByQuestion, questionKeys) {
       time_limit_seconds: q.time_limit_seconds ?? null,
       image_url: q.image_url || null,
       clue_label: q.clue_label?.trim() || null,
+      clue_choices: cleanClueChoices(q.clue_choices),
       key: questionKeys[q.id] ?? null,
       options: (optionsByQuestion[q.id] || []).map((o) => ({
         id: o.id,
@@ -371,6 +382,23 @@ export default function SessionDetailPage() {
       }
     }
 
+    if (isTreasureHunt) {
+      for (const [i, q] of questions.entries()) {
+        const choices = cleanClueChoices(q.clue_choices)
+        if (!choices) continue
+        if (choices.length < 2 || choices.length > 4) {
+          setSaveError(`Clue ${i + 1} needs 2 to 4 choices, or none. Add a choice or turn choices off.`)
+          setSaveMessage(null)
+          return
+        }
+        if (choices.some((c) => !c.label || !c.reveal)) {
+          setSaveError(`Clue ${i + 1} has a choice with an empty button label or reveal text. Fill it in or remove it.`)
+          setSaveMessage(null)
+          return
+        }
+      }
+    }
+
     if (isComments) {
       const missingImage = questions.findIndex((q) => !q.image_url)
       if (missingImage !== -1) {
@@ -431,7 +459,11 @@ export default function SessionDetailPage() {
         }
         if (isComments) fields.image_url = question.image_url || null
         // Organizer-only QR caption; blank clears it back to "Clue #N".
-        if (isTreasureHunt) fields.clue_label = question.clue_label?.trim() || null
+        if (isTreasureHunt) {
+          fields.clue_label = question.clue_label?.trim() || null
+          // 2-4 {label, reveal} buttons, or null for a plain clue.
+          fields.clue_choices = cleanClueChoices(question.clue_choices)
+        }
 
         if (String(question.id).startsWith('temp_')) {
           const { data, error } = await supabase

@@ -44,8 +44,12 @@ The Entry a Spin landed on. After each Spin the organizer resolves it: *remove* 
 The organizer's action that clears a wheel's Spin history and restores every removed Entry, keeping the joined Participants so the same room can play again.
 
 **Clue**:
-One message in a Treasure Hunt, reached only by scanning its own QR code (never by browsing the session). Its QR code carries a random, permanent token that never changes, even when the organizer edits the Clue's message later - only deleting the Clue invalidates its printed code. The message is shown only while the session is active; scanning an inactive session's Clue, or a deleted Clue's code, shows a status message instead. A Clue may also carry an organizer-only label (default "Clue #N") printed under its QR code; finders never see it.
+One message in a Treasure Hunt, reached only by scanning its own QR code (never by browsing the session). Its QR code carries a random, permanent token that never changes, even when the organizer edits the Clue's message later - only deleting the Clue invalidates its printed code. The message is shown only while the session is active; scanning an inactive session's Clue, or a deleted Clue's code, shows a status message instead. A Clue may also carry an organizer-only label (default "Clue #N") printed under its QR code; finders never see it. A Clue may also offer Clue choices.
 _Avoid_: Question (the underlying database row a Clue reuses, but "Clue" is the organizer- and finder-facing term).
+
+**Clue choice**:
+One of 2-4 buttons an organizer can put on a Clue; each has a button label and a reveal text (the further clue). Tapping a button shows its reveal text on that Clue's page - it does not link to another Clue, so Clues stay unchained. The finder's phone remembers the choice and locks it; the server records nothing about who tapped what. Labels are public with the Clue; a reveal text is released only when its button is tapped, and only while the session is active.
+_Avoid_: "Branch" or "path" (a choice never leads to another Clue), "answer" (there is no right or wrong choice).
 
 **Close entries**:
 The host's manual toggle that stops new people getting in. In a Quiz, Comments or Wheel of Fortune session nobody new can join (a device that already joined keeps playing, and the join gate says entries are closed; on a wheel the organizer can still add manual Entries); a Poll has no join step, so it closes voting for everyone instead. Never automatic, and the host can reopen at any time.

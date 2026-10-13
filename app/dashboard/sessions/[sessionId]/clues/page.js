@@ -195,7 +195,14 @@ export default function CluesPage() {
               key={clue.id}
               className="flex flex-col items-center rounded-2xl border border-border bg-card p-6 text-center shadow-sm print:break-inside-avoid print:border-black print:shadow-none"
             >
-              <p className="mb-2 text-sm text-muted-foreground print:hidden">Clue #{index + 1}</p>
+              <p className="mb-2 text-sm text-muted-foreground print:hidden">
+                Clue #{index + 1}
+                {clue.clue_choices?.length > 0 && (
+                  <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground">
+                    {clue.clue_choices.length} choices
+                  </span>
+                )}
+              </p>
               <input
                 type="text"
                 value={labels[clue.id] ?? ''}
