@@ -32,6 +32,8 @@ enforced by a CHECK). It carries organizer-written reveal text, not a pointer to
   `get_clue`, so a curious finder cannot read the other branch from the network tab.
 - The choice is remembered per phone (localStorage, index only; the reveal text is re-fetched so
   edits and closing the hunt take effect). Nothing about the tap is stored server-side.
+- Per clue, the organizer may ask finders to confirm a tap (`questions.clue_confirm_choice`, surfaced
+  by `get_clue` as `confirm_choice`). The confirmation box is browser-only; the RPC does not enforce it.
 
 ## Consequences
 

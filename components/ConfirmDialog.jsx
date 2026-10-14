@@ -14,6 +14,7 @@ export default function ConfirmDialog({
   busy = false,
   error = null,
   confirmDisabled = false,
+  tone = 'destructive',
   onConfirm,
   onCancel,
 }) {
@@ -58,7 +59,10 @@ export default function ConfirmDialog({
           <button
             onClick={onConfirm}
             disabled={busy || confirmDisabled}
-            className="rounded-lg bg-destructive px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+            className={
+              'rounded-lg px-4 py-2 text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 ' +
+              (tone === 'primary' ? 'bg-primary text-primary-foreground' : 'bg-destructive text-white')
+            }
           >
             {busy ? busyLabel : confirmLabel}
           </button>
