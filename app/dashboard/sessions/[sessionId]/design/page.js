@@ -5,23 +5,15 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useAccess } from '@/app/components/AccessProvider'
-import PollQuestion from '@/components/PollQuestion'
-import ResultsChart from '@/components/ResultsChart'
 import SessionTheme from '@/components/SessionTheme'
-import SessionLogo from '@/components/SessionLogo'
+import { previewPlan } from '@/lib/previewPlan'
 import { DEFAULT_THEME, COLOR_PRESETS, resolveTheme } from '@/lib/theme'
 import LookGallery, { matchPreset } from './LookGallery'
 import FineTunePanel from './FineTunePanel'
+import PreviewFor from './previews'
 
 const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/svg+xml', 'image/webp']
 const LOGO_MAX_BYTES = 2 * 1024 * 1024
-
-const SAMPLE_OPTIONS = [
-  { id: 'a', text: 'Absolutely' },
-  { id: 'b', text: 'Somewhat' },
-  { id: 'c', text: 'Not really' },
-]
-const SAMPLE_COUNTS = { a: 12, b: 7, c: 3 }
 
 // Store only what differs from the default, so "Reset" saves '{}' and
 // default-looking sessions keep using the global stylesheet untouched.
@@ -52,7 +44,8 @@ export default function SessionDesignPage() {
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [message, setMessage] = useState(null)
-  const [previewTab, setPreviewTab] = useState('voting')
+  const [previewTab, setPreviewTab] = useState(null)
+  const [sessionContent, setSessionContent] = useState({ questions: [], optionsByQuestion: {}, keys: {} })
   const colorsRef = useRef(null)
 
   useEffect(() => {
@@ -65,6 +58,28 @@ export default function SessionDesignPage() {
       if (!error) {
         setSession(data)
         setDraft(resolveTheme(data.theme))
+        // Real question content makes the preview truthful; people stay sample.
+        // The answer key is owner-only (RLS returns nothing for others).
+        const { data: qs } = await supabase
+          .from('questions')
+          .select('*')
+          .eq('session_id', sessionId)
+          .order('order_index')
+        const questions = qs || []
+        const optionsByQuestion = {}
+        const keys = {}
+        if (questions.length > 0) {
+          const ids = questions.map((q) => q.id)
+          const [{ data: opts }, { data: keyRows }] = await Promise.all([
+            supabase.from('options').select('*').in('question_id', ids).order('order_index'),
+            data.session_type === 'quiz'
+              ? supabase.from('question_keys').select('question_id, option_id').in('question_id', ids)
+              : Promise.resolve({ data: [] }),
+          ])
+          for (const o of opts || []) (optionsByQuestion[o.question_id] ||= []).push(o)
+          for (const k of keyRows || []) keys[k.question_id] = k.option_id
+        }
+        setSessionContent({ questions, optionsByQuestion, keys })
       }
       setUserId(user?.id ?? null)
       setLoading(false)
@@ -148,16 +163,18 @@ export default function SessionDesignPage() {
     )
   }
 
-  const TABS = [
-    { key: 'voting', label: 'Voting' },
-    { key: 'presenter', label: 'Presenter' },
-    { key: 'results', label: 'Results' },
-  ]
+  const plan = previewPlan({
+    sessionType: session.session_type,
+    quizFormat: session.quiz_format,
+    ...sessionContent,
+  })
+  const TABS = plan.tabs
+  const activeTab = TABS.some((t) => t.key === previewTab) ? previewTab : TABS[0].key
   const onTabKey = (event) => {
     const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key]
     if (!step) return
     event.preventDefault()
-    const i = TABS.findIndex((t) => t.key === previewTab)
+    const i = TABS.findIndex((t) => t.key === activeTab)
     const next = TABS[(i + step + TABS.length) % TABS.length].key
     setPreviewTab(next)
     document.getElementById(`design-tab-${next}`)?.focus()
@@ -241,6 +258,8 @@ export default function SessionDesignPage() {
             }
           }}
           disabled={!isOwner}
+          type={plan.type}
+          content={plan.content}
         />
       </section>
 
@@ -249,7 +268,7 @@ export default function SessionDesignPage() {
           <div className="mb-3 flex items-end justify-between gap-3 border-b border-border">
             <div role="tablist" aria-label="Preview screen" onKeyDown={onTabKey} className="flex gap-5">
               {TABS.map(({ key, label }) => {
-                const active = previewTab === key
+                const active = activeTab === key
                 return (
                   <button
                     key={key}
@@ -277,13 +296,13 @@ export default function SessionDesignPage() {
           <div
             id="design-preview"
             role="tabpanel"
-            aria-labelledby={`design-tab-${previewTab}`}
+            aria-labelledby={`design-tab-${activeTab}`}
             className="overflow-hidden rounded-2xl border border-border"
           >
             <SessionTheme theme={draft} className="min-h-[520px]">
-              {previewTab === 'voting' && <VotingPreview theme={draft} title={session.title} />}
-              {previewTab === 'presenter' && <PresenterPreview theme={draft} title={session.title} />}
-              {previewTab === 'results' && <ResultsPreview theme={draft} title={session.title} />}
+              <div inert aria-hidden="true">
+                <PreviewFor tab={activeTab} theme={draft} title={session.title} content={plan.content} />
+              </div>
             </SessionTheme>
           </div>
         </div>
@@ -297,73 +316,9 @@ export default function SessionDesignPage() {
             onUpload={uploadLogo}
             logoTypes={LOGO_TYPES}
             colorsRef={colorsRef}
+            sessionType={plan.type}
           />
         </div>
-      </div>
-    </div>
-  )
-}
-
-function PreviewHeader({ theme, title, subtitle }) {
-  return (
-    <div className="flex items-center gap-4 border-b border-border bg-card px-6 py-4">
-      <SessionLogo theme={theme} className="h-9 shrink-0" />
-      <div className="min-w-0">
-        <p className="truncate font-display text-lg font-bold text-foreground">{title}</p>
-        <p className="text-sm text-muted-foreground">{subtitle}</p>
-      </div>
-    </div>
-  )
-}
-
-function VotingPreview({ theme, title }) {
-  return (
-    <div className="bg-gradient-to-br from-background to-muted min-h-[520px]">
-      <PreviewHeader theme={theme} title={title} subtitle="Question 1 of 3" />
-      <div className="p-6">
-        <PollQuestion
-          question={{ text: 'Did you enjoy the session?' }}
-          options={SAMPLE_OPTIONS}
-          onVote={async () => {}}
-        />
-      </div>
-    </div>
-  )
-}
-
-function PresenterPreview({ theme, title }) {
-  return (
-    <div className="flex min-h-[520px] flex-col">
-      <PreviewHeader theme={theme} title={title} subtitle="Question 1 of 3" />
-      <div className="flex-1 px-8 py-10">
-        <p className="text-sm font-semibold uppercase tracking-widest text-accent">Question 1 of 3</p>
-        <h2 className="mt-3 font-display text-3xl font-bold leading-tight text-foreground">Did you enjoy the session?</h2>
-        <div className="mt-8 grid gap-3 sm:grid-cols-2">
-          {SAMPLE_OPTIONS.map((option, i) => (
-            <div key={option.id} className="flex items-center rounded-xl border border-border bg-card px-5 py-4 text-lg text-foreground">
-              <span className="mr-4 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/15 font-display text-accent">
-                {String.fromCharCode(65 + i)}
-              </span>
-              {option.text}
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="flex justify-end border-t border-border px-6 py-4">
-        <span className="rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 font-semibold text-white">Next question →</span>
-      </div>
-    </div>
-  )
-}
-
-function ResultsPreview({ theme, title }) {
-  return (
-    <div className="p-6">
-      <SessionLogo theme={theme} className="mb-4 h-10" />
-      <h2 className="font-display text-2xl font-bold text-foreground">Results: {title}</h2>
-      <p className="mt-1 text-muted-foreground">22 votes · Did you enjoy the session?</p>
-      <div className="mt-6 rounded-2xl border border-border bg-card p-6">
-        <ResultsChart options={SAMPLE_OPTIONS} voteCounts={SAMPLE_COUNTS} live={false} />
       </div>
     </div>
   )

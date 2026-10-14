@@ -1,8 +1,10 @@
 'use client'
 
-import { useRef } from 'react'
+import { memo, useRef } from 'react'
 import SessionTheme from '@/components/SessionTheme'
 import SessionLogo from '@/components/SessionLogo'
+import WheelArt from '@/components/WheelArt'
+import { wheelPalette } from '@/lib/wheelPalette'
 import { CheckIcon } from '@/app/dashboard/components/icons'
 
 const COLOR_KEYS = ['primary', 'background', 'foreground', 'card']
@@ -12,29 +14,93 @@ export function matchPreset(draft, presets) {
   return hit ? hit.name : null
 }
 
-// A static stand-in for the attendee phone screen. Colors come only from the
-// SessionTheme variables, so each card renders its look truthfully.
-function MiniVote({ theme, title }) {
+// A static stand-in for the type's key screen. Colors come only from the
+// SessionTheme variables (and the wheel palette for the wheel), so each card
+// renders its look truthfully.
+function MiniHeader({ theme, title }) {
+  return (
+    <div className="flex h-5 items-center gap-2">
+      {theme.logoUrl ? (
+        <SessionLogo theme={theme} className="h-4" />
+      ) : (
+        <span className="truncate font-display text-[10px] font-bold text-foreground">{title}</span>
+      )}
+    </div>
+  )
+}
+
+const MiniWheel = memo(function MiniWheel({ theme, entries }) {
+  return (
+    <WheelArt
+      entries={entries}
+      palette={wheelPalette(theme)}
+      logoUrl={theme.logoUrl || null}
+      className="h-full w-full"
+      label="Wheel preview"
+    />
+  )
+})
+
+function MiniScreen({ type, theme, title, content }) {
+  const [first, second] = content.options
+  const body = {
+    poll: (
+      <>
+        <p className="font-display text-xs font-bold leading-tight text-foreground">{content.question.text}</p>
+        <div className="mt-auto space-y-1.5">
+          <span className="block truncate rounded-md border border-border bg-card px-2 py-1 text-[10px] text-foreground">{first.text}</span>
+          <span className="block truncate rounded-md bg-primary px-2 py-1 text-[10px] font-semibold text-white">{second?.text ?? first.text}</span>
+        </div>
+      </>
+    ),
+    quiz: (
+      <>
+        <p className="font-display text-xs font-bold leading-tight text-foreground">{content.question.text}</p>
+        <div className="mt-auto space-y-1.5">
+          <span className="block truncate rounded-md border border-border bg-card px-2 py-1 text-[10px] text-foreground opacity-60">{first.text}</span>
+          <span className="flex items-center justify-between gap-1 rounded-md bg-primary px-2 py-1 text-[10px] font-semibold text-white">
+            <span className="truncate">{second?.text ?? first.text}</span>
+            <CheckIcon className="h-3 w-3 shrink-0" />
+          </span>
+        </div>
+      </>
+    ),
+    comments: (
+      <>
+        <span className="block h-16 rounded-md border border-border bg-gradient-to-br from-primary/40 to-accent/40" />
+        <div className="mt-auto space-y-1.5">
+          <span className="block rounded-md border border-border bg-card px-2 py-1 text-[10px] text-foreground">Love the colours</span>
+          <span className="block rounded-md border border-border bg-card px-2 py-1 text-[10px] text-foreground">So calm</span>
+        </div>
+      </>
+    ),
+    wheel: (
+      <div className="mt-1 flex flex-1 items-center justify-center">
+        <div className="aspect-square w-full max-w-[7.5rem]">
+          <MiniWheel theme={theme} entries={content.people.wheelEntries.slice(0, 6)} />
+        </div>
+      </div>
+    ),
+    treasure_hunt: (
+      <div className="mt-1 flex flex-1 flex-col justify-center rounded-md border border-border bg-card p-2 text-center">
+        <p className="text-[8px] font-semibold uppercase tracking-widest text-accent">Clue #1</p>
+        <p className="mt-1 line-clamp-3 font-display text-[11px] font-bold leading-tight text-foreground">{content.clue.message}</p>
+        <span className="mt-2 block rounded-md bg-primary px-2 py-1 text-[10px] font-semibold text-white">
+          {content.clue.choices[0]?.label || 'Reveal'}
+        </span>
+      </div>
+    ),
+  }[type]
   return (
     <SessionTheme theme={theme} className="flex h-full flex-col gap-2 p-3">
-      <div className="flex h-5 items-center gap-2">
-        {theme.logoUrl ? (
-          <SessionLogo theme={theme} className="h-4" />
-        ) : (
-          <span className="truncate font-display text-[10px] font-bold text-foreground">{title}</span>
-        )}
-      </div>
-      <p className="font-display text-xs font-bold leading-tight text-foreground">Did you enjoy the session?</p>
-      <div className="mt-auto space-y-1.5">
-        <span className="block rounded-md border border-border bg-card px-2 py-1 text-[10px] text-foreground">Absolutely</span>
-        <span className="block rounded-md bg-primary px-2 py-1 text-[10px] font-semibold text-white">Somewhat</span>
-      </div>
+      <MiniHeader theme={theme} title={title} />
+      {body}
     </SessionTheme>
   )
 }
 
 // Radiogroup of looks. `selected` is the matching preset name, or 'Custom'.
-export default function LookGallery({ presets, draft, saved, selected, onPick, onCustom, disabled }) {
+export default function LookGallery({ presets, draft, saved, selected, onPick, onCustom, disabled, type = 'poll', content }) {
   const refs = useRef([])
   const options = [
     ...(saved ? [{ id: 'Current', label: 'Current', hint: 'Saved', theme: saved }] : []),
@@ -91,7 +157,7 @@ export default function LookGallery({ presets, draft, saved, selected, onPick, o
                 active ? 'border-foreground ring-2 ring-foreground' : 'border-border group-hover:border-muted-foreground'
               }`}
             >
-              <MiniVote theme={option.theme} title="Session" />
+              <MiniScreen type={type} theme={option.theme} title="Session" content={content} />
             </span>
             <span className="mt-2 flex items-center gap-1.5 text-sm font-medium text-foreground">
               <span className="truncate">{option.label}</span>

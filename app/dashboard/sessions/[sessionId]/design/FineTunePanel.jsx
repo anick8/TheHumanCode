@@ -84,7 +84,7 @@ function ContrastRow({ label, ratio, min }) {
   )
 }
 
-export default function FineTunePanel({ draft, set, disabled, uploading, onUpload, logoTypes, colorsRef }) {
+export default function FineTunePanel({ draft, set, disabled, uploading, onUpload, logoTypes, colorsRef, sessionType }) {
   const textRatio = contrastRatio(draft.foreground, draft.background)
   const buttonRatio = contrastRatio('#ffffff', draft.primary)
   return (
@@ -118,6 +118,9 @@ export default function FineTunePanel({ draft, set, disabled, uploading, onUploa
           )}
         </div>
         <p className="mt-2 text-xs text-muted-foreground">PNG, JPG, SVG or WebP, up to 2 MB. Transparent works best.</p>
+        {sessionType === 'wheel' && (
+          <p className="mt-1 text-xs text-muted-foreground">Also shown in the wheel&apos;s hub, cropped to a circle.</p>
+        )}
       </Section>
 
       <Section title="Colors" defaultOpen sectionRef={colorsRef}>
