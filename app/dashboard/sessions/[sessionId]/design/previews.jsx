@@ -124,10 +124,7 @@ function PresenterPreview({ theme, title, content }) {
 }
 
 function ResultsPreview({ theme, title, content }) {
-  const counts = content.options.reduce((acc, o, i) => {
-    acc[o.id] = [12, 7, 3, 2][i] ?? 1
-    return acc
-  }, {})
+  const counts = content.counts
   const total = Object.values(counts).reduce((a, b) => a + b, 0)
   return (
     <div className="p-6">

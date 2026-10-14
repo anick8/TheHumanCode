@@ -300,7 +300,7 @@ export default function SessionDesignPage() {
             className="overflow-hidden rounded-2xl border border-border"
           >
             <SessionTheme theme={draft} className="min-h-[520px]">
-              <div inert aria-hidden="true">
+              <div inert>
                 <PreviewFor tab={activeTab} theme={draft} title={session.title} content={plan.content} />
               </div>
             </SessionTheme>

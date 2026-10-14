@@ -4,6 +4,7 @@ import { memo, useRef } from 'react'
 import SessionTheme from '@/components/SessionTheme'
 import SessionLogo from '@/components/SessionLogo'
 import WheelArt from '@/components/WheelArt'
+import { DEFAULT_TYPE } from '@/lib/previewPlan'
 import { wheelPalette } from '@/lib/wheelPalette'
 import { CheckIcon } from '@/app/dashboard/components/icons'
 
@@ -43,6 +44,9 @@ const MiniWheel = memo(function MiniWheel({ theme, entries }) {
 
 function MiniScreen({ type, theme, title, content }) {
   const [first, second] = content.options
+  const correct = content.options.find((o) => o.id === content.correctOptionId) || first
+  const others = content.options.filter((o) => o !== correct)
+  const [sampleA, sampleB] = content.people.comments
   const body = {
     poll: (
       <>
@@ -57,9 +61,9 @@ function MiniScreen({ type, theme, title, content }) {
       <>
         <p className="font-display text-xs font-bold leading-tight text-foreground">{content.question.text}</p>
         <div className="mt-auto space-y-1.5">
-          <span className="block truncate rounded-md border border-border bg-card px-2 py-1 text-[10px] text-foreground opacity-60">{first.text}</span>
+          <span className="block truncate rounded-md border border-border bg-card px-2 py-1 text-[10px] text-foreground opacity-60">{(others[0] || first).text}</span>
           <span className="flex items-center justify-between gap-1 rounded-md bg-primary px-2 py-1 text-[10px] font-semibold text-white">
-            <span className="truncate">{second?.text ?? first.text}</span>
+            <span className="truncate">{correct.text}</span>
             <CheckIcon className="h-3 w-3 shrink-0" />
           </span>
         </div>
@@ -67,10 +71,15 @@ function MiniScreen({ type, theme, title, content }) {
     ),
     comments: (
       <>
-        <span className="block h-16 rounded-md border border-border bg-gradient-to-br from-primary/40 to-accent/40" />
+        {content.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={content.imageUrl} alt="" className="h-16 w-full rounded-md border border-border object-cover" />
+        ) : (
+          <span className="block h-16 rounded-md border border-border bg-gradient-to-br from-primary/40 to-accent/40" />
+        )}
         <div className="mt-auto space-y-1.5">
-          <span className="block rounded-md border border-border bg-card px-2 py-1 text-[10px] text-foreground">Love the colours</span>
-          <span className="block rounded-md border border-border bg-card px-2 py-1 text-[10px] text-foreground">So calm</span>
+          <span className="block rounded-md border border-border bg-card px-2 py-1 text-[10px] text-foreground">{sampleA.body}</span>
+          <span className="block rounded-md border border-border bg-card px-2 py-1 text-[10px] text-foreground">{sampleB.body}</span>
         </div>
       </>
     ),
@@ -100,7 +109,7 @@ function MiniScreen({ type, theme, title, content }) {
 }
 
 // Radiogroup of looks. `selected` is the matching preset name, or 'Custom'.
-export default function LookGallery({ presets, draft, saved, selected, onPick, onCustom, disabled, type = 'poll', content }) {
+export default function LookGallery({ presets, draft, saved, selected, onPick, onCustom, disabled, type = DEFAULT_TYPE, content }) {
   const refs = useRef([])
   const options = [
     ...(saved ? [{ id: 'Current', label: 'Current', hint: 'Saved', theme: saved }] : []),
