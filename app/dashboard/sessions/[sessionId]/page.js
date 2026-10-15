@@ -1,5 +1,6 @@
 'use client'
 
+import HelpLink from '@/components/HelpLink'
 import { useState, useEffect, useMemo } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -649,6 +650,7 @@ export default function SessionDetailPage() {
             ) : (
               <div className="group flex items-center gap-2">
                 <h1 className="font-display text-3xl font-bold text-foreground">{session.title}</h1>
+                <HelpLink slug="session-settings" label="About session settings" />
                 {canEdit && (
                   <button
                     onClick={startEditingTitle}

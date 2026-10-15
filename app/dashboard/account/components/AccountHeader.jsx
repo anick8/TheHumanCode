@@ -1,4 +1,5 @@
 import { accessChip, displayNameOf, initialOf, relativeTime } from '@/lib/accountStats'
+import HelpLink from '@/components/HelpLink'
 import { formatDay } from '@/lib/accessStatus'
 
 // Who this is and how long they have been here. The chip is tonal on purpose:
@@ -20,6 +21,7 @@ export default function AccountHeader({ user, access }) {
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <h1 className="min-w-0 truncate font-display text-3xl font-bold text-foreground">{name}</h1>
+          <HelpLink slug="account-and-access" label="About your account and access" />
           <span className="inline-flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1 text-xs font-semibold text-foreground">
             <span
               aria-hidden="true"

@@ -1,5 +1,6 @@
 'use client'
 
+import HelpLink from '@/components/HelpLink'
 import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -509,7 +510,10 @@ export default function SessionResultsPage() {
         <div className="flex items-center justify-between">
           <div>
             <SessionLogo theme={session.theme} className="mb-4 h-12" />
-            <h1 className="font-display text-3xl font-bold text-foreground">Results: {session.title}</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="font-display text-3xl font-bold text-foreground">Results: {session.title}</h1>
+              <HelpLink slug="results-and-export" label="About results and export" />
+            </div>
             <div className="mt-2 text-muted-foreground">
               {!isComments && !isWheel && <span>{RESULTS_MODE_LABELS[session.results_mode] || session.results_mode} • </span>}
               <span>{lastUpdated ? `Updated ${formatDateTime(lastUpdated)}` : 'Loading…'}</span>

@@ -1,5 +1,6 @@
 'use client'
 
+import HelpLink from '@/components/HelpLink'
 import { useState, useEffect, useRef } from 'react'
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport, lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
@@ -218,6 +219,7 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
             <p className="text-xs text-muted-foreground">Drafts questions. You review and save.</p>
           </div>
           <div className="flex items-center gap-1">
+            <HelpLink slug="ai-assistant" label="About the AI assistant" className="mr-1" />
             {messages.length > 0 && (
               <button
                 type="button"

@@ -1,5 +1,6 @@
 'use client'
 
+import HelpLink from '@/components/HelpLink'
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -180,7 +181,10 @@ export default function SessionDesignPage() {
           <Link href={`/dashboard/sessions/${sessionId}`} className="text-sm text-accent hover:underline">
             ← {session.title}
           </Link>
-          <h1 className="mt-1 font-display text-3xl font-bold text-foreground">Design</h1>
+          <div className="mt-1 flex items-center gap-3">
+            <h1 className="font-display text-3xl font-bold text-foreground">Design</h1>
+            <HelpLink slug="design-your-session" label="About designing a session" />
+          </div>
           <p className="mt-1 text-muted-foreground">
             Fonts, colors and logo for this session&apos;s voting, presenter and results screens.
           </p>
