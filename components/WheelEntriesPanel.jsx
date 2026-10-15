@@ -1,5 +1,6 @@
 'use client'
 
+import HelpLink from '@/components/HelpLink'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { parseEntryLines, WHEEL_LABEL_MAX } from '@/lib/wheelEntries'
@@ -102,7 +103,10 @@ export default function WheelEntriesPanel({
   return (
     <div className={`rounded-2xl border border-border bg-card p-6 shadow-sm ${className}`}>
       <div className="flex items-baseline justify-between gap-4">
-        <h3 className="font-display text-lg font-semibold text-foreground">Entries</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="font-display text-lg font-semibold text-foreground">Entries</h3>
+          <HelpLink slug="wheel-of-fortune" label="About Wheel of Fortune" />
+        </div>
         <p className="text-sm text-muted-foreground" data-testid="entries-count">
           {active.length} on the wheel{removedCount > 0 ? `, ${removedCount} removed` : ''}
         </p>

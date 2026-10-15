@@ -1,5 +1,6 @@
 'use client'
 
+import HelpLink from '@/components/HelpLink'
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
@@ -157,7 +158,10 @@ export default function CluesPage() {
         </Link>
         <div className="mt-2 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="font-display text-3xl font-bold text-foreground">Clue QR codes</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="font-display text-3xl font-bold text-foreground">Clue QR codes</h1>
+              <HelpLink slug="treasure-hunt" label="About Treasure Hunts" />
+            </div>
             <p className="mt-2 text-muted-foreground">
               Print this sheet, cut out each code, and hide it where its clue's number says. Codes only
               show a message while the session is Active.

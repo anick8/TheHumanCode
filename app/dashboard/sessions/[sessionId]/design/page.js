@@ -1,5 +1,6 @@
 'use client'
 
+import HelpLink from '@/components/HelpLink'
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -198,7 +199,10 @@ export default function SessionDesignPage() {
             <Link href={`/dashboard/sessions/${sessionId}`} className="block truncate text-sm text-muted-foreground hover:text-foreground">
               ← {session.title}
             </Link>
-            <h1 className="font-display text-xl font-bold text-foreground">Design</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="font-display text-xl font-bold text-foreground">Design</h1>
+              <HelpLink slug="design-your-session" label="About designing a session" />
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <p
