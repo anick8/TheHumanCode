@@ -1491,7 +1491,11 @@ export default function VotingPage() {
             Powered by MC Genie • {identified ? 'Your answers are visible to the organizer' : 'Your vote is anonymous and secure'}
           </p>
           <p className="mt-2 text-xs text-muted-foreground">
-            Need help? Contact the event organizer.
+            Need help? Contact the event organizer, or read{' '}
+            <a href="/help/joining-a-session" target="_blank" rel="noopener noreferrer" className="underline">
+              how joining works
+            </a>
+            .
           </p>
         </div>
       </footer>

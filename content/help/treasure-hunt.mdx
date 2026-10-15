@@ -1,0 +1,24 @@
+# Treasure Hunt
+
+A Treasure Hunt has no participants and no presenter flow. You print a QR code for each **Clue** and hide them. Finders scan with their phone and read the message. Scanning is anonymous: nothing is recorded about who found what.
+
+## Setting it up
+
+1. Create a session with type **Treasure Hunt**.
+2. In the [question editor](/help/question-editor), add clues. Each clue has a message finders will read.
+3. Open the session's **Clues** page to see each clue's QR code, give it an optional **label** (default "Clue #N", organizer-only), and download the QR as a PNG to print.
+4. Set the session to **Active**. While inactive, scanning a clue shows a status message instead of its text.
+
+Clues are scattered, not chained: they can be found in any order.
+
+## Clue choices
+
+A clue can offer **2 to 4 choice buttons**. Each has a button label and a reveal text, the further clue shown when it is tapped.
+
+- A choice shows text on that clue's page. It does not link to another clue.
+- The finder's phone remembers and locks the choice.
+- Reveal texts are only released when a button is tapped, and only while the session is active.
+
+<Callout type="warning">
+A clue's QR code never changes when you edit its message. Only deleting a clue invalidates the printed code.
+</Callout>

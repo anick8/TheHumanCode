@@ -10,10 +10,14 @@
     "check:migrations": "node db-tests/check-migrations.mjs",
     "admin:add": "./scripts/super-admin.sh add",
     "admin:remove": "./scripts/super-admin.sh remove",
-    "admin:list": "./scripts/super-admin.sh list"
+    "admin:list": "./scripts/super-admin.sh list",
+    "check:help": "node scripts/check-help-links.mjs"
   },
   "dependencies": {
     "@ai-sdk/react": "^4.0.109",
+    "@mdx-js/loader": "^3.1.1",
+    "@mdx-js/react": "^3.1.1",
+    "@next/mdx": "^16.4.1",
     "@openrouter/ai-sdk-provider": "^3.1.0",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.116.0",

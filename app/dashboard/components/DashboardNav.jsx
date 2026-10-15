@@ -8,7 +8,10 @@ import { createClient } from '@/lib/supabase/client'
 import { displayNameOf, initialOf } from '@/lib/accountStats'
 
 // Account is personal settings, not a workspace: it lives in the avatar menu.
-const NAVIGATION = [{ name: 'Sessions', href: '/dashboard' }]
+const NAVIGATION = [
+  { name: 'Sessions', href: '/dashboard' },
+  { name: 'Help', href: '/help' },
+]
 const ACCOUNT_HREF = '/dashboard/account'
 
 export default function DashboardNav({ session, user: propUser }) {
@@ -29,7 +32,9 @@ export default function DashboardNav({ session, user: propUser }) {
 
   // "Sessions" owns the home route and every session sub-page.
   const isActive = (href) =>
-    pathname === href || pathname.startsWith('/dashboard/sessions')
+    href === '/dashboard'
+      ? pathname === href || pathname.startsWith('/dashboard/sessions')
+      : pathname === href
   const onAccount = pathname.startsWith(ACCOUNT_HREF)
 
   const currentUserId = currentUser?.id
