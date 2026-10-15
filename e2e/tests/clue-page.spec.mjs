@@ -17,4 +17,11 @@ test('a clue page of a hunt that is not a game shows its message and locks after
   await expect(player.getByText('The key is behind the fountain')).toBeVisible()
   await expect(player.getByRole('button', { name: 'Go left' })).toBeDisabled()
   await expect(player.getByRole('button', { name: 'Go right' })).toBeDisabled()
+
+  // Not a game: no join redirect, and the phone-side choice survives a reload.
+  await expect(player).toHaveURL(new RegExp(`/h/${hunt.clueToken}$`))
+  await player.reload()
+  await expect(player.getByText('The key is behind the fountain')).toBeVisible()
+  await expect(player.getByRole('button', { name: 'Go left' })).toBeDisabled()
+  await expect(player.getByRole('button', { name: 'Go right' })).toBeDisabled()
 })

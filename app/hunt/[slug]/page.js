@@ -13,6 +13,7 @@ import {
   safeNext,
   progressLabel,
   ordinal,
+  joinFailure,
 } from '@/lib/huntPlayer'
 
 // Player join page for a Hunt game. The clue page (/h/[token]) sends players
@@ -142,10 +143,17 @@ export default function HuntJoinPage() {
       writeToken(session.id, tokenRef.current)
       await poll()
     } catch (err) {
-      const msg = err?.message || ''
-      if (/start|closed|entries/i.test(msg)) setClosedByJoin(true)
-      else if (/full/i.test(msg)) setError('This hunt is full.')
-      else setError(msg || 'Could not join. Please try again.')
+      let row = null
+      try {
+        const { data } = await supabase.rpc('get_hunt_status', {
+          p_session_id: session.id,
+          p_join_token: tokenRef.current,
+        })
+        row = data?.[0] || null
+      } catch {}
+      const outcome = joinFailure(row, err?.message)
+      if (outcome.kind === 'closed') setClosedByJoin(true)
+      else setError(outcome.message)
     } finally {
       setSubmitting(false)
     }
