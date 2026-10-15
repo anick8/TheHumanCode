@@ -72,11 +72,11 @@ _Avoid_: "Lock" (that is a Participant committing an Answer), "end session" (the
 An optional cap the organizer sets on a Wheel of Fortune session (`max_participants`; blank means no limit) on how many Participants may join. Once that many have joined, new joins are refused and the join gate says the wheel is full; the presenter shows "Wheel is full". Manual Entries never count, and a joined Entry the organizer removed still holds its Participant's place. The organizer can raise or clear the limit at any time. Unlike Close entries it is not a switch: it applies by count.
 
 **Remove participant**:
-The host's action to kick a Participant out of a Quiz or Comments session. A hard delete: their Answers or Comments go with them and the Leaderboard re-ranks without them. They may rejoin while entries are open. A Poll has nobody to remove (votes are anonymous). The host can also delete a single Comment.
+The host's action to kick a Participant out of a Quiz, Comments or Hunt game session. In a Quiz or Comments session it is a hard delete: their Answers or Comments go with them, the Leaderboard re-ranks without them, and they may rejoin while entries are open. In a Hunt game it keeps the person as rejected, so that phone cannot rejoin. A Poll has nobody to remove (votes are anonymous). The host can also delete a single Comment.
 
 **Participant**:
 A person taking part in a Session, identified by name and/or ID in Quiz and Comments sessions. The generic term used across the UI regardless of session type (in a Hunt game, the player who joined by name) - a Participant votes in a Poll, answers in a Quiz, and comments in a Comments session.
-_Avoid_: Voter, Player, Contestant, Attendee (as the primary UI term - "Participant" is canonical; "Attendee" still appears in some organizer-facing copy referring to the room in general).
+_Avoid_: Voter, Contestant, Player (except for a Hunt game, where "player" is the term), Attendee (as the primary UI term - "Participant" is canonical; "Attendee" still appears in some organizer-facing copy referring to the room in general).
 
 **Vote**:
 A Participant's response to a Poll question. Anonymous, aggregated into counts.

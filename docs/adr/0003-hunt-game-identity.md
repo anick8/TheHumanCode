@@ -21,6 +21,7 @@ A Treasure Hunt gains a per-hunt switch (`sessions.hunt_game`). When on, the hun
   SECURITY DEFINER RPCs.
 - `get_clue` and `reveal_clue_choice` take the join token and enforce approval, the hunt clock and
   the pick lock on the server. The clock lives in one database rule, so phone clocks never matter.
+- `join_hunt` returns the existing rejected row for a rejected or removed token instead of refusing outright; the phone stays blocked and sees "removed", which deviates from the spec's word "refused".
 - Clues stay unchained and picks carry no points or right answer; choices still reveal text only.
 
 Hunts with the switch off (every hunt that predates it) keep the anonymous model and the
