@@ -59,3 +59,47 @@ export async function seedHunt({ clueMessage = 'Find the red door', choices = nu
     return { organizer, sessionId: s.rows[0].id, slug, clueToken: q.rows[0].clue_token }
   })
 }
+
+// A live game hunt (hunt_game = true) with three clues. Clue 2 has two choices
+// and a confirm step; clue 3 has two choices without one. Returns the tokens.
+export async function seedGameHunt({ owner } = {}) {
+  const organizer = owner ?? (await seedOrganizer())
+  const slug = `e2e-${randomBytes(5).toString('hex')}`
+  const clues = [
+    { text: 'Clue one: start at the fountain', choices: null, confirm: false },
+    {
+      text: 'Clue two: the old bridge',
+      choices: [
+        { label: 'Cross the bridge', reveal: 'Treasure is under the east arch' },
+        { label: 'Follow the river', reveal: 'Treasure is by the willow' },
+      ],
+      confirm: true,
+    },
+    {
+      text: 'Clue three: the clock tower',
+      choices: [
+        { label: 'Climb up', reveal: 'Look at the weathervane' },
+        { label: 'Look around', reveal: 'Look behind the door' },
+      ],
+      confirm: false,
+    },
+  ]
+  return withDb(async (db) => {
+    const s = await db.query(
+      `insert into public.sessions (owner_id, title, slug, is_active, session_type, participation_mode, is_scored, hunt_game)
+       values ($1, 'E2E Game Hunt', $2, true, 'treasure_hunt', 'anonymous', false, true) returning id`,
+      [organizer.id, slug]
+    )
+    const sessionId = s.rows[0].id
+    const clueTokens = []
+    for (const [i, c] of clues.entries()) {
+      const q = await db.query(
+        `insert into public.questions (session_id, text, order_index, clue_choices, clue_confirm_choice)
+         values ($1, $2, $3, $4::jsonb, $5) returning clue_token`,
+        [sessionId, c.text, i, c.choices ? JSON.stringify(c.choices) : null, c.confirm]
+      )
+      clueTokens.push(q.rows[0].clue_token)
+    }
+    return { organizer, sessionId, slug, clueTokens }
+  })
+}
