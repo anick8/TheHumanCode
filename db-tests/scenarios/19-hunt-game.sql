@@ -236,13 +236,23 @@ DECLARE
   v_rej text := pg_temp.hunt_join(v_s, 'Rejected', false);
   v_rem text := pg_temp.hunt_join(v_s, 'Removed');
   v_status text;
+  v_rej_back text;
+  v_rem_back text;
 BEGIN
   PERFORM pg_temp.act_as_owner(v_s);
   PERFORM public.set_hunt_approval(pg_temp.pid(v_rej), 'rejected');
   PERFORM public.remove_participant(pg_temp.pid(v_rem));
 
-  PERFORM public.join_hunt(v_s, 'Again', v_rej);
-  PERFORM public.join_hunt(v_s, 'Again', v_rem);
+  -- join_hunt does not raise for these tokens: it hands back the existing
+  -- rejected row, so the phone stays blocked and the UI shows "removed".
+  SELECT j.approval_status INTO v_rej_back FROM public.join_hunt(v_s, 'Again', v_rej) j;
+  SELECT j.approval_status INTO v_rem_back FROM public.join_hunt(v_s, 'Again', v_rem) j;
+  IF v_rej_back <> 'rejected' OR v_rem_back <> 'rejected' THEN
+    RAISE EXCEPTION 'rejoin returned % / %', v_rej_back, v_rem_back;
+  END IF;
+  IF (SELECT count(*) FROM public.participants WHERE session_id = v_s) <> 2 THEN
+    RAISE EXCEPTION 'rejoin created a participant';
+  END IF;
   IF (SELECT approval_status FROM public.participants WHERE join_token = v_rej) <> 'rejected'
      OR (SELECT approval_status FROM public.participants WHERE join_token = v_rem) <> 'rejected' THEN
     RAISE EXCEPTION 'a rejoin cleared the decision';
@@ -366,6 +376,50 @@ BEGIN
   IF EXISTS (SELECT 1 FROM public.hunt_scans h JOIN public.questions q ON q.id = h.question_id WHERE q.session_id = v_s) THEN RAISE EXCEPTION 'plain hunt recorded a scan'; END IF;
   IF pg_temp.error_of(format('SELECT public.join_hunt(%L, %L, %L)', v_s, 'Ada', 'tok-p')) IS NULL THEN
     RAISE EXCEPTION 'joined a hunt that is not a game';
+  END IF;
+  -- Nothing game-shaped leaks, so the client keeps its phone-side lock.
+  IF EXISTS (SELECT 1 FROM public.get_clue('c0-' || v_s) c
+              WHERE c.session_id IS NOT NULL OR c.session_slug IS NOT NULL
+                 OR c.locked_index IS NOT NULL OR c.locked_reveal IS NOT NULL) THEN
+    RAISE EXCEPTION 'plain hunt exposed game fields';
+  END IF;
+END $$;
+
+-- 9b. A second pick keeps the first; approval keeps the original approved_at;
+-- rejected rows do not use capacity.
+DO $$
+DECLARE
+  v_s uuid := pg_temp.make_hunt(true);
+  v_tok text := pg_temp.hunt_join(v_s, 'Ada');
+  v_status text; v_idx integer; v_at timestamptz; v_cap uuid; v_rej text;
+BEGIN
+  PERFORM pg_temp.act_as_owner(v_s);
+  PERFORM public.start_hunt(v_s, NULL);
+  PERFORM public.get_clue('c0-' || v_s, v_tok);
+  PERFORM public.reveal_clue_choice('c0-' || v_s, 0, v_tok);
+  SELECT r.status, r.picked_index INTO v_status, v_idx FROM public.reveal_clue_choice('c0-' || v_s, 1, v_tok) r;
+  IF v_status <> 'locked' OR v_idx <> 0 THEN RAISE EXCEPTION 'second pick: % / %', v_status, v_idx; END IF;
+  IF (SELECT picked_index FROM public.hunt_scans WHERE participant_id = pg_temp.pid(v_tok)) <> 0 THEN
+    RAISE EXCEPTION 'second pick overwrote the first';
+  END IF;
+
+  -- approved_at survives a repeat approval.
+  UPDATE public.participants SET approved_at = now() - interval '1 hour' WHERE join_token = v_tok;
+  SELECT approved_at INTO v_at FROM public.participants WHERE join_token = v_tok;
+  PERFORM public.set_hunt_approval(pg_temp.pid(v_tok), 'approved');
+  IF (SELECT approved_at FROM public.participants WHERE join_token = v_tok) <> v_at THEN
+    RAISE EXCEPTION 'approved_at overwritten';
+  END IF;
+
+  v_cap := pg_temp.make_hunt(true);
+  PERFORM pg_temp.act_as_owner(v_cap);
+  UPDATE public.sessions SET max_participants = 1 WHERE id = v_cap;
+  v_rej := pg_temp.hunt_join(v_cap, 'Gone', false);
+  PERFORM pg_temp.act_as_owner(v_cap);
+  PERFORM public.set_hunt_approval(pg_temp.pid(v_rej), 'rejected');
+  PERFORM public.join_hunt(v_cap, 'Fits', 'tok-fits-' || v_cap);
+  IF pg_temp.error_of(format('SELECT public.join_hunt(%L, %L, %L)', v_cap, 'Over', 'tok-over-' || v_cap)) IS NULL THEN
+    RAISE EXCEPTION 'capacity not enforced on pending+approved';
   END IF;
 END $$;
 

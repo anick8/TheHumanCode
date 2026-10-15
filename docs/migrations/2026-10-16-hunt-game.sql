@@ -117,7 +117,8 @@ $$;
 REVOKE ALL ON FUNCTION public.hunt_owned_session(uuid) FROM public, anon, authenticated;
 
 -- Player: join a hunt game. Creates a pending Participant, or returns the one
--- this token already has (whatever its status, so a decision sticks).
+-- this token already has (whatever its status, so a decision sticks; a
+-- rejected token gets its rejected row back, which keeps that phone blocked).
 CREATE OR REPLACE FUNCTION public.join_hunt(p_session_id uuid, p_name text, p_join_token text)
 RETURNS TABLE (participant_id uuid, participant_name text, approval_status text)
 LANGUAGE plpgsql
@@ -160,7 +161,9 @@ BEGIN
       RAISE EXCEPTION 'A name can be at most 40 characters';
     END IF;
     IF v_session.max_participants IS NOT NULL AND
-       (SELECT count(*) FROM public.participants WHERE session_id = p_session_id)
+       (SELECT count(*) FROM public.participants pc
+         WHERE pc.session_id = p_session_id
+           AND pc.approval_status IN ('pending', 'approved'))
          >= v_session.max_participants THEN
       RAISE EXCEPTION 'This session is full';
     END IF;
@@ -347,8 +350,8 @@ BEGIN
     v_labels,
     (v_question.clue_confirm_choice AND v_question.clue_choices IS NOT NULL),
     v_session.theme,
-    v_session.id,
-    v_session.slug,
+    CASE WHEN v_session.hunt_game THEN v_session.id END,
+    CASE WHEN v_session.hunt_game THEN v_session.slug END,
     v_locked,
     CASE WHEN v_locked IS NOT NULL THEN v_question.clue_choices -> v_locked ->> 'reveal' END;
 END;
@@ -375,6 +378,8 @@ DECLARE
   v_participant public.participants;
   v_scan public.hunt_scans;
   v_state text;
+  v_scanned boolean;
+  v_updated boolean;
 BEGIN
   SELECT * INTO v_question FROM public.questions q WHERE q.clue_token = p_token;
   IF NOT FOUND THEN
@@ -431,7 +436,8 @@ BEGIN
   -- A pick already made stays, whatever the clock says now.
   SELECT * INTO v_scan FROM public.hunt_scans h
    WHERE h.participant_id = v_participant.id AND h.question_id = v_question.id;
-  IF FOUND AND v_scan.picked_index IS NOT NULL THEN
+  v_scanned := FOUND;
+  IF v_scanned AND v_scan.picked_index IS NOT NULL THEN
     RETURN QUERY SELECT 'locked'::text, v_question.clue_choices -> v_scan.picked_index ->> 'reveal',
                         v_scan.picked_index;
     RETURN;
@@ -442,14 +448,31 @@ BEGIN
     RETURN QUERY SELECT v_state, NULL::text, NULL::integer;
     RETURN;
   END IF;
-  IF NOT FOUND THEN
+  IF NOT v_scanned THEN
     RETURN QUERY SELECT 'not_scanned'::text, NULL::text, NULL::integer;
     RETURN;
   END IF;
 
+  -- Atomic first pick: only a row with no pick yet is updated, so two
+  -- concurrent taps cannot both win.
   UPDATE public.hunt_scans h
      SET picked_index = p_index, picked_at = now()
-   WHERE h.participant_id = v_participant.id AND h.question_id = v_question.id;
+   WHERE h.participant_id = v_participant.id AND h.question_id = v_question.id
+     AND h.picked_index IS NULL
+  RETURNING * INTO v_scan;
+  v_updated := FOUND;
+
+  IF NOT v_updated THEN
+    SELECT * INTO v_scan FROM public.hunt_scans h
+     WHERE h.participant_id = v_participant.id AND h.question_id = v_question.id;
+    IF v_scan.picked_index IS NOT NULL THEN
+      RETURN QUERY SELECT 'locked'::text, v_question.clue_choices -> v_scan.picked_index ->> 'reveal',
+                          v_scan.picked_index;
+    ELSE
+      RETURN QUERY SELECT 'not_scanned'::text, NULL::text, NULL::integer;
+    END IF;
+    RETURN;
+  END IF;
 
   RETURN QUERY SELECT 'live'::text, v_question.clue_choices -> p_index ->> 'reveal', p_index;
 END;
@@ -479,7 +502,7 @@ BEGIN
 
   UPDATE public.participants
      SET approval_status = p_status,
-         approved_at = CASE WHEN p_status = 'approved' THEN now() ELSE NULL END
+         approved_at = CASE WHEN p_status = 'approved' THEN coalesce(approved_at, now()) ELSE NULL END
    WHERE id = p_participant_id;
 END;
 $$;
@@ -675,5 +698,5 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.remove_participant(uuid) FROM public;
+REVOKE ALL ON FUNCTION public.remove_participant(uuid) FROM public, anon;
 GRANT EXECUTE ON FUNCTION public.remove_participant(uuid) TO authenticated;
