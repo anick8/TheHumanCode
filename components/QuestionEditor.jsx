@@ -191,6 +191,7 @@ export default function QuestionEditor({
       image_url: isComments ? null : undefined,
       clue_label: isTreasureHunt ? '' : undefined,
       clue_choices: isTreasureHunt ? null : undefined,
+      clue_confirm_choice: isTreasureHunt ? false : undefined,
       // A default ramp makes "compounding" scores one step; editable per question.
       points: isScored ? (questions.length + 1) * 10 : 10,
       time_limit_seconds: TIME_LIMIT_DEFAULT
@@ -763,6 +764,23 @@ export default function QuestionEditor({
                                         Add choice
                                       </button>
                                     )}
+                                    <label className="flex items-start gap-3 rounded-lg bg-muted p-4">
+                                      <input
+                                        type="checkbox"
+                                        checked={!!question.clue_confirm_choice}
+                                        disabled={locked}
+                                        onChange={(e) => updateQuestion(question.id, 'clue_confirm_choice', e.target.checked)}
+                                        className="mt-0.5 h-4 w-4 rounded border-border"
+                                      />
+                                      <span>
+                                        <span className="block text-sm font-medium text-foreground">
+                                          Ask finders to confirm their choice
+                                        </span>
+                                        <span className="block text-sm text-muted-foreground">
+                                          Shows an &quot;Are you sure?&quot; box before the choice is revealed.
+                                        </span>
+                                      </span>
+                                    </label>
                                   </div>
                                 ) : (
                                   <div className="rounded-lg bg-muted p-4">

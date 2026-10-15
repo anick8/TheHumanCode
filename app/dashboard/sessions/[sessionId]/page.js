@@ -41,6 +41,7 @@ function snapshotEditor(questions, optionsByQuestion, questionKeys) {
       image_url: q.image_url || null,
       clue_label: q.clue_label?.trim() || null,
       clue_choices: cleanClueChoices(q.clue_choices),
+      clue_confirm_choice: !!q.clue_confirm_choice,
       key: questionKeys[q.id] ?? null,
       options: (optionsByQuestion[q.id] || []).map((o) => ({
         id: o.id,
@@ -463,6 +464,8 @@ export default function SessionDetailPage() {
           fields.clue_label = question.clue_label?.trim() || null
           // 2-4 {label, reveal} buttons, or null for a plain clue.
           fields.clue_choices = cleanClueChoices(question.clue_choices)
+          // Only meaningful while the clue has choices.
+          fields.clue_confirm_choice = !!fields.clue_choices && !!question.clue_confirm_choice
         }
 
         if (String(question.id).startsWith('temp_')) {
