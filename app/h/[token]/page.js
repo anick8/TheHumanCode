@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import SessionTheme from '@/components/SessionTheme'
 import SessionLogo from '@/components/SessionLogo'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 // Public, anonymous scan page for a single Treasure Hunt Clue. No join, no
 // name, no tracking - get_clue() only ever unlocks the one clue this token
@@ -14,10 +15,11 @@ export default function CluePage() {
   const params = useParams()
   const token = params.token
   const [loading, setLoading] = useState(true)
-  const [result, setResult] = useState(null) // { status, clue_message, clue_number, session_title, choices, theme }
+  const [result, setResult] = useState(null) // { status, clue_message, clue_number, session_title, choices, confirm_choice, theme }
   const [picked, setPicked] = useState(null) // { index, reveal } once a choice is revealed
   const [revealing, setRevealing] = useState(false)
   const [revealError, setRevealError] = useState('')
+  const [pending, setPending] = useState(null) // index awaiting confirmation
   const supabase = createClient()
   const storageKey = `clue-choice:${token}`
 
@@ -119,7 +121,7 @@ export default function CluePage() {
                         key={index}
                         type="button"
                         disabled={isLocked}
-                        onClick={() => reveal(index, true)}
+                        onClick={() => (result.confirm_choice ? setPending(index) : reveal(index, true))}
                         className={
                           'w-full rounded-xl border px-4 py-3 text-base font-semibold transition-colors ' +
                           (isPicked
@@ -139,6 +141,23 @@ export default function CluePage() {
                   {revealError && <p className="text-sm text-destructive">{revealError}</p>}
                 </div>
               )}
+              <ConfirmDialog
+                open={pending !== null}
+                title={`Choose "${result.choices?.[pending] ?? ''}"?`}
+                confirmLabel="Yes, reveal it"
+                busyLabel="Revealing…"
+                busy={revealing}
+                tone="primary"
+                onCancel={() => setPending(null)}
+                onConfirm={async () => {
+                  await reveal(pending, true)
+                  setPending(null)
+                }}
+              >
+                <p className="mt-2 text-sm text-muted-foreground">
+                  You get one choice on this clue. Once it&apos;s revealed it stays on this phone.
+                </p>
+              </ConfirmDialog>
             </>
           ) : status === 'closed' ? (
             <h1 className="font-display text-2xl font-bold text-foreground">This session is closed</h1>

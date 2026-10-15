@@ -12,6 +12,7 @@ RETURNS TABLE (
   clue_number integer,
   session_title text,
   choices jsonb,
+  confirm_choice boolean,
   theme jsonb
 )
 LANGUAGE plpgsql
@@ -26,23 +27,23 @@ DECLARE
 BEGIN
   SELECT * INTO v_question FROM public.questions WHERE clue_token = p_token;
   IF NOT FOUND THEN
-    RETURN QUERY SELECT 'missing'::text, NULL::text, NULL::integer, NULL::text, NULL::jsonb, NULL::jsonb;
+    RETURN QUERY SELECT 'missing'::text, NULL::text, NULL::integer, NULL::text, NULL::jsonb, NULL::boolean, NULL::jsonb;
     RETURN;
   END IF;
 
   SELECT * INTO v_session FROM public.sessions WHERE id = v_question.session_id;
   IF NOT FOUND OR v_session.session_type <> 'treasure_hunt' THEN
-    RETURN QUERY SELECT 'missing'::text, NULL::text, NULL::integer, NULL::text, NULL::jsonb, NULL::jsonb;
+    RETURN QUERY SELECT 'missing'::text, NULL::text, NULL::integer, NULL::text, NULL::jsonb, NULL::boolean, NULL::jsonb;
     RETURN;
   END IF;
 
   IF NOT v_session.is_active THEN
-    RETURN QUERY SELECT 'not_live'::text, NULL::text, v_question.order_index + 1, v_session.title, NULL::jsonb, v_session.theme;
+    RETURN QUERY SELECT 'not_live'::text, NULL::text, v_question.order_index + 1, v_session.title, NULL::jsonb, NULL::boolean, v_session.theme;
     RETURN;
   END IF;
 
   IF NOT public.owner_has_access(v_session.owner_id) THEN
-    RETURN QUERY SELECT 'closed'::text, NULL::text, v_question.order_index + 1, v_session.title, NULL::jsonb, v_session.theme;
+    RETURN QUERY SELECT 'closed'::text, NULL::text, v_question.order_index + 1, v_session.title, NULL::jsonb, NULL::boolean, v_session.theme;
     RETURN;
   END IF;
 
@@ -51,7 +52,14 @@ BEGIN
     FROM jsonb_array_elements(v_question.clue_choices) WITH ORDINALITY AS t(e, ord);
   END IF;
 
-  RETURN QUERY SELECT 'live'::text, v_question.text, v_question.order_index + 1, v_session.title, v_labels, v_session.theme;
+  RETURN QUERY SELECT
+    'live'::text,
+    v_question.text,
+    v_question.order_index + 1,
+    v_session.title,
+    v_labels,
+    (v_question.clue_confirm_choice AND v_question.clue_choices IS NOT NULL),
+    v_session.theme;
 END;
 $$;
 
