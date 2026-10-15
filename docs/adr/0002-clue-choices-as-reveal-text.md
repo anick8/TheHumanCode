@@ -1,6 +1,6 @@
 # 0002 — Clue choices reveal text, they do not link clues
 
-- **Status:** accepted
+- **Status:** accepted (partly superseded by [0003](0003-hunt-game-identity.md): game hunts now have an identity model and a server-enforced lock)
 - **Date:** 2026-10-13
 
 ## Context

@@ -9,7 +9,7 @@ A set of questions an organizer runs for a room. Has exactly one Session type (P
 _Avoid_: Poll (as a synonym for any session - "poll" names one specific session type, not the container).
 
 **Session type**:
-One of five fixed presets: Poll (anonymous voting, never scored), Quiz (named participants, always scored), Comments (named participants, free-text reactions to images, never scored), Treasure Hunt (anonymous, no Participants at all - each Clue is reached only by scanning its own QR code), Wheel of Fortune (named participants who put themselves on the wheel; never scored). Chosen at creation and locked once the session has its first response.
+One of five fixed presets: Poll (anonymous voting, never scored), Quiz (named participants, always scored), Comments (named participants, free-text reactions to images, never scored), Treasure Hunt (each Clue is reached only by scanning its own QR code; a Hunt game has approved Participants, otherwise anonymous with no Participants), Wheel of Fortune (named participants who put themselves on the wheel; never scored). Chosen at creation and locked once the session has its first response.
 
 **Poll**:
 A Session type where anonymous attendees vote on options and see aggregate results.
@@ -25,7 +25,20 @@ A Quiz created before every quiz was always scored, whose `is_scored` stayed fal
 A Session type where named Participants leave free-text comments on images the organizer uploads.
 
 **Treasure Hunt**:
-A Session type with no Participants: the organizer hides physical QR codes, each printed for one Clue. Scanning is anonymous - nothing is recorded about who found what, and there is no join step. Clues are scattered, not chained: any order, no dependency between them.
+A Session type where the organizer hides physical QR codes, each printed for one Clue. Either a Hunt game (named, approved Participants, timed and ranked) or anonymous (no Participants, nothing recorded about who found what, no join step). Clues are scattered, not chained: any order, no dependency between them.
+
+**Hunt game**:
+A Treasure Hunt with the "Players join and are timed" switch on (default for new hunts; off for hunts that predate it). Players join by scanning the hunt's join QR code and entering a name (required, at most 40 characters), the organizer gives Approval, and the Hunt clock decides when Scans count. Players are ranked by Clues found, then by earliest last Scan. Hunts without the switch stay anonymous and behave as before.
+_Avoid_: "Competition mode", "team hunt" (players are individuals).
+
+**Hunt clock**:
+The server-decided span in which a Hunt game accepts Scans and picks: started by the organizer, ended by Stop or, when a length in minutes was set, by its end time. Joining closes at the start. Before it a scan shows "not started" without revealing the Clue; after it, "over". Reset clears it.
+
+**Approval**:
+The organizer's per-Participant decision (pending, approved or rejected) on who may play a Hunt game. Only approved Participants have Scans counted; a pending one sees a waiting screen and no Clue. Approval can be given in bulk, and may be given after the start (time still counts from the hunt start). A rejected or removed token cannot join again.
+
+**Scan**:
+An approved Participant's first opening of a Clue while the Hunt clock runs, recorded once per Participant and Clue with its time. Rescanning shows the Clue again and never changes the first time.
 
 **Wheel of Fortune**:
 A Session type for a random draw: attendees join with a name (required, trimmed, at most 24 characters; duplicates allowed), which puts them on the wheel automatically, and the organizer may add manual Entries. The session is the wheel - one per session, no Questions. The organizer Spins from the presenter screen; the server chooses the Pick. The type is locked once the first Spin exists and unlocks again after Reset.
@@ -41,14 +54,14 @@ One server-side random choice of a Pick among the Entries active at that moment 
 The Entry a Spin landed on. After each Spin the organizer resolves it: *remove* the Pick from the wheel (raffle) or *keep* it (repeat picks allowed). Phones see only the latest Pick's label and whether it is theirs - never the Entry list.
 
 **Reset**:
-The organizer's action that clears a wheel's Spin history and restores every removed Entry, keeping the joined Participants so the same room can play again.
+The organizer's action that clears a wheel's Spin history and restores every removed Entry, keeping the joined Participants so the same room can play again. On a Hunt game it deletes the Participants, Scans and picks and clears the Hunt clock, keeping the Clues and their QR codes.
 
 **Clue**:
 One message in a Treasure Hunt, reached only by scanning its own QR code (never by browsing the session). Its QR code carries a random, permanent token that never changes, even when the organizer edits the Clue's message later - only deleting the Clue invalidates its printed code. The message is shown only while the session is active; scanning an inactive session's Clue, or a deleted Clue's code, shows a status message instead. A Clue may also carry an organizer-only label (default "Clue #N") printed under its QR code; finders never see it. A Clue may also offer Clue choices.
 _Avoid_: Question (the underlying database row a Clue reuses, but "Clue" is the organizer- and finder-facing term).
 
 **Clue choice**:
-One of 2-4 buttons an organizer can put on a Clue; each has a button label and a reveal text (the further clue). Tapping a button shows its reveal text on that Clue's page - it does not link to another Clue, so Clues stay unchained. The finder's phone remembers the choice and locks it; the server records nothing about who tapped what. Labels are public with the Clue; a reveal text is released only when its button is tapped, and only while the session is active.
+One of 2-4 buttons an organizer can put on a Clue; each has a button label and a reveal text (the further clue). Tapping a button shows its reveal text on that Clue's page - it does not link to another Clue, so Clues stay unchained. In a Hunt game the server records each Participant's first pick and its time and locks it for that Participant (the pick has no right answer and no points). In an anonymous hunt the finder's phone remembers and locks the choice and the server records nothing. Labels are public with the Clue; a reveal text is released only when its button is tapped, and only while the session is active (in a Hunt game, only while the Hunt clock runs).
 _Avoid_: "Branch" or "path" (a choice never leads to another Clue), "answer" (there is no right or wrong choice).
 
 **Close entries**:
@@ -62,7 +75,7 @@ An optional cap the organizer sets on a Wheel of Fortune session (`max_participa
 The host's action to kick a Participant out of a Quiz or Comments session. A hard delete: their Answers or Comments go with them and the Leaderboard re-ranks without them. They may rejoin while entries are open. A Poll has nobody to remove (votes are anonymous). The host can also delete a single Comment.
 
 **Participant**:
-A person taking part in a Session, identified by name and/or ID in Quiz and Comments sessions. The generic term used across the UI regardless of session type - a Participant votes in a Poll, answers in a Quiz, and comments in a Comments session.
+A person taking part in a Session, identified by name and/or ID in Quiz and Comments sessions. The generic term used across the UI regardless of session type (in a Hunt game, the player who joined by name) - a Participant votes in a Poll, answers in a Quiz, and comments in a Comments session.
 _Avoid_: Voter, Player, Contestant, Attendee (as the primary UI term - "Participant" is canonical; "Attendee" still appears in some organizer-facing copy referring to the room in general).
 
 **Vote**:
