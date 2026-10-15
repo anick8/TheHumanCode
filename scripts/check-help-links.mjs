@@ -25,7 +25,11 @@ function walk(dir) {
 }
 function scan(path) {
   const text = readFileSync(path, 'utf8')
-  for (const m of text.matchAll(/(?<=["'`(])\/help\/([a-z0-9-]+)/g)) {
+  const found = [
+    ...text.matchAll(/(?<=["'`(])\/help\/([a-z0-9-]+)/g),
+    ...text.matchAll(/<HelpLink[^>]*\sslug="([a-z0-9-]+)"/g),
+  ]
+  for (const m of found) {
     if (!slugs.has(m[1])) errors.push(`${path.replace(root, '')}: unknown help slug "${m[1]}"`)
   }
 }
