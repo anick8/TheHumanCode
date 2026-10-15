@@ -11,7 +11,8 @@
     "admin:add": "./scripts/super-admin.sh add",
     "admin:remove": "./scripts/super-admin.sh remove",
     "admin:list": "./scripts/super-admin.sh list",
-    "check:help": "node scripts/check-help-links.mjs"
+    "check:help": "node scripts/check-help-links.mjs",
+    "test:e2e": "node e2e/bootstrap.mjs && playwright test"
   },
   "dependencies": {
     "@ai-sdk/react": "^4.0.109",
@@ -30,7 +31,9 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/postcss": "^4",
+    "pg": "^8.23.1",
     "tailwindcss": "^4"
   }
 }

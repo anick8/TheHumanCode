@@ -1,23 +1,63 @@
 # Treasure Hunt
 
-A Treasure Hunt has no participants and no presenter flow. You print a QR code for each **Clue** and hide them. Finders scan with their phone and read the message. Scanning is anonymous: nothing is recorded about who found what.
+A Treasure Hunt is a set of printed QR codes, one per **Clue**, hidden around a venue. Finders scan a code with their phone and read the message. A hunt runs in one of two ways, set by the **Players join and are timed** switch in [session settings](/help/session-settings):
+
+- **Game** (switch on, the default for new hunts): players join by name, you approve them, and the hunt is timed and ranked.
+- **Anonymous** (switch off): anyone who scans a clue reads it. Nothing is recorded about who found what, and there is no join step. Hunts created before the game existed stay anonymous, so printed codes keep working.
 
 ## Setting it up
 
 1. Create a session with type **Treasure Hunt**.
 2. In the [question editor](/help/question-editor), add clues. Each clue has a message finders will read.
-3. Open the session's **Clues** page to see each clue's QR code, give it an optional **label** (default "Clue #N", organizer-only), and download the QR as a PNG to print.
+3. Open the session's **Clues** page to see each clue's QR code, give it an optional **label** (default "Clue #N", organizer-only), and download the QR as a PNG to print. For a game, the printable sheet starts with the **join QR code**.
 4. Set the session to **Active**. While inactive, scanning a clue shows a status message instead of its text.
 
 Clues are scattered, not chained: they can be found in any order.
+
+## Running a game
+
+Open **Run hunt** from the session inspector or the Clues page. It holds the join QR code, the approval lists, the clock, the leaderboard and the CSV download.
+
+### Joining and approval
+
+1. A player scans the join QR code and enters a name (required, up to 40 characters). Scanning a clue first also works: the player is sent to the join page, then back to that clue.
+2. The player sees "Waiting for approval" (a scanned clue says "Waiting for the organizer to let you in"). Their phone remembers that they joined.
+3. You see everyone under **Waiting for approval**, with their names and join times. **Approve** or **Reject** one player, or **Approve all**. Duplicate names sit side by side so you can reject an extra join.
+4. Approved players see "You're in" and "Waiting for the host to start the hunt." until you start.
+
+**Remove** takes an approved player out of the game and keeps them listed as rejected. A rejected or removed phone sees "You were removed from this hunt" and cannot sign up again.
+
+Joining closes when you start the clock. You can still approve people who joined before the start, and their time counts from the hunt start. **Close entries** also works before the start, to cap sign-ups early.
+
+### The clock
+
+- **Start hunt** begins the hunt for everyone at once. Enter a length in minutes for a countdown that ends by itself, or leave it blank and press **Stop hunt** when you decide.
+- The server keeps the time, not the players' phones, so nobody scores after the deadline.
+- Players see the clock on their phone. Scanning before the start shows "The hunt hasn't started yet" and does not reveal the clue.
+
+### Finding clues
+
+While the clock runs, each time an approved player scans a clue the server records the first time they found it. Scanning the same clue again shows it again and keeps that first time. A pending player sees the waiting screen instead of the clue, and a scan after the end shows "The hunt is over" with the player's own result.
+
+A player's join page shows "3 of 5 clues found" during the hunt. Players see only their own count and the clock until the hunt stops, then their rank and time.
+
+### Leaderboard, CSV and Reset
+
+- The live leaderboard ranks approved players by **clues found**, then by the **earliest last scan**. Players who found fewer clues are still ranked.
+- Each player's row shows join and approval times, the time of each clue scan since the start, and each choice with its time.
+- **Download CSV** exports these stats. Export before you reset.
+- **Reset hunt** (with confirmation) clears players, scans, picks and the clock but keeps your clues and their QR codes, so the same printed hunt can run again.
 
 ## Clue choices
 
 A clue can offer **2 to 4 choice buttons**. Each has a button label and a reveal text, the further clue shown when it is tapped.
 
 - A choice shows text on that clue's page. It does not link to another clue.
-- The finder's phone remembers and locks the choice.
 - Reveal texts are only released when a button is tapped, and only while the session is active.
+- In a **game**, the server locks a player's first pick for good. It stays locked after a reload, cleared browser data or rejoining, and reopening the clue shows the reveal text again. Picks are accepted only while the hunt is running, and your board records each pick and when it was made. If the clue has a confirm step, the "are you sure" box comes before the lock.
+- In an **anonymous** hunt, the finder's phone remembers and locks the choice, and the server records nothing. A second phone or cleared data shows the buttons again.
+
+Choices have no right or wrong answer and carry no points.
 
 <Callout type="warning">
 A clue's QR code never changes when you edit its message. Only deleting a clue invalidates the printed code.

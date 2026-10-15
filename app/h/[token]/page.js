@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import SessionTheme from '@/components/SessionTheme'
 import SessionLogo from '@/components/SessionLogo'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import { gateScreen, joinRequiredAction, huntPlayerKey, POLL_MS } from '@/lib/clueGate'
 
 // Public, anonymous scan page for a single Treasure Hunt Clue. No join, no
 // name, no tracking - get_clue() only ever unlocks the one clue this token
@@ -22,31 +23,86 @@ export default function CluePage() {
   const [pending, setPending] = useState(null) // index awaiting confirmation
   const supabase = createClient()
   const storageKey = `clue-choice:${token}`
+  // Join token of this phone's hunt player, once known (game hunts only).
+  const joinTokenRef = useRef(null)
+  const isGame = result?.session_id != null
 
   useEffect(() => {
     if (token) load()
   }, [token])
 
-  const load = async () => {
-    setLoading(true)
+  const readJoinToken = (sessionId) => {
     try {
-      const { data, error } = await supabase.rpc('get_clue', { p_token: token })
-      if (error) throw error
-      const clue = data?.[0] || { status: 'missing' }
+      return window.localStorage.getItem(huntPlayerKey(sessionId))
+    } catch {
+      return null
+    }
+  }
+
+  const fetchClue = async () => {
+    const args = { p_token: token }
+    if (joinTokenRef.current) args.p_join_token = joinTokenRef.current
+    const { data, error } = await supabase.rpc('get_clue', args)
+    if (error) throw error
+    return data?.[0] || { status: 'missing' }
+  }
+
+  // silent: a background poll, so the screen is not swapped for the spinner.
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true)
+    try {
+      let clue = await fetchClue()
+      if (clue.status === 'join_required') {
+        const currentPath = window.location.pathname + window.location.search
+        const action = joinRequiredAction({
+          storedToken: clue.session_id ? readJoinToken(clue.session_id) : null,
+          sessionSlug: clue.session_slug,
+          currentPath,
+        })
+        if (action.action === 'refetch' && joinTokenRef.current !== action.token) {
+          joinTokenRef.current = action.token
+          clue = await fetchClue()
+        } else if (action.action === 'redirect') {
+          window.location.replace(action.href)
+          return
+        }
+        if (clue.status === 'join_required') {
+          // The stored token is unknown to the server: start over at the join page.
+          if (clue.session_slug) {
+            window.location.replace(`/hunt/${clue.session_slug}?next=${encodeURIComponent(currentPath)}`)
+            return
+          }
+          clue = { status: 'missing' }
+        }
+      }
       setResult(clue)
-      // A phone that already chose here gets its choice back (kept per phone,
-      // never sent to the server). The reveal text is re-fetched, not cached.
-      if (clue.status === 'live' && clue.choices?.length) {
+      if (clue.status === 'live' && clue.session_id != null) {
+        // Game hunt: the server holds the lock.
+        if (clue.locked_index != null && clue.locked_reveal) {
+          setPicked({ index: clue.locked_index, reveal: clue.locked_reveal })
+        }
+      } else if (clue.status === 'live' && clue.choices?.length && !silent) {
+        // Not a game: a phone that already chose gets its choice back (kept per
+        // phone, never sent to the server). The reveal text is re-fetched.
         const saved = readSavedChoice()
         if (saved !== null && saved < clue.choices.length) await reveal(saved, false)
       }
     } catch (error) {
       console.error('Error loading clue:', error)
-      setResult({ status: 'missing' })
+      if (!silent) setResult({ status: 'missing' })
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
+
+  // Poll while waiting for approval or for the hunt to start.
+  const gate = gateScreen(result?.status)
+  const shouldPoll = !!gate?.poll
+  useEffect(() => {
+    if (!shouldPoll) return undefined
+    const id = setInterval(() => load(true), POLL_MS)
+    return () => clearInterval(id)
+  }, [shouldPoll, token])
 
   const readSavedChoice = () => {
     try {
@@ -62,18 +118,25 @@ export default function CluePage() {
     setRevealing(true)
     setRevealError('')
     try {
-      const { data, error } = await supabase.rpc('reveal_clue_choice', { p_token: token, p_index: index })
+      const args = { p_token: token, p_index: index }
+      if (joinTokenRef.current) args.p_join_token = joinTokenRef.current
+      const { data, error } = await supabase.rpc('reveal_clue_choice', args)
       if (error) throw error
       const row = data?.[0]
-      if (row?.status === 'live' && row.reveal) {
+      if (row?.status === 'locked' && row.reveal) {
+        // The server keeps the first pick; show it, not the one just tapped.
+        setPicked({ index: row.picked_index, reveal: row.reveal })
+      } else if (row?.status === 'live' && row.reveal) {
         setPicked({ index, reveal: row.reveal })
-        if (persist) {
+        if (persist && !isGame) {
           try {
             window.localStorage.setItem(storageKey, String(index))
           } catch {}
         }
-      } else if (row?.status === 'closed' || row?.status === 'not_live') {
+      } else if (['closed', 'not_live', 'pending', 'removed', 'not_started', 'over'].includes(row?.status)) {
         setResult((prev) => ({ ...prev, status: row.status }))
+      } else if (row?.status === 'join_required') {
+        load()
       } else {
         setRevealError('Could not load this choice. Please try again.')
       }
@@ -155,9 +218,24 @@ export default function CluePage() {
                 }}
               >
                 <p className="mt-2 text-sm text-muted-foreground">
-                  You get one choice on this clue. Once it&apos;s revealed it stays on this phone.
+                  {isGame
+                    ? 'You get one choice on this clue. Once it is revealed it is locked to you for the whole hunt.'
+                    : 'You get one choice on this clue. Once it is revealed it stays on this phone.'}
                 </p>
               </ConfirmDialog>
+            </>
+          ) : gate ? (
+            <>
+              <h1 className="font-display text-2xl font-bold text-foreground">{gate.title}</h1>
+              <p className="mt-2 text-muted-foreground">{gate.body}</p>
+              {gate.joinLink && result.session_slug && (
+                <a
+                  href={`/hunt/${result.session_slug}`}
+                  className="mt-6 inline-block rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground"
+                >
+                  See your result
+                </a>
+              )}
             </>
           ) : status === 'closed' ? (
             <h1 className="font-display text-2xl font-bold text-foreground">This session is closed</h1>
