@@ -9,13 +9,14 @@
   FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
 */
 
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, memo } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import InstagramBadge from '@/components/InstagramBadge'
+import WheelArt from '@/components/WheelArt'
 import { createClient } from '@/lib/supabase/client'
-import { finalRotation, entryAtPointer, LABEL_HIDE_ABOVE } from '@/lib/wheel'
+import { finalRotation, entryAtPointer } from '@/lib/wheel'
 import { WHEEL_LABEL_MAX } from '@/lib/wheelEntries'
-import { wheelPalette, toneIndex } from '@/lib/wheelPalette'
+import { wheelPalette } from '@/lib/wheelPalette'
 import { resolveTheme } from '@/lib/theme'
 import { unlockAudio, tick as playTick, fanfare, getMuted, setMuted } from '@/lib/wheelSound'
 
@@ -24,65 +25,8 @@ const SPIN_REDUCED_MS = 1500
 const WIND_BACK_MS = 250
 const WIND_BACK_DEG = 8
 const POLL_MS = 3000 // same cadence as the rest of the presenter's polling
-const BULBS = 24
 const QR_HIDDEN_KEY = 'wheel-qr-hidden'
-const WHEEL_R = 92
 const easeOut = (t) => 1 - Math.pow(1 - t, 4)
-
-function polar(angleDeg, r) {
-  const a = ((angleDeg - 90) * Math.PI) / 180
-  return [r * Math.cos(a), r * Math.sin(a)]
-}
-
-const Wedges = memo(function Wedges({ entries, palette, pickedId }) {
-  const n = entries.length
-  if (n === 0) return <circle r={WHEEL_R} fill={palette.rim} />
-  if (n === 1) return <circle r={WHEEL_R} fill={palette.tones[0].fill} />
-  const seg = 360 / n
-  const showLabels = n <= LABEL_HIDE_ABOVE
-  const showPegs = n <= LABEL_HIDE_ABOVE
-  const fontSize = Math.max(3.5, Math.min(9, 90 / n + 2))
-  const maxChars = n <= 8 ? 18 : 14
-  return (
-    <>
-      {entries.map((e, i) => {
-        const [x1, y1] = polar(i * seg, WHEEL_R)
-        const [x2, y2] = polar((i + 1) * seg, WHEEL_R)
-        const large = seg > 180 ? 1 : 0
-        const mid = (i + 0.5) * seg
-        const tone = palette.tones[toneIndex(i, n)]
-        return (
-          <g key={e.id} data-entry-id={e.id} data-picked={e.id === pickedId ? 'true' : 'false'} className="wheel-wedge">
-            <path
-              d={`M0 0 L${x1.toFixed(3)} ${y1.toFixed(3)} A${WHEEL_R} ${WHEEL_R} 0 ${large} 1 ${x2.toFixed(3)} ${y2.toFixed(3)} Z`}
-              fill={tone.fill}
-              stroke={palette.rim}
-              strokeWidth={n > 150 ? 0 : 0.35}
-            />
-            {showLabels && (
-              <text
-                className="wheel-labels"
-                transform={`rotate(${mid - 90}) translate(${WHEEL_R - 7} 0)`}
-                textAnchor="end"
-                dominantBaseline="central"
-                fontSize={fontSize}
-                fontWeight="700"
-                fill={tone.ink}
-              >
-                {e.label.length > maxChars ? `${e.label.slice(0, maxChars - 1)}…` : e.label}
-              </text>
-            )}
-          </g>
-        )
-      })}
-      {showPegs &&
-        entries.map((e, i) => {
-          const [x, y] = polar(i * seg, WHEEL_R - 1.6)
-          return <circle key={`peg-${e.id}`} cx={x} cy={y} r="1.5" fill={palette.bulb} />
-        })}
-    </>
-  )
-})
 
 function Confetti({ palette }) {
   const pieces = useMemo(() => {
@@ -511,51 +455,16 @@ export default function WheelPresenter({ sessionId, session, isOwner, voteUrl, o
       <div className="relative grid flex-1 gap-6 px-6 pt-5 pb-3 lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="relative mx-auto aspect-square w-full max-w-[34rem] min-h-0 lg:aspect-auto lg:max-w-none" style={{ containerType: 'size' }}>
           <div ref={rigRef} className="wheel-rig absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" style={{ width: 'min(100cqw, 100cqh)', aspectRatio: '1' }}>
-            <svg viewBox="-112 -112 224 224" className="h-full w-full" role="img" aria-label="Wheel of Fortune">
-              <defs>
-                <radialGradient id="wheel-shade" cx="0" cy="0" r={WHEEL_R} gradientUnits="userSpaceOnUse">
-                  <stop offset="0.55" stopColor="#000" stopOpacity="0" />
-                  <stop offset="1" stopColor="#000" stopOpacity="0.38" />
-                </radialGradient>
-                <linearGradient id="wheel-glint" x1="-60" y1="-80" x2="60" y2="80" gradientUnits="userSpaceOnUse">
-                  <stop offset="0" stopColor="#fff" stopOpacity="0.2" />
-                  <stop offset="0.45" stopColor="#fff" stopOpacity="0" />
-                </linearGradient>
-                <clipPath id="wheel-hub-clip"><circle r="12" /></clipPath>
-              </defs>
-
-              {/* rim */}
-              <circle r="109" fill={palette.rim} stroke={palette.rimEdge} strokeWidth="1.2" />
-              <circle r="93.5" fill="none" stroke={palette.rimEdge} strokeWidth="1" />
-              {Array.from({ length: BULBS }, (_, i) => {
-                const [x, y] = polar((360 / BULBS) * i, 101)
-                return <circle key={i} className="wheel-bulb" style={{ '--i': i }} cx={x} cy={y} r="2.5" fill={palette.bulb} />
-              })}
-
-              {/* the turning wheel */}
-              <g ref={wheelRef} data-testid="wheel" data-entry-count={wheelEntries.length}>
-                <g className="wheel-wedges" data-waiting={waiting && phase === 'idle' ? 'true' : 'false'} data-has-pick={landed ? 'true' : 'false'}>
-                  <Wedges entries={wheelEntries} palette={palette} pickedId={landed ? pick.entryId : null} />
-                </g>
-              </g>
-
-              {/* light stays put while the wheel turns */}
-              <circle r={WHEEL_R} fill="url(#wheel-shade)" pointerEvents="none" />
-              <circle r={WHEEL_R} fill="url(#wheel-glint)" pointerEvents="none" />
-
-              {/* hub */}
-              <circle r="15" fill={palette.rim} stroke={palette.rimEdge} strokeWidth="1.2" />
-              <circle r="12" fill={palette.primary} />
-              {logoUrl && <image href={logoUrl} x="-12" y="-12" width="24" height="24" preserveAspectRatio="xMidYMid slice" clipPath="url(#wheel-hub-clip)" />}
-
-              {/* flapper at 12 o'clock */}
-              <g transform="translate(0 -104)">
-                <g ref={flapRef} className="wheel-flapper">
-                  <path d="M-7 -6 L7 -6 L7 4 L0 24 L-7 4 Z" fill="#f8fafc" stroke={palette.rim} strokeWidth="1.2" strokeLinejoin="round" />
-                  <circle cx="0" cy="0" r="2.2" fill={palette.primary} />
-                </g>
-              </g>
-            </svg>
+            <WheelArt
+              entries={wheelEntries}
+              palette={palette}
+              logoUrl={logoUrl}
+              pickedId={landed ? pick.entryId : null}
+              waiting={waiting && phase === 'idle'}
+              hasPick={landed}
+              wheelRef={wheelRef}
+              flapRef={flapRef}
+            />
             {waiting && phase === 'idle' && (
               <p className="absolute left-1/2 top-[64%] -translate-x-1/2 rounded-full bg-background/85 px-5 py-2 font-display text-sm font-bold uppercase tracking-wider text-foreground">
                 Waiting for entries
