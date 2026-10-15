@@ -39,6 +39,7 @@ export default function NewSessionPage() {
             quiz_format: formData.quiz_format,
             max_participants: formData.max_participants,
             is_active: formData.is_active,
+            hunt_game: formData.session_type === 'treasure_hunt' ? !!formData.hunt_game : false,
             owner_id: user?.id,
           },
         ])

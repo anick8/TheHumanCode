@@ -20,6 +20,8 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
     quiz_format: initialData?.quiz_format || 'classic',
     max_participants: initialData?.max_participants ?? null,
     is_active: initialData?.is_active ?? true,
+    // New hunts are games (players join and are timed); existing hunts stay off.
+    hunt_game: initialData ? (initialData.hunt_game ?? false) : true,
   }))
   const [formError, setFormError] = useState(null)
   // Last-saved values, so Save is only enabled for real edits. Editing an
@@ -448,7 +450,7 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
             {formData.session_type === 'poll'
               ? 'Voting polls collect no names or IDs - only aggregate results.'
               : formData.session_type === 'treasure_hunt'
-                ? 'Each clue is reached only by scanning its own hidden QR code. Scanning collects no names or IDs.'
+                ? 'Each clue is reached only by scanning its own hidden QR code. Without the timed game switch, scanning collects no names or IDs.'
                 : formData.session_type === 'wheel'
                   ? 'Attendees join with just a name (up to 24 characters), which puts them on the wheel. You can also add entries yourself. The type is locked after the first spin.'
                 : `Quiz and comments sessions attach ${formData.session_type === 'quiz' ? 'answers' : 'comments'} to a name and/or ID so you can see who responded. Participants are not authenticated, so an ID only prevents duplicate entries - it is not verified.`}
@@ -527,6 +529,31 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
                 : 'Results are shown once, after the last question.'}
               {' '}You can change this later.
             </p>
+          </div>
+        )}
+
+        {formData.session_type === 'treasure_hunt' && (
+          <div className="flex items-start">
+            <div className="flex h-5 items-center">
+              <input
+                id="hunt_game"
+                name="hunt_game"
+                type="checkbox"
+                role="switch"
+                checked={!!formData.hunt_game}
+                onChange={(e) => updateField('hunt_game', e.target.checked)}
+                className="h-4 w-4 rounded border-border text-accent focus:ring-ring"
+              />
+            </div>
+            <div className="ml-3">
+              <label htmlFor="hunt_game" className="text-sm font-medium text-foreground">
+                Players join and are timed
+              </label>
+              <p className="text-sm text-muted-foreground">
+                Players scan a join code, enter a name, and race the clock. You start and run the hunt from a
+                host page. Off keeps the original anonymous scan-a-clue behaviour.
+              </p>
+            </div>
           </div>
         )}
 
