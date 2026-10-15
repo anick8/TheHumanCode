@@ -39,7 +39,9 @@ export default function SessionInspector({
   const isWheel = session.session_type === 'wheel'
   const isHunt = session.session_type === 'treasure_hunt'
   const isComments = session.session_type === 'comments'
-  const joinUrl = `${getAppUrl()}/vote/${session.slug}`
+  const isGame = isHunt && !!session.hunt_game
+  const joinPath = isGame ? `/hunt/${session.slug}` : `/vote/${session.slug}`
+  const joinUrl = `${getAppUrl()}${joinPath}`
   const countReady = isWheel || questionCount !== null
   const label = presentLabel(session, questionCount ?? 0)
 
@@ -81,7 +83,7 @@ export default function SessionInspector({
               {copied ? 'Copied' : 'Copy'}
             </button>
             <a
-              href={`/vote/${session.slug}`}
+              href={joinPath}
               target="_blank"
               rel="noreferrer"
               className={`${secondaryButton} h-9`}
@@ -158,6 +160,12 @@ export default function SessionInspector({
         <p role="alert" className="mt-2 text-xs text-destructive">
           {error}
         </p>
+      )}
+
+      {isGame && !readOnly && (
+        <Link href={`/dashboard/sessions/${session.id}/hunt`} className={`${secondaryButton} mt-3`}>
+          Run hunt
+        </Link>
       )}
 
       <div className={`mt-3 grid gap-2 ${isHunt ? 'grid-cols-2' : 'grid-cols-3'}`}>
