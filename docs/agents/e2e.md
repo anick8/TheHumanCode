@@ -15,3 +15,7 @@
 3. Drive the host side with `playwright-cli -s=host run-code "async page => {...}"`: one call can click, wait and return the page state, which costs less than separate click and snapshot calls. Read pages with `eval` or `find` instead of full snapshots.
 4. Pass `--filename=.playwright-cli/<name>` to `snapshot`; a bare filename lands in the repo root.
 5. Clean up with the dashboard Delete, then check `select count(*) from sessions where slug like 'e2e-%'` is 0.
+
+## Browser tests (local Supabase)
+
+`npm run test:e2e` starts its own Supabase stack (project `thehumancode-e2e`, ports 5442x, never the everyday 54321/54322), loads `database-setup.sql`, builds the app and runs `e2e/tests/*.spec.mjs` with Playwright. Needs Docker and the `supabase` CLI. Helpers live in `e2e/support/` (seed, signInOrganizer, organizer/player fixtures). CI: `.github/workflows/e2e.yml`.

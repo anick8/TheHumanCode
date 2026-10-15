@@ -42,6 +42,12 @@ yarn-error.log*
 !.env.example
 .gstack/
 
+# e2e harness output
+/e2e/.env.e2e
+/e2e/supabase/.temp/
+/e2e/supabase/.branches/
+/blob-report/
+
 # Playwright CLI output
 .playwright-cli/
 test-results/
