@@ -179,6 +179,33 @@ export default function CluesPage() {
         </div>
       </div>
 
+      {session.session_type === 'treasure_hunt' && session.hunt_game && (
+        <div className="mb-8 flex flex-col items-center rounded-2xl border border-border bg-card p-6 text-center shadow-sm print:break-inside-avoid print:border-black print:shadow-none">
+          <p className="mb-3 text-lg font-semibold text-foreground">Scan to join the hunt</p>
+          <div className="inline-flex rounded-xl bg-white p-3">
+            <QRCodeSVG
+              value={`${appUrl}/hunt/${session.slug}`}
+              size={200}
+              level="H"
+              includeMargin={true}
+              bgColor="#ffffff"
+              fgColor="#000000"
+            />
+          </div>
+          <p className="mt-3 break-all font-mono text-xs text-muted-foreground">
+            {`${appUrl}/hunt/${session.slug}`.replace(/^https?:\/\//, '')}
+          </p>
+          {!readOnly && (
+            <Link
+              href={`/dashboard/sessions/${sessionId}/hunt`}
+              className="mt-4 inline-flex items-center justify-center rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm hover:bg-muted transition-colors print:hidden"
+            >
+              Run hunt
+            </Link>
+          )}
+        </div>
+      )}
+
       {clues.length === 0 ? (
         <div className="rounded-2xl border-2 border-dashed border-border p-12 text-center print:hidden">
           <h3 className="text-lg font-medium text-foreground">No clues yet</h3>
