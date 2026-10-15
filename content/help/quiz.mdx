@@ -1,0 +1,39 @@
+# Quiz
+
+A Quiz asks named participants questions that each have one correct option. Every quiz is scored and **host-paced**: everyone follows your presenter screen.
+
+## The flow of one question
+
+1. You open the question. A countdown starts.
+2. Participants choose an option and **Lock** it. Until they lock, they can change their mind. After locking, the answer is final.
+3. You press **Reveal answer**. Every locked answer is judged, points are awarded and the correct option shows on every device. Nothing about correctness is visible before the reveal.
+4. You show the leaderboard (Classic) or the question board (Round-by-round), then move on.
+
+## Time limit and points
+
+- **Time limit**: from 5 to 120 seconds per question, 20 by default. Locks after the limit are refused (a one-second grace covers network delay). The limit is frozen once the question has answers.
+- **Points**: set per question in the [question editor](/help/question-editor).
+
+## Two formats
+
+Choose when you create the quiz or in settings. The format is locked once the quiz has its first answer.
+
+### Classic
+
+Scores add up. A **Leaderboard** is shown between questions and as the final ranking.
+
+**Ties** are broken by cumulative **response time**: the faster total wins. Speed never changes the score, and exactly equal scores and times share a rank.
+
+### Round-by-round
+
+There is no running total. After each reveal, the **Question board** shows only the participants who got that question right, fastest first. The presenter shows the top 10 plus "+N more got it right". Phones show everyone, with their own row highlighted.
+
+The quiz ends with a **Round recap**: each question with its fastest correct participant. Because nothing accumulates, people can **join mid-game** while entries are open. A small join QR stays in the corner of the presenter screen (you can hide it).
+
+<Callout type="warning">
+A participant who joins late in a Classic quiz starts as if they missed every question already revealed.
+</Callout>
+
+## Managing people
+
+Use [Close entries and Remove participant](/help/managing-the-room) to control the room. Quizzes created before every quiz was scored may show a **Legacy** badge and keep their old scoring.

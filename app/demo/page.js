@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import QRCodeDisplay from '@/components/QRCodeDisplay'
 
 export default function DemoPage() {
@@ -354,6 +355,10 @@ export default function DemoPage() {
               >
                 Supabase documentation
               </a>
+              . New to MC Genie? Read the{' '}
+              <Link href="/help" className="text-accent hover:text-accent">
+                Help Center
+              </Link>
               .
             </p>
           </div>

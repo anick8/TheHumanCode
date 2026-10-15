@@ -1,6 +1,11 @@
+import createMDX from '@next/mdx';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  /* config options here */
+  // Help Center articles live in content/help as .mdx
+  pageExtensions: ['js', 'jsx', 'md', 'mdx'],
 };
 
-export default nextConfig;
+const withMDX = createMDX({});
+
+export default withMDX(nextConfig);

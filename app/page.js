@@ -197,8 +197,9 @@ export default function Home() {
               <span className="font-semibold text-foreground">MC Genie</span>
               <span className="ml-2">© 2026. All rights reserved.</span>
             </div>
-            <div>
-              Built with Next.js, Supabase, and Tailwind CSS.
+            <div className="flex items-center gap-4">
+              <Link href="/help" className="font-medium text-foreground hover:text-accent">Help</Link>
+              <span>Built with Next.js, Supabase, and Tailwind CSS.</span>
             </div>
           </div>
         </div>
