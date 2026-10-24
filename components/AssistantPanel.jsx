@@ -44,6 +44,11 @@ const LOCKED_AFTER_VOTES = [
   'score_time_limit_seconds', 'identity_requires_name', 'identity_requires_id',
 ]
 
+// Whether applying saves straight to the session. A replace with votes in play
+// only loads into the editor, since saving would delete those votes.
+const willSaveOnApply = ({ kind, input, hasVotes }) =>
+  kind === 'questions' && !(input?.mode === 'replace' && hasVotes)
+
 // Why a draft cannot be applied, or null when it can. Returned as a sentence
 // because it is shown to the organizer in place of the Apply button.
 function blockedReason({ kind, input, hasVotes, isScored }) {
@@ -175,7 +180,7 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
 
   // Answering the tool call is what lets the conversation continue. Both Apply
   // and Discard must respond, or the run stays parked forever.
-  const respond = (tool, toolCallId, outcome) => {
+  const respond = (tool, toolCallId, outcome, saved) => {
     if (outcome === 'applied') suppressAutoSendRef.current = true
     setResolved((previous) => ({ ...previous, [toolCallId]: outcome }))
     addToolOutput({
@@ -183,7 +188,9 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
       toolCallId,
       output:
         outcome === 'applied'
-          ? 'The organizer applied this draft to their editor. It is not saved yet.'
+          ? saved
+            ? 'The organizer applied this draft and it was saved to the session.'
+            : 'The organizer applied this draft to their editor. It is not saved yet.'
           : 'The organizer discarded this draft.',
     })
   }
@@ -216,7 +223,7 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
         <header className="flex items-center justify-between border-b border-border px-5 py-4">
           <div>
             <h2 className="font-display text-lg font-bold text-foreground">AI Assistant</h2>
-            <p className="text-xs text-muted-foreground">Drafts questions. You review and save.</p>
+            <p className="text-xs text-muted-foreground">Drafts questions. Apply saves them to the session.</p>
           </div>
           <div className="flex items-center gap-1">
             <HelpLink slug="ai-assistant" label="About the AI assistant" className="mr-1" />
@@ -304,6 +311,7 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
                   const tool = isQuestionProposal ? TOOL_PROPOSE_QUESTIONS : TOOL_PROPOSE_SESSION_SETTINGS
                   const kind = isQuestionProposal ? 'questions' : 'settings'
                   const blocked = blockedReason({ kind, input: part.input, hasVotes, isScored })
+                  const willSave = willSaveOnApply({ kind, input: part.input, hasVotes })
                   return (
                     <AssistantProposal
                       key={index}
@@ -311,9 +319,10 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
                       input={part.input}
                       resolved={resolved[part.toolCallId]}
                       blockedReason={blocked}
+                      willSave={willSave}
                       onApply={(draft) => {
                         onApplyProposal(kind, draft)
-                        respond(tool, part.toolCallId, 'applied')
+                        respond(tool, part.toolCallId, 'applied', willSave)
                         onClose()
                       }}
                       onDiscard={() => respond(tool, part.toolCallId, 'discarded')}

@@ -10,45 +10,60 @@ export default function Leaderboard({
   entries = [],
   currentId = null,
   podium = false,
+  revealed = 3,
+  size = 'compact',
   total = entries.length,
 }) {
   const ranked = entries
   const tied = tiedScores(ranked)
   if (podium) {
     const top = ranked.slice(0, 3)
-    const medal = ['text-amber-300', 'text-slate-300', 'text-amber-600']
-    const ring = [
-      'border-amber-400/60 shadow-[0_0_40px_-8px_rgba(251,191,36,0.5)]',
-      'border-slate-400/40 shadow-[0_0_30px_-8px_rgba(148,163,184,0.4)]',
-      'border-amber-700/50 shadow-[0_0_30px_-8px_rgba(180,83,9,0.4)]',
+    const stage = size === 'stage'
+    // Reveal order is 3rd, 2nd, 1st; with fewer players the empty places are skipped.
+    const order = [2, 1, 0].filter((slot) => top[slot])
+    const shown = new Set(order.slice(0, revealed))
+    const look = [
+      { h: stage ? 'h-56' : 'h-32', tone: 'text-amber-300 border-amber-300/50 from-amber-300/25' },
+      { h: stage ? 'h-40' : 'h-24', tone: 'text-slate-300 border-slate-300/40 from-slate-300/20' },
+      { h: stage ? 'h-28' : 'h-16', tone: 'text-amber-600 border-amber-600/50 from-amber-600/20' },
     ]
-    const order = [1, 0, 2] // display 2nd, 1st, 3rd
-    const heights = ['h-24', 'h-32', 'h-20']
     return (
-      <div className="flex flex-col items-center">
-        <div className="flex items-end justify-center gap-4">
-          {order.map((slot) => {
+      <div className={`mx-auto w-full ${stage ? 'max-w-3xl' : 'max-w-md'}`}>
+        <div className={`flex items-end justify-center ${stage ? 'gap-4' : 'gap-2'}`}>
+          {[1, 0, 2].map((slot) => {
             const p = top[slot]
-            if (!p) return null
+            const on = shown.has(slot)
+            const isSelf = p && currentId && p.participant_id === currentId
+            const note = on && p && tieNote(tied, p.score, p.total_response_ms)
             return (
-              <div key={p.participant_id} className="flex flex-col items-center gap-3 animate-scale-in">
-                <span className={`font-display text-2xl font-bold ${medal[slot]}`}>#{p.rank ?? slot + 1}</span>
-                <div className={`flex w-32 flex-col items-center justify-end rounded-xl border bg-card px-3 pb-4 pt-5 ${ring[slot]} ${heights[slot]}`}>
-                  <span className="text-center text-lg font-bold leading-tight text-foreground line-clamp-2">
-                    {p.display_name}
-                  </span>
-                  <span className="mt-1 font-display text-xl text-accent">{p.score}</span>
-                  {tieNote(tied, p.score, p.total_response_ms) && (
-                    <span className="mt-1 text-center text-[11px] leading-tight text-muted-foreground">
-                      {tieNote(tied, p.score, p.total_response_ms)}
-                    </span>
+              <div key={slot} className="flex min-w-0 flex-1 flex-col items-center">
+                <div
+                  className={`podium-name mb-3 flex w-full flex-col items-center text-center ${on ? 'is-on' : ''}`}
+                  style={{ minHeight: stage ? '5.5rem' : '3.5rem' }}
+                  aria-hidden={!on}
+                >
+                  {p && (
+                    <>
+                      <span className={`w-full break-words font-bold leading-tight text-foreground line-clamp-2 ${stage ? (slot === 0 ? 'text-4xl' : 'text-2xl') : 'text-sm'}`}>
+                        {p.display_name}
+                        {isSelf && <span className="ml-1 text-xs font-normal text-accent">(you)</span>}
+                      </span>
+                      <span className={`font-display tabular-nums text-accent ${stage ? 'mt-1 text-2xl' : 'text-sm'}`}>{p.score} pts</span>
+                      {note && <span className="mt-0.5 text-[11px] leading-tight text-muted-foreground">{note}</span>}
+                    </>
                   )}
+                </div>
+                <div
+                  className={`podium-step flex w-full justify-center rounded-t-2xl border border-b-0 bg-gradient-to-b to-transparent pt-3 ${look[slot].h} ${look[slot].tone} ${on ? 'is-on' : ''}`}
+                >
+                  <span className={`font-display font-bold leading-none ${stage ? 'text-6xl' : 'text-3xl'}`}>{p?.rank ?? slot + 1}</span>
                 </div>
               </div>
             )
           })}
         </div>
-        {top.length === 0 && <p className="text-muted-foreground">No participants yet.</p>}
+        <div className="h-px w-full bg-border" />
+        {top.length === 0 && <p className="mt-4 text-center text-muted-foreground">No participants yet.</p>}
       </div>
     )
   }

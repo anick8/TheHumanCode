@@ -24,10 +24,11 @@ function formatSettingValue(key, value) {
 }
 
 /**
- * A draft the assistant produced. Nothing here has touched the database — the
- * organizer applies it into the editor, reviews it, and saves themselves.
+ * A draft the assistant produced. Nothing here has touched the database until
+ * the organizer applies it: questions save on apply, settings load into the
+ * form for the organizer to save.
  */
-export default function AssistantProposal({ kind, input, resolved, blockedReason, onApply, onDiscard }) {
+export default function AssistantProposal({ kind, input, resolved, blockedReason, willSave, onApply, onDiscard }) {
   const isQuestions = kind === 'questions'
   // Shuffled once so the preview and what gets applied agree.
   const draft = useMemo(
@@ -99,7 +100,11 @@ export default function AssistantProposal({ kind, input, resolved, blockedReason
 
       {resolved ? (
         <p className="mt-3 text-xs font-medium text-muted-foreground">
-          {resolved === 'applied' ? 'Applied to the editor — review it, then press Save.' : 'Discarded.'}
+          {resolved === 'applied'
+            ? willSave
+              ? 'Applied and saved.'
+              : 'Applied to the editor — review it, then press Save.'
+            : 'Discarded.'}
         </p>
       ) : (
         <>
@@ -117,7 +122,7 @@ export default function AssistantProposal({ kind, input, resolved, blockedReason
                 onClick={() => onApply(draft)}
                 className="inline-flex items-center rounded-lg bg-gradient-to-r from-primary to-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 transition-opacity"
               >
-                Apply to editor
+                {willSave ? 'Apply & save' : 'Apply to editor'}
               </button>
             )}
             <button
