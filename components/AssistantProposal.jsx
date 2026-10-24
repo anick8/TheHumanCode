@@ -1,5 +1,8 @@
 'use client'
 
+import { useMemo } from 'react'
+import { spreadCorrectAnswers } from '@/lib/quizShuffle'
+
 const SESSION_TYPE_LABELS = { poll: 'Voting poll', quiz: 'Quiz', comments: 'Image & comments' }
 
 const SETTING_LABELS = {
@@ -26,7 +29,12 @@ function formatSettingValue(key, value) {
  */
 export default function AssistantProposal({ kind, input, resolved, blockedReason, onApply, onDiscard }) {
   const isQuestions = kind === 'questions'
-  const questions = input?.questions ?? []
+  // Shuffled once so the preview and what gets applied agree.
+  const draft = useMemo(
+    () => (kind === 'questions' && input ? { ...input, questions: spreadCorrectAnswers(input.questions ?? []) } : input),
+    [kind, input]
+  )
+  const questions = draft?.questions ?? []
   const settings = input?.settings ?? {}
 
   return (
@@ -106,7 +114,7 @@ export default function AssistantProposal({ kind, input, resolved, blockedReason
             {!blockedReason && (
               <button
                 type="button"
-                onClick={onApply}
+                onClick={() => onApply(draft)}
                 className="inline-flex items-center rounded-lg bg-gradient-to-r from-primary to-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 transition-opacity"
               >
                 Apply to editor
