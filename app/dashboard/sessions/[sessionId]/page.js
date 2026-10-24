@@ -329,29 +329,45 @@ export default function SessionDetailPage() {
       }
     })
 
+    let next
     if (input?.mode === 'replace') {
-      const reindexed = newQuestions.map((question, index) => ({ ...question, order_index: index }))
-      updateQuestions(reindexed, newOptions)
-      setQuestionKeys(newKeys)
+      next = { questions: newQuestions, optionsByQuestion: newOptions, questionKeys: newKeys }
     } else {
       const offset = questions.length
       const appended = newQuestions.map((question, index) => ({
         ...question,
         order_index: offset + index,
       }))
-      updateQuestions([...questions, ...appended], { ...optionsByQuestion, ...newOptions })
-      setQuestionKeys((prev) => ({ ...prev, ...newKeys }))
+      next = {
+        questions: [...questions, ...appended],
+        optionsByQuestion: { ...optionsByQuestion, ...newOptions },
+        questionKeys: { ...questionKeys, ...newKeys },
+      }
     }
 
+    updateQuestions(next.questions, next.optionsByQuestion)
+    setQuestionKeys(next.questionKeys)
     setActiveTab('questions')
-    setSaveMessage('Draft questions applied below — review them, then press Save.')
+
+    // Replacing deletes the old questions and their votes, so with votes in
+    // play the organizer reviews first (see willSaveOnApply in AssistantPanel).
+    if (input?.mode === 'replace' && hasVotes) {
+      setSaveMessage('Draft questions applied below — review them, then press Save.')
+      return
+    }
+    saveQuestions(next)
   }
 
   // Persist the editor's current state to Supabase. New rows carry temp ids
   // (temp_/opt_ prefixes) and are inserted; existing uuids are updated; rows
   // removed in the editor are deleted. Deleting a question cascades to its
   // options and any votes cast on them.
-  const saveQuestions = async () => {
+  // `draft` lets applyProposal save a set it just built, since state set in the
+  // same tick isn't visible yet. The params shadow the state of the same name.
+  const saveQuestions = (draft) =>
+    persistQuestions(draft ?? { questions, optionsByQuestion, questionKeys })
+
+  const persistQuestions = async ({ questions, optionsByQuestion, questionKeys }) => {
     if (readOnly) return
     // RLS rejects writes to sessions the user doesn't own (including the
     // ownerless demo sessions); say so plainly instead of surfacing the
@@ -848,7 +864,7 @@ export default function SessionDetailPage() {
                 </p>
               </div>
               <button
-                onClick={saveQuestions}
+                onClick={() => saveQuestions()}
                 disabled={saving || !questionsDirty}
                 className="inline-flex shrink-0 items-center justify-center rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 text-base font-semibold text-white shadow-sm hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
               >
