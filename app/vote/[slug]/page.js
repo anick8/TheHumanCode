@@ -16,6 +16,12 @@ import { generateVoterToken } from '@/lib/utils'
 
 const RESULTS_MODE_LABELS = { live: 'Live results', after_all: 'After all questions' }
 
+// 1 -> "1st", 12 -> "12th"
+const ordinal = (n) => {
+  const v = n % 100
+  return n + (['th', 'st', 'nd', 'rd'][(v - 20) % 10] || ['th', 'st', 'nd', 'rd'][v] || 'th')
+}
+
 export default function VotingPage() {
   const params = useParams()
   const router = useRouter()
@@ -870,69 +876,76 @@ export default function VotingPage() {
 
         <main className="container mx-auto px-4 py-8">
           {finished || closed ? (
-            <div className="mx-auto max-w-2xl py-6">
-              <div className="rounded-2xl border border-border bg-card p-8 text-center shadow-lg">
-                <p className="text-sm font-semibold uppercase tracking-widest text-accent">
-                  {closed ? 'Quiz closed' : 'Quiz complete'}
-                </p>
+            <div className="mx-auto max-w-md space-y-10 py-4">
+              <section className="text-center">
                 {isRound ? (
-                  <h1 className="font-display mt-3 text-4xl font-bold text-foreground">Thanks for playing</h1>
+                  <h1 className="font-display text-4xl font-bold text-foreground">Thanks for playing</h1>
                 ) : (
                   <>
-                    <h1 className="font-display mt-3 text-4xl font-bold text-foreground">
-                      {standing?.total_score ?? 0} points
+                    <h1 className="font-display text-4xl font-bold text-foreground">
+                      {standing?.participant_rank ? `You finished ${ordinal(standing.participant_rank)}` : 'Quiz complete'}
                     </h1>
-                    <p className="mt-2 text-muted-foreground">
-                      {standing?.participant_rank
-                        ? `Rank #${standing.participant_rank} of ${standing.total_participants}`
-                        : ''}
+                    <p className="mt-3 text-lg text-muted-foreground">
+                      <span className="font-semibold tabular-nums text-accent">{standing?.total_score ?? 0} points</span>
+                      {standing?.total_participants ? ` among ${standing.total_participants} players` : ''}
+                      {review && review.length > 0 ? ` · ${review.filter((r) => r.chosen_option_id && r.chosen_option_id === r.correct_option_id).length} of ${review.length} right` : ''}
                     </p>
                   </>
                 )}
-                <p className="mt-4 text-sm text-muted-foreground">
+                <p className="mt-3 text-sm text-muted-foreground">
                   {closed
                     ? 'The host has closed the quiz.'
                     : 'Waiting for the host to close the quiz and show the final review.'}
                 </p>
-              </div>
+              </section>
 
-              <div className="mt-6 rounded-2xl border border-border bg-card p-6 shadow-lg">
+              <section>
                 <h2 className="font-display mb-6 text-center text-xl font-bold text-foreground">
-                  {isRound ? 'Question winners' : 'Final Leaderboard'}
+                  {isRound ? 'Question winners' : 'The podium'}
                 </h2>
                 {isRound ? (
                   <RoundRecap rows={roundRecap} currentId={participant?.id} />
                 ) : (
-                  <Leaderboard
-                    entries={leaderboard}
-                    currentId={participant?.id}
-                    podium
-                    total={totalQuestions}
-                  />
+                  <>
+                    <Leaderboard entries={leaderboard} currentId={participant?.id} podium total={totalQuestions} />
+                    {leaderboard.length > 3 && (
+                      <div className="mt-6">
+                        <Leaderboard entries={leaderboard.slice(3)} currentId={participant?.id} total={totalQuestions} />
+                      </div>
+                    )}
+                  </>
                 )}
-              </div>
+              </section>
 
               {closed && review && review.length > 0 && (
-                <div className="mt-6 rounded-2xl border border-border bg-card p-6 shadow-lg">
-                  <h2 className="font-display mb-4 text-xl font-bold text-foreground">Review</h2>
-                  <div className="space-y-4">
-                    {review.map((r, i) => (
-                      <div key={r.review_question_id} className="rounded-lg border border-border p-4">
-                        <p className="font-medium text-foreground">Q{i + 1}: {r.review_question_text}</p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          Your answer: {r.chosen_option_text || '—'}
-                        </p>
-                        <p className={`mt-1 text-sm font-medium ${
-                          r.chosen_option_id && r.chosen_option_id === r.correct_option_id
-                            ? 'text-emerald-300'
-                            : 'text-destructive'
-                        }`}>
-                          Correct: {r.correct_option_text || '—'}{isRound ? '' : ` • ${r.review_awarded_points ?? 0} pts`}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                <section>
+                  <h2 className="font-display mb-2 text-xl font-bold text-foreground">Your answers</h2>
+                  <ol className="divide-y divide-border">
+                    {review.map((r, i) => {
+                      const right = r.chosen_option_id && r.chosen_option_id === r.correct_option_id
+                      return (
+                        <li key={r.review_question_id} className="flex gap-3 py-4">
+                          <span className={`mt-0.5 w-5 shrink-0 text-center font-bold ${right ? 'text-emerald-300' : 'text-destructive'}`} aria-label={right ? 'Correct' : 'Incorrect'}>
+                            {right ? '✓' : '✗'}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-foreground">{i + 1}. {r.review_question_text}</p>
+                            {right ? (
+                              <p className="mt-1 text-sm text-muted-foreground">{r.correct_option_text}</p>
+                            ) : (
+                              <p className="mt-1 text-sm text-muted-foreground">
+                                You: {r.chosen_option_text || 'no answer'} · Answer: <span className="text-foreground">{r.correct_option_text || '—'}</span>
+                              </p>
+                            )}
+                          </div>
+                          {!isRound && (
+                            <span className="shrink-0 text-sm font-bold tabular-nums text-accent">+{r.review_awarded_points ?? 0}</span>
+                          )}
+                        </li>
+                      )
+                    })}
+                  </ol>
+                </section>
               )}
             </div>
           ) : lobby ? (

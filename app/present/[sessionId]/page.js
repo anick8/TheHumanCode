@@ -45,6 +45,8 @@ export default function PresentPage() {
   const [participantCount, setParticipantCount] = useState(0)
   const [participantNames, setParticipantNames] = useState([])
   const [leaderboard, setLeaderboard] = useState([])
+  // Final results reveal 3rd, 2nd, then 1st; local to the presenter's screen.
+  const [podiumStep, setPodiumStep] = useState(0)
   // Round-by-round quiz: the board for the open question, and the end recap.
   const [roundBoard, setRoundBoard] = useState([])
   const [roundRecap, setRoundRecap] = useState([])
@@ -494,7 +496,14 @@ export default function PresentPage() {
     if (questionId) setCommentCounts((prev) => ({ ...prev, [questionId]: Math.max(0, (prev[questionId] || 1) - 1) }))
   }
 
+  const podiumSteps = Math.min(3, leaderboard.length)
+  const revealPodium = () => setPodiumStep((n) => Math.min(podiumSteps, n + 1))
+
   const goNext = async () => {
+    if (closed && isScored && !isRound) {
+      revealPodium()
+      return
+    }
     if (!canAdvance) return
 
     // Host-paced quiz, on a real question: Reveal -> Leaderboard -> Next/End.
@@ -657,14 +666,27 @@ export default function PresentPage() {
         {isWheel ? (
           <WheelPresenter sessionId={sessionId} session={session} isOwner={isOwner} voteUrl={voteUrl} onError={setError} entriesClosed={entriesClosed} onToggleEntries={toggleEntries} togglingEntries={advancing} instagramHandle={isOwner && showInstagram ? instagramHandle : null} />
         ) : closed ? (
-          <div className="text-center w-full max-w-4xl">
-            <p className="text-sm font-semibold uppercase tracking-widest text-accent">Final results</p>
-            <h1 className="mt-3 font-display text-4xl font-bold text-foreground md:text-5xl">{session.title}</h1>
-            <div className="mt-10">
+          <div className="relative w-full max-w-4xl text-center">
+            {!isRound && <div className="spotlight pointer-events-none absolute -top-10 inset-x-[-20%] h-[28rem]" aria-hidden="true" />}
+            <h1 className="relative font-display text-5xl font-bold text-foreground md:text-6xl">Final results</h1>
+            <p className="relative mt-2 text-lg text-muted-foreground">{session.title}</p>
+            <div className="relative mt-12">
               {isRound ? (
                 <RoundRecap rows={roundRecap} />
               ) : (
-                <Leaderboard entries={leaderboard} podium total={total} />
+                <>
+                  <Leaderboard entries={leaderboard} podium size="stage" revealed={podiumStep} total={total} />
+                  <div className="mt-8 min-h-12">
+                    {podiumStep === 0 && leaderboard.length > 0 && (
+                      <p className="text-muted-foreground">Press → to reveal the podium</p>
+                    )}
+                    {podiumStep >= podiumSteps && leaderboard.length > 3 && (
+                      <p className="animate-fade-in text-lg text-muted-foreground">
+                        {leaderboard.slice(3, 8).map((p) => `${p.rank ?? ''} ${p.display_name}`).join('  ·  ')}
+                      </p>
+                    )}
+                  </div>
+                </>
               )}
             </div>
           </div>
@@ -909,15 +931,26 @@ export default function PresentPage() {
       {/* Controls - the session owner only */}
       {isWheel ? null : closed ? (
         <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-border px-6 py-4">
-          <p className="text-sm text-muted-foreground">Quiz closed · final results shown</p>
+          <p className="text-sm text-muted-foreground">Quiz closed · final results</p>
           {isOwner ? (
-            <button
-              onClick={() => updateSession({ scored_closed: false })}
-              disabled={advancing}
-              className="rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              Reopen quiz
-            </button>
+            <div className="flex items-center gap-3">
+              {!isRound && podiumSteps > 0 && (
+                <button
+                  onClick={revealPodium}
+                  disabled={podiumStep >= podiumSteps}
+                  className="rounded-lg bg-gradient-to-r from-primary to-accent px-6 py-3 font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                >
+                  {podiumStep >= podiumSteps ? 'All revealed' : podiumStep === podiumSteps - 1 ? 'Reveal the winner' : 'Reveal next place'}
+                </button>
+              )}
+              <button
+                onClick={() => updateSession({ scored_closed: false })}
+                disabled={advancing}
+                className="rounded-lg border border-border px-6 py-3 font-semibold text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+              >
+                Reopen quiz
+              </button>
+            </div>
           ) : (
             <p className="text-sm text-muted-foreground">Only the session owner can control this presentation.</p>
           )}
