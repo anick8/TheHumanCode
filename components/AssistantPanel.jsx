@@ -311,8 +311,8 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
                       input={part.input}
                       resolved={resolved[part.toolCallId]}
                       blockedReason={blocked}
-                      onApply={() => {
-                        onApplyProposal(kind, part.input)
+                      onApply={(draft) => {
+                        onApplyProposal(kind, draft)
                         respond(tool, part.toolCallId, 'applied')
                         onClose()
                       }}
