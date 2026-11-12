@@ -7,12 +7,12 @@ import DrawingCanvas from '@/components/DrawingCanvas'
 import Leaderboard from '@/components/Leaderboard'
 import { sendCanvasClear } from '@/lib/drawingChannel'
 import { blanksFor } from '@/lib/pictionaryBlanks'
+import { secondsLeft } from '@/lib/pictionaryPhone'
 
 const GUESS_POLL_MS = 1500 // Guess comments are not delivered by realtime
 const btn = 'rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50'
 const primaryBtn = 'inline-flex items-center rounded-lg bg-gradient-to-r from-primary to-accent px-8 py-3 text-lg font-semibold text-white shadow-lg hover:opacity-90 transition-opacity disabled:cursor-not-allowed disabled:opacity-50'
 
-const secondsLeft = (iso, now) => (iso ? Math.max(0, Math.ceil((Date.parse(iso) - now) / 1000)) : 0)
 
 // Presenter stage + host console for a Pictionary session. The page owns the header, the roster
 // drawer (Remove) and session updates; everything Round-shaped lives here.

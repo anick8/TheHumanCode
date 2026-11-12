@@ -519,9 +519,12 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
                       const n = parseInt(e.target.value, 10)
                       updateField(field, Number.isFinite(n) ? n : '')
                     }}
-                    className="w-40 rounded-lg border border-border bg-background px-3 py-2 text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    disabled={lockParticipation && field === 'pictionary_round_seconds'}
+                    className="w-40 rounded-lg border border-border bg-background px-3 py-2 text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-70"
                   />
-                  <p className="mt-2 text-sm text-muted-foreground">{hint}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {lockParticipation && field === 'pictionary_round_seconds' ? 'Locked after the first round.' : hint}
+                  </p>
                 </div>
               ))}
               <p className="text-sm text-muted-foreground sm:col-span-2">

@@ -274,8 +274,10 @@ BEGIN
   IF r.status <> 'drawing' OR r.started_at IS NULL OR r.ends_at <> r.started_at + interval '80 seconds' THEN
     RAISE EXCEPTION 'auto-pick should start the timer: %', to_jsonb(r);
   END IF;
-  v_err := pg_temp.error_of(format('SELECT public.auto_pick_pictionary_word(%L)', v_session));
-  IF v_err IS NULL THEN RAISE EXCEPTION 'auto-pick must only act on a Choosing Round'; END IF;
+  PERFORM public.auto_pick_pictionary_word(v_session);   -- a no-op once the Round is drawing
+  IF (pg_temp.latest_round(v_session)).started_at IS DISTINCT FROM r.started_at THEN
+    RAISE EXCEPTION 'auto-pick must only act on a Choosing Round';
+  END IF;
 
   v_err := pg_temp.error_of(format('SELECT public.timeout_pictionary_round(%L)', v_session));
   IF v_err IS NULL OR v_err NOT LIKE '%not up yet%' THEN RAISE EXCEPTION 'timeout must wait, got: %', v_err; END IF;

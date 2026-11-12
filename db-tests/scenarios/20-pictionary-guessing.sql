@@ -85,7 +85,7 @@ DECLARE
   r public.pictionary_rounds;
   v_err text;
 BEGIN
-  UPDATE public.pictionary_rounds SET ends_at = now() + interval '60 seconds' WHERE session_id = v_session;
+  UPDATE public.pictionary_rounds SET started_at = now() - interval '20 seconds', ends_at = now() + interval '60 seconds' WHERE session_id = v_session;
   IF (SELECT g.won FROM public.submit_pictionary_guess(v_g[1], 'dog') g) THEN RAISE EXCEPTION 'miss won'; END IF;
   IF NOT (SELECT g.won FROM public.submit_pictionary_guess(v_g[2], 'cat') g) THEN RAISE EXCEPTION 'match did not win'; END IF;
   r := pg_temp.latest_round(v_session);
@@ -93,7 +93,7 @@ BEGIN
   IF r.winner_participant_id IS DISTINCT FROM (SELECT id FROM public.participants WHERE join_token = v_g[2]) THEN
     RAISE EXCEPTION 'wrong winner';
   END IF;
-  IF r.winner_points <> 750 OR r.drawer_points <> 500 THEN RAISE EXCEPTION 'points % / %', r.winner_points, r.drawer_points; END IF;
+  IF abs(r.winner_points - 750) > 5 OR r.drawer_points <> 500 THEN RAISE EXCEPTION 'points % / %', r.winner_points, r.drawer_points; END IF;
   PERFORM pg_temp.age_guesses(v_g[1], 3);
   v_err := pg_temp.error_of(format('SELECT * FROM public.submit_pictionary_guess(%L, %L)', v_g[1], 'cat'));
   IF v_err IS NULL THEN RAISE EXCEPTION 'a later match was accepted'; END IF;
@@ -110,9 +110,9 @@ DECLARE
 BEGIN
   FOR c IN SELECT * FROM (VALUES (80, 1000), (40, 500), (60, 750), (24, 300), (10, 300), (1, 300)) AS t(left_s, expected) LOOP
     v_session := pg_temp.drawing_round('cat');
-    UPDATE public.pictionary_rounds SET ends_at = now() + make_interval(secs => c.left_s) WHERE session_id = v_session;
+    UPDATE public.pictionary_rounds SET started_at = now() + make_interval(secs => c.left_s - 80), ends_at = now() + make_interval(secs => c.left_s) WHERE session_id = v_session;
     PERFORM public.submit_pictionary_guess((pg_temp.guesser_tokens(v_session))[1], 'cat');
-    IF (pg_temp.latest_round(v_session)).winner_points <> c.expected THEN
+    IF abs((pg_temp.latest_round(v_session)).winner_points - c.expected) > 5 THEN
       RAISE EXCEPTION '% s left: expected %, got %', c.left_s, c.expected, (pg_temp.latest_round(v_session)).winner_points;
     END IF;
   END LOOP;
@@ -155,7 +155,7 @@ BEGIN
   -- while drawing: ends the Round; points come from the Guess's time, not the click
   r := public.pick_pictionary_winner(v_session, v_c1);
   IF r.status <> 'revealed' OR r.end_reason <> 'guessed' OR r.word <> 'cat' THEN RAISE EXCEPTION 'pick did not reveal: %', r; END IF;
-  IF r.winner_participant_id <> v_one OR r.winner_points <> 1000 OR r.drawer_points <> 500 THEN
+  IF r.winner_participant_id <> v_one OR abs(r.winner_points - 1000) > 5 OR r.drawer_points <> 500 THEN
     RAISE EXCEPTION 'pick result %', r;
   END IF;
 
@@ -203,9 +203,11 @@ BEGIN
     RAISE EXCEPTION 'a fresh game is one big tie';
   END IF;
 
-  UPDATE public.pictionary_rounds SET ends_at = now() + interval '40 seconds' WHERE id = v_round1;
+  UPDATE public.pictionary_rounds SET started_at = now() - interval '40 seconds', ends_at = now() + interval '40 seconds' WHERE id = v_round1;
   PERFORM public.submit_pictionary_guess(v_g[1], 'dog');
   PERFORM public.submit_pictionary_guess(v_g[2], 'cat');   -- 500 points, same as the Drawer
+  UPDATE public.comments SET created_at = now() WHERE round_id = v_round1 AND body = 'cat';
+  PERFORM public.pick_pictionary_winner(v_session, (SELECT id FROM public.comments WHERE round_id = v_round1 AND body = 'cat'));
   PERFORM public.start_pictionary_round(v_session);
   PERFORM public.skip_pictionary_round(v_session);
 

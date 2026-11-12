@@ -151,7 +151,8 @@ export default function PictionaryPhone({ session, participant, onSwitch }) {
   const nameOf = (id) => board.find((p) => p.participant_id === id)?.display_name
     ?? guesses.find((g) => g.participant_id === id)?.author_name
   const me = board.find((p) => p.participant_id === participant.id)
-  const isFinal = status === 'revealed' && round.round_number >= session.pictionary_round_count
+  // The podium waits for the host's Final results (sessions.scored_closed, kept fresh by the vote page).
+  const isFinal = status === 'revealed' && round.round_number >= session.pictionary_round_count && Boolean(session.scored_closed)
   const cooldown = cooldownLeft(lastGuessAt, now)
   const timeLeft = status === 'drawing' ? secondsLeft(round.ends_at, now) : 0
   const blanks = blankWords(round?.word_pattern)
@@ -297,7 +298,9 @@ export default function PictionaryPhone({ session, participant, onSwitch }) {
             <Leaderboard entries={board} podium total={session.pictionary_round_count} />
           </div>
         ) : (
-          <p className="text-center text-sm text-muted-foreground">Waiting for the host to start the next round.</p>
+          <p className="text-center text-sm text-muted-foreground">
+            {round.round_number >= session.pictionary_round_count ? 'Waiting for the final results.' : 'Waiting for the host to start the next round.'}
+          </p>
         )}
         {standing}
         {feed}
