@@ -22,7 +22,6 @@ export default function PictionaryPresenter({ sessionId, session, isOwner, voteU
   const [participants, setParticipants] = useState([])
   const [guesses, setGuesses] = useState([])
   const [board, setBoard] = useState([])
-  const [blanks, setBlanks] = useState({ roundId: null, text: '' })
   const [drawerChoice, setDrawerChoice] = useState('') // '' = random
   const [busy, setBusy] = useState(false)
   const [now, setNow] = useState(() => Date.now())
@@ -81,14 +80,6 @@ export default function PictionaryPresenter({ sessionId, session, isOwner, voteU
 
   // Ranking between Rounds and at the end.
   useEffect(() => { if (status === 'revealed' || podium) loadBoard() }, [status, round?.id, podium, loadBoard])
-
-  // Letter blanks: the presenter is the owner, who may fetch the Word; only its shape is kept in state.
-  useEffect(() => {
-    if (!isOwner || status !== 'drawing' || blanks.roundId === round.id) return
-    supabase.rpc('get_pictionary_word', { p_session_id: sessionId, p_join_token: null }).then(({ data }) => {
-      if (data) setBlanks({ roundId: round.id, text: blanksFor(data) })
-    })
-  }, [isOwner, status, round?.id, blanks.roundId, sessionId])
 
   // Clock, and the time boundaries the presenter drives (the server re-validates each call).
   useEffect(() => {
@@ -195,7 +186,7 @@ export default function PictionaryPresenter({ sessionId, session, isOwner, voteU
           {drawing ? (
             <>
               <p data-testid="timer" className="font-display text-5xl font-bold text-foreground">{secondsLeft(round.ends_at, now)}s</p>
-              <p data-testid="blanks" className="whitespace-pre font-mono text-2xl tracking-widest text-foreground">{blanks.roundId === round.id ? blanks.text : '…'}</p>
+              <p data-testid="blanks" className="whitespace-pre font-mono text-2xl tracking-widest text-foreground">{round.word_pattern ? blanksFor(round.word_pattern) : '…'}</p>
             </>
           ) : (
             <div data-testid="reveal" className="rounded-xl border border-accent/50 bg-primary/10 p-4">
