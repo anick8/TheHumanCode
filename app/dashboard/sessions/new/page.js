@@ -38,6 +38,12 @@ export default function NewSessionPage() {
             score_time_limit_seconds: formData.score_time_limit_seconds,
             quiz_format: formData.quiz_format,
             max_participants: formData.max_participants,
+            ...(formData.session_type === 'pictionary'
+              ? {
+                  pictionary_round_count: formData.pictionary_round_count,
+                  pictionary_round_seconds: formData.pictionary_round_seconds,
+                }
+              : {}),
             is_active: formData.is_active,
             owner_id: user?.id,
           },

@@ -19,6 +19,8 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
     score_time_limit_seconds: initialData?.score_time_limit_seconds ?? null,
     quiz_format: initialData?.quiz_format || 'classic',
     max_participants: initialData?.max_participants ?? null,
+    pictionary_round_count: initialData?.pictionary_round_count ?? 8,
+    pictionary_round_seconds: initialData?.pictionary_round_seconds ?? 80,
     is_active: initialData?.is_active ?? true,
   }))
   const [formError, setFormError] = useState(null)
@@ -43,12 +45,12 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
       ...prev,
       session_type: type,
       participation_mode: (type === 'poll' || type === 'treasure_hunt') ? 'anonymous' : 'identified',
-      is_scored: type === 'quiz',
+      is_scored: type === 'quiz' || type === 'pictionary',
       ...(type !== 'quiz' ? { score_time_limit_seconds: null, quiz_format: 'classic' } : {}),
       // The join limit is exposed for wheels only.
       ...(type !== 'wheel' ? { max_participants: null } : {}),
-      // A wheel always requires a name and never an ID (DB-enforced preset).
-      ...(type === 'wheel' ? { identity_requires_name: true, identity_requires_id: false } : {}),
+      // A wheel or Pictionary always requires a name and never an ID (DB-enforced preset).
+      ...(type === 'wheel' || type === 'pictionary' ? { identity_requires_name: true, identity_requires_id: false } : {}),
     }))
   }
 
@@ -68,7 +70,7 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
       if (values.session_type) {
         next.session_type = values.session_type
         next.participation_mode = (values.session_type === 'poll' || values.session_type === 'treasure_hunt') ? 'anonymous' : 'identified'
-        next.is_scored = values.session_type === 'quiz'
+        next.is_scored = values.session_type === 'quiz' || values.session_type === 'pictionary'
         if (values.session_type !== 'quiz') {
           next.score_time_limit_seconds = null
           next.quiz_format = 'classic'
@@ -76,7 +78,7 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
         if (values.session_type !== 'wheel') {
           next.max_participants = null
         }
-        if (values.session_type === 'wheel') {
+        if (values.session_type === 'wheel' || values.session_type === 'pictionary') {
           next.identity_requires_name = true
           next.identity_requires_id = false
         }
@@ -109,7 +111,11 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
       return
     }
     setFormError(null)
-    const ok = await onSubmit(formData)
+    // The Round settings only exist on Pictionary sessions; leaving them out
+    // elsewhere keeps other types saving on a database without those columns.
+    const { pictionary_round_count, pictionary_round_seconds, ...rest } = formData
+    const payload = formData.session_type === 'pictionary' ? formData : rest
+    const ok = await onSubmit(payload)
     if (initialData && ok !== false) {
       setSavedData(formData)
       setJustSaved(true)
@@ -359,9 +365,42 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
                 </div>
               </div>
             </label>
+
+            <label className={`relative rounded-lg border p-4 transition-colors ${
+              lockParticipation ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'
+            } ${
+              formData.session_type === 'pictionary'
+                ? 'border-ring bg-muted ring-2 ring-primary/20'
+                : 'border-border hover:bg-muted'
+            }`}>
+              <input
+                type="radio"
+                name="session_type"
+                value="pictionary"
+                checked={formData.session_type === 'pictionary'}
+                onChange={(e) => setSessionType(e.target.value)}
+                disabled={lockParticipation}
+                className="sr-only"
+              />
+              <div className="flex items-start">
+                <div className="flex-shrink-0">
+                  <div className="h-5 w-5 rounded-full border flex items-center justify-center">
+                    <div className={`h-2.5 w-2.5 rounded-full ${
+                      formData.session_type === 'pictionary' ? 'bg-primary' : 'bg-transparent'
+                    }`} />
+                  </div>
+                </div>
+                <div className="ml-3">
+                  <span className="block text-sm font-semibold text-foreground">Pictionary</span>
+                  <span className="block mt-1 text-sm text-muted-foreground">
+                    One attendee draws a secret word on their phone; everyone else races to guess it. Scored, with a leaderboard.
+                  </span>
+                </div>
+              </div>
+            </label>
           </div>
 
-          {formData.session_type !== 'poll' && formData.session_type !== 'treasure_hunt' && formData.session_type !== 'wheel' && (
+          {formData.session_type !== 'poll' && formData.session_type !== 'treasure_hunt' && formData.session_type !== 'wheel' && formData.session_type !== 'pictionary' && (
             <div className="mt-4 space-y-3 rounded-lg border border-border bg-muted/60 p-4">
               <label className={`flex items-start gap-3 ${lockParticipation ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}>
                 <input
@@ -449,12 +488,46 @@ export default function SessionForm({ onSubmit, initialData = null, loading = fa
               ? 'Voting polls collect no names or IDs - only aggregate results.'
               : formData.session_type === 'treasure_hunt'
                 ? 'Each clue is reached only by scanning its own hidden QR code. Scanning collects no names or IDs.'
+                : formData.session_type === 'pictionary'
+                  ? 'Attendees join with a name and take turns drawing; the server judges guesses against your word list. Always scored. The type is locked after the first round.'
                 : formData.session_type === 'wheel'
                   ? 'Attendees join with just a name (up to 24 characters), which puts them on the wheel. You can also add entries yourself. The type is locked after the first spin.'
                 : `Quiz and comments sessions attach ${formData.session_type === 'quiz' ? 'answers' : 'comments'} to a name and/or ID so you can see who responded. Participants are not authenticated, so an ID only prevents duplicate entries - it is not verified.`}
           </p>
           {formError && (
             <p className="mt-2 text-sm font-medium text-destructive">{formError}</p>
+          )}
+
+          {formData.session_type === 'pictionary' && (
+            <div className="mt-4 grid gap-4 border-t border-border pt-4 sm:grid-cols-2">
+              {[
+                ['pictionary_round_count', 'Rounds', 1, 50, 'How many rounds to play (1 to 50).'],
+                ['pictionary_round_seconds', 'Round time limit (seconds)', 10, 600, 'How long the drawer has once they pick a word (10 to 600).'],
+              ].map(([field, label, min, max, hint]) => (
+                <div key={field}>
+                  <label htmlFor={field} className="block text-sm font-medium text-foreground mb-2">{label}</label>
+                  <input
+                    type="number"
+                    id={field}
+                    min={min}
+                    max={max}
+                    step={1}
+                    inputMode="numeric"
+                    required
+                    value={formData[field]}
+                    onChange={(e) => {
+                      const n = parseInt(e.target.value, 10)
+                      updateField(field, Number.isFinite(n) ? n : '')
+                    }}
+                    className="w-40 rounded-lg border border-border bg-background px-3 py-2 text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                  <p className="mt-2 text-sm text-muted-foreground">{hint}</p>
+                </div>
+              ))}
+              <p className="text-sm text-muted-foreground sm:col-span-2">
+                Add your word list on the session page once it is created.
+              </p>
+            </div>
           )}
 
           {formData.session_type === 'wheel' && (

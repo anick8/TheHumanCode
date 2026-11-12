@@ -9,7 +9,7 @@ A set of questions an organizer runs for a room. Has exactly one Session type (P
 _Avoid_: Poll (as a synonym for any session - "poll" names one specific session type, not the container).
 
 **Session type**:
-One of five fixed presets: Poll (anonymous voting, never scored), Quiz (named participants, always scored), Comments (named participants, free-text reactions to images, never scored), Treasure Hunt (anonymous, no Participants at all - each Clue is reached only by scanning its own QR code), Wheel of Fortune (named participants who put themselves on the wheel; never scored). Chosen at creation and locked once the session has its first response.
+One of six fixed presets: Poll (anonymous voting, never scored), Quiz (named participants, always scored), Comments (named participants, free-text reactions to images, never scored), Treasure Hunt (anonymous, no Participants at all - each Clue is reached only by scanning its own QR code), Wheel of Fortune (named participants who put themselves on the wheel; never scored), Pictionary (named participants, always scored, host-paced, no Questions). Chosen at creation and locked once the session has its first response.
 
 **Poll**:
 A Session type where anonymous attendees vote on options and see aggregate results.
@@ -30,6 +30,22 @@ A Session type with no Participants: the organizer hides physical QR codes, each
 **Wheel of Fortune**:
 A Session type for a random draw: attendees join with a name (required, trimmed, at most 24 characters; duplicates allowed), which puts them on the wheel automatically, and the organizer may add manual Entries. The session is the wheel - one per session, no Questions. The organizer Spins from the presenter screen; the server chooses the Pick. The type is locked once the first Spin exists and unlocks again after Reset.
 _Avoid_: "Winner" and "prize" (a Pick is not necessarily a win - it may be a cold call or a presenter order), "segment" (only the visual slice of an Entry).
+
+**Pictionary**:
+A Session type where named Participants play a live drawing game: one Participant (the Drawer) draws a secret Word on their phone and the rest type Guesses. Always scored and host-paced, with no Questions. The organizer sets the number of Rounds (default 8) and the Round time limit (default 80 seconds), and supplies a Word list (one Word per line, at least 3). The type is locked once the first Round exists.
+_Avoid_: "question" for Rounds, "player" or "voter" for Participants.
+
+**Round**:
+One Word, one Drawer, one time-limited attempt in a Pictionary session. Ends on a winning Guess, the timer, or a Skip.
+
+**Drawer**:
+The Participant drawing in a Round. Sees the Word; cannot Guess.
+
+**Word**:
+The secret term a Drawer draws, taken from the organizer's Word list. Hidden from every phone and the presenter until the Round is revealed, except the Drawer's own.
+
+**Guess**:
+A Participant's free-text attempt at the Word in a Round, shown in a public live feed and judged by the server with a fuzzy match (no LLM). The first match wins the Round; the organizer can also pick any Guess as the winner.
 
 **Entry**:
 One item on the wheel: either *joined* (created when a Participant joins, labelled with their name) or *manual* (organizer-typed text, single or pasted one per line). Active until removed; a removed Entry stays listed greyed out and can be Restored. Removing an Entry never rewrites past Spins. There is no cap on Entries (the Join limit caps joined Participants only) and duplicate labels are kept.
