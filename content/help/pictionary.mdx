@@ -1,0 +1,51 @@
+# Pictionary
+
+A drawing and guessing game. In each **Round** one participant, the **Drawer**, picks a secret **Word** and draws it on their phone. The drawing appears live on your presenter screen and on every other phone, and everyone else types **Guesses**. Participants are named, the game is always scored and it is **host-paced**: you run it from the presenter screen.
+
+## Set it up
+
+1. Choose **Pictionary** as the session type when you [create the session](/help/create-your-first-session).
+2. Open the **Words** tab and type your **Word list**, one word or phrase per line. Each Word can be up to 40 characters and the list holds up to 200 Words. Duplicates are dropped. You need at least 3 Words, because each Round offers the Drawer three to choose from. You can also ask the [AI assistant](/help/ai-assistant) to draft a list from a theme.
+3. In [session settings](/help/session-settings), set the number of **Rounds** (default 8) and the **Round time limit** (default 80 seconds).
+
+The Word list, the Round time limit and the session type lock after the first Round.
+
+<Callout type="info">
+Plain, single, drawable things work best: "lighthouse", "birthday cake", "riding a bike". Avoid abstract ideas and long names.
+</Callout>
+
+## How a Round runs
+
+1. You press **Start** (later **Next round**), with at least 2 people joined. A Drawer is chosen at random, or pick one yourself from the dropdown.
+2. The Drawer sees three Words and has **15 seconds** to pick one. The two they do not pick stay in the list for later Rounds. The Word is never sent to any other phone or to the presenter screen before the reveal.
+3. The Round timer starts. The Drawer draws with a pen (two sizes), about six colours, an eraser, **undo** and **clear**. Their guess box is replaced by the canvas.
+4. Everyone else types Guesses into a public live feed. Each person can guess once every **2 seconds**.
+5. The **first** Guess that matches wins the Round. Matching is forgiving: small typos and plurals count, and so does the Word inside a short sentence ("is it a cat??"). There is no AI judging, so the server decides by comparing text.
+6. The Round also ends when the timer runs out (nobody wins) or when you skip it. The Word and the winner are then revealed to everyone.
+
+People who join mid-Round see the drawing so far, and a phone that reloads rejoins the current Round.
+
+## Your controls
+
+- **Pick as winner** or **Change winner**: next to any Guess in the feed. Use it when someone was right but the match missed, or to move the win to someone else. Points follow the winner you choose.
+- **Skip round**: ends the Round with no points.
+- **Clear canvas**: wipes the drawing on every screen while the Drawer is drawing.
+- **Pick another drawer**: swaps the Drawer, for example if they have left. The Round restarts with fresh Words and a new timer, and any Guesses made so far are cleared.
+- **Next round**: starts the next Round.
+- **Final results**: after the last Round, shows the final podium.
+
+## Scoring
+
+- **Guesser**: the winner earns `max(300, 1000 x time left / Round time)`. A fast guess is worth up to 1000 points, and no winner earns less than 300.
+- **Drawer**: a flat **500** points if their Word was guessed.
+- A skipped Round or a Round nobody guessed awards nothing.
+
+The Leaderboard shows between Rounds and as the final ranking.
+
+## Drawings are never saved
+
+A drawing exists only while its Round is running. It is not stored anywhere, so there is nothing to moderate afterwards and nothing to export.
+
+## Results
+
+The session's [results page](/help/results-and-export) has one row per Round (the Word, the Drawer, the winner or "nobody", and the time to guess), followed by the final Leaderboard.

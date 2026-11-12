@@ -219,3 +219,81 @@ BEGIN
     RAISE EXCEPTION 'unknown state %', p_state;
   END IF;
 END $$;
+
+
+-- ============================================================================
+-- Pictionary fixtures
+-- ============================================================================
+
+-- A Pictionary session owned by a fresh organizer, with its Word list set
+-- through the public function (the caller is left acting as the owner).
+-- Returns the session id.
+CREATE FUNCTION pg_temp.make_pictionary(p_words text DEFAULT E'cat\ndog\nfish\nbird\nhorse')
+RETURNS uuid LANGUAGE plpgsql AS $$
+DECLARE
+  v_owner uuid := gen_random_uuid();
+  v_session uuid := gen_random_uuid();
+BEGIN
+  INSERT INTO auth.users (id, email) VALUES (v_owner, v_owner || '@test.local');
+  PERFORM pg_temp.grant_to(v_owner, now() - interval '1 day', NULL);
+  INSERT INTO public.sessions (id, owner_id, title, slug, session_type, participation_mode,
+                               identity_requires_name, identity_requires_id, is_scored)
+  VALUES (v_session, v_owner, 'Scenario pictionary', 'scn-' || v_session, 'pictionary', 'identified',
+          true, false, true);
+  PERFORM pg_temp.act_as_owner(v_session);
+  PERFORM public.set_pictionary_words(v_session, p_words);
+  RETURN v_session;
+END $$;
+
+-- The newest Round of a session.
+CREATE FUNCTION pg_temp.latest_round(p_session uuid) RETURNS public.pictionary_rounds
+LANGUAGE sql AS $$
+  SELECT r FROM public.pictionary_rounds r WHERE r.session_id = p_session ORDER BY r.round_number DESC LIMIT 1
+$$;
+
+-- Join token of the newest Round's Drawer.
+CREATE FUNCTION pg_temp.drawer_token(p_session uuid) RETURNS text
+LANGUAGE sql AS $$
+  SELECT p.join_token FROM public.participants p WHERE p.id = (pg_temp.latest_round(p_session)).drawer_id
+$$;
+
+-- A Pictionary game with Ann, Ben and Cy joined and a Round in Drawing whose
+-- secret Word is p_word (the Drawer picks it from the offered choices). Leaves
+-- the caller acting as the owner. Returns the session id.
+CREATE FUNCTION pg_temp.drawing_round(p_word text) RETURNS uuid
+LANGUAGE plpgsql AS $$
+DECLARE
+  v_session uuid := pg_temp.make_pictionary(p_word || E'\nfiller one\nfiller two');
+  v_word uuid;
+BEGIN
+  PERFORM pg_temp.join_as(v_session, 'Ann');
+  PERFORM pg_temp.join_as(v_session, 'Ben');
+  PERFORM pg_temp.join_as(v_session, 'Cy');
+  PERFORM public.start_pictionary_round(v_session);
+  SELECT c.word_id INTO v_word FROM public.get_pictionary_choices(pg_temp.drawer_token(v_session)) c WHERE c.word = p_word;
+  PERFORM public.choose_pictionary_word(pg_temp.drawer_token(v_session), v_word);
+  RETURN v_session;
+END $$;
+
+-- Join tokens of the Participants who are not the newest Round's Drawer, by name.
+CREATE FUNCTION pg_temp.guesser_tokens(p_session uuid) RETURNS text[]
+LANGUAGE sql AS $$
+  SELECT array_agg(p.join_token ORDER BY p.name) FROM public.participants p
+   WHERE p.session_id = p_session AND p.id IS DISTINCT FROM (pg_temp.latest_round(p_session)).drawer_id
+$$;
+
+-- Moves a Participant's earlier Guesses p_seconds into the past, so the rate
+-- limit has (or has not) elapsed (now() is frozen inside a transaction).
+CREATE FUNCTION pg_temp.age_guesses(p_token text, p_seconds integer) RETURNS void
+LANGUAGE sql AS $$
+  UPDATE public.comments SET created_at = created_at - make_interval(secs => p_seconds)
+   WHERE participant_id = (SELECT id FROM public.participants WHERE join_token = p_token)
+$$;
+
+-- Submits a Guess for the Word p_word in a fresh Round; true when it won.
+CREATE FUNCTION pg_temp.matches(p_word text, p_guess text) RETURNS boolean
+LANGUAGE plpgsql AS $$
+DECLARE v_session uuid := pg_temp.drawing_round(p_word);
+BEGIN
+  RETURN (SELECT g.won FROM public.submit_pictionary_guess((pg_temp.guesser_tokens(v_session))[1], p_guess) g);
+END $$;

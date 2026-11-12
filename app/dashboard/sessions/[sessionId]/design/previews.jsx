@@ -335,6 +335,79 @@ function CluePreview({ theme, title, content }) {
   )
 }
 
+// ---- Pictionary -------------------------------------------------------------
+
+// A square canvas stand-in with a few theme-coloured strokes.
+function SampleCanvas({ className = '' }) {
+  return (
+    <svg viewBox="0 0 100 100" className={`aspect-square w-full rounded-xl border border-border bg-white ${className}`} aria-label="Sample drawing">
+      <path d="M20 80 L20 48 L50 22 L80 48 L80 80 Z" fill="none" stroke="currentColor" strokeWidth="3" strokeLinejoin="round" className="text-primary" />
+      <path d="M42 80 L42 60 L58 60 L58 80" fill="none" stroke="currentColor" strokeWidth="3" className="text-accent" />
+    </svg>
+  )
+}
+
+function GuessFeed({ guesses, winnerId = null }) {
+  return (
+    <ul className="space-y-2">
+      {guesses.map((g) => (
+        <li
+          key={g.id}
+          className={`rounded-xl border px-4 py-2.5 ${g.id === winnerId ? 'border-primary bg-primary text-white' : 'border-border bg-card text-foreground'}`}
+        >
+          <span className="text-xs font-semibold opacity-80">{g.name}</span>
+          <p>{g.body}</p>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function DrawingPreview({ theme, title, content }) {
+  return (
+    <Stage theme={theme} title={title} subtitle="Round 1 of 8">
+      <div className="grid gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <div>
+          <SampleCanvas />
+          <p className="mt-3 font-display text-3xl font-bold tracking-[0.3em] text-foreground">_ _ _ _ _</p>
+          <p className="text-sm text-muted-foreground">{content.people.leaderboard[0].display_name} is drawing · 1:12</p>
+        </div>
+        <GuessFeed guesses={content.people.guesses.slice(0, 2)} />
+      </div>
+    </Stage>
+  )
+}
+
+function GuessingPreview({ theme, title, content }) {
+  return (
+    <PhoneFrame theme={theme} title={title} subtitle="Round 1 of 8">
+      <SampleCanvas />
+      <p className="mt-3 text-center font-display text-2xl font-bold tracking-[0.3em] text-foreground">_ _ _ _ _</p>
+      <div className="mt-4">
+        <GuessFeed guesses={content.people.guesses} />
+      </div>
+      <div className="mt-4 rounded-lg border border-border px-4 py-3 text-foreground/50">Type your guess</div>
+    </PhoneFrame>
+  )
+}
+
+function WinnerPreview({ theme, title, content }) {
+  const [first] = content.people.leaderboard
+  return (
+    <Stage theme={theme} title={title} subtitle="Round 1 of 8">
+      <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <SampleCanvas />
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-widest text-accent">The word was</p>
+          <p className="mt-2 font-display text-5xl font-bold text-foreground">house</p>
+          <p className="mt-4 text-lg text-foreground">{first.display_name} guessed it · +850</p>
+          <p className="text-sm text-muted-foreground">Drawer bonus · +500</p>
+        </div>
+      </div>
+    </Stage>
+  )
+}
+
 // ---- Dispatch ---------------------------------------------------------------
 
 export default function PreviewFor({ tab, theme, title, content }) {
@@ -355,6 +428,9 @@ export default function PreviewFor({ tab, theme, title, content }) {
     case 'wheel': return <WheelPreview {...props} picked={false} />
     case 'pick': return <WheelPreview {...props} picked />
     case 'clue': return <CluePreview {...props} />
+    case 'drawing': return <DrawingPreview {...props} />
+    case 'guessing': return <GuessingPreview {...props} />
+    case 'winner': return <WinnerPreview {...props} />
     default: return null
   }
 }

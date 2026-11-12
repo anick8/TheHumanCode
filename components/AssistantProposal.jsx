@@ -3,7 +3,7 @@
 import { useMemo } from 'react'
 import { spreadCorrectAnswers } from '@/lib/quizShuffle'
 
-const SESSION_TYPE_LABELS = { poll: 'Voting poll', quiz: 'Quiz', comments: 'Image & comments' }
+const SESSION_TYPE_LABELS = { poll: 'Voting poll', quiz: 'Quiz', comments: 'Image & comments', pictionary: 'Pictionary' }
 
 const SETTING_LABELS = {
   title: 'Title',
@@ -36,6 +36,8 @@ export default function AssistantProposal({ kind, input, resolved, blockedReason
   )
   const questions = draft?.questions ?? []
   const settings = input?.settings ?? {}
+  const isWords = kind === 'words'
+  const words = input?.words ?? []
 
   return (
     <div className="rounded-xl border border-border bg-muted/50 p-4">
@@ -44,13 +46,15 @@ export default function AssistantProposal({ kind, input, resolved, blockedReason
           <p className="text-sm font-semibold text-foreground break-words">
             {isQuestions
               ? `Draft: ${questions.length} question${questions.length === 1 ? '' : 's'}`
-              : 'Draft: session settings'}
+              : isWords
+                ? `Draft: ${words.length} word${words.length === 1 ? '' : 's'}`
+                : 'Draft: session settings'}
           </p>
           {input?.summary && (
             <p className="mt-1 text-xs text-muted-foreground break-words">{input.summary}</p>
           )}
         </div>
-        {isQuestions && input?.mode === 'replace' && (
+        {(isQuestions || isWords) && input?.mode === 'replace' && (
           <span className="flex-shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-300">
             Replaces all
           </span>
@@ -86,7 +90,17 @@ export default function AssistantProposal({ kind, input, resolved, blockedReason
         </ol>
       )}
 
-      {!isQuestions && (
+      {isWords && (
+        <ul className="mt-3 flex flex-wrap gap-1.5">
+          {words.map((word, index) => (
+            <li key={index} className="rounded-full border border-border bg-card px-2.5 py-1 text-xs text-foreground break-all">
+              {word}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {!isQuestions && !isWords && (
         <dl className="mt-3 space-y-1.5">
           {Object.entries(settings).map(([key, value]) => (
             <div key={key} className="flex items-baseline justify-between gap-x-4 gap-y-1 text-xs">
@@ -99,7 +113,7 @@ export default function AssistantProposal({ kind, input, resolved, blockedReason
 
       {resolved ? (
         <p className="mt-3 text-xs font-medium text-muted-foreground">
-          {resolved === 'applied' ? 'Applied to the editor — review it, then press Save.' : 'Discarded.'}
+          {resolved === 'applied' ? (isWords ? 'Saved to the word list.' : 'Applied to the editor — review it, then press Save.') : 'Discarded.'}
         </p>
       ) : (
         <>

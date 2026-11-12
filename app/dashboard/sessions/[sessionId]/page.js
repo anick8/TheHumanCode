@@ -8,6 +8,8 @@ import QRCodeDisplay from '@/components/QRCodeDisplay'
 import SessionForm from '@/components/SessionForm'
 import QuestionEditor from '@/components/QuestionEditor'
 import WheelEntriesPanel from '@/components/WheelEntriesPanel'
+import { mergeWords } from '@/lib/pictionaryWords'
+import PictionaryWordsPanel from '@/components/PictionaryWordsPanel'
 import AssistantPanel from '@/components/AssistantPanel'
 import { useAccess } from '@/app/components/AccessProvider'
 import ClearResponsesButton from '@/components/ClearResponsesButton'
@@ -68,6 +70,9 @@ export default function SessionDetailPage() {
   const [hasVotes, setHasVotes] = useState(false)
   // A wheel has no votes; its Spins lock the session type instead.
   const [hasSpins, setHasSpins] = useState(false)
+  // Likewise a Pictionary session's Rounds lock its type and Word list.
+  const [hasRounds, setHasRounds] = useState(false)
+  const [wordsKey, setWordsKey] = useState(0)
   const [questionKeys, setQuestionKeys] = useState({})
   // Editor contents as last loaded/saved; null until the first load finishes.
   const [savedSnapshot, setSavedSnapshot] = useState(null)
@@ -95,6 +100,7 @@ export default function SessionDetailPage() {
   const isComments = session?.session_type === 'comments'
   const isTreasureHunt = session?.session_type === 'treasure_hunt'
   const isWheel = session?.session_type === 'wheel'
+  const isPictionary = session?.session_type === 'pictionary'
 
   useEffect(() => {
     if (sessionId) {
@@ -116,6 +122,20 @@ export default function SessionDetailPage() {
     window.addEventListener('focus', check)
     return () => window.removeEventListener('focus', check)
   }, [sessionId, isWheel]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Rounds are played on the presenter screen, so re-check on focus too.
+  useEffect(() => {
+    if (!sessionId || !isPictionary) return
+    const check = () =>
+      supabase
+        .from('pictionary_rounds')
+        .select('id', { count: 'exact', head: true })
+        .eq('session_id', sessionId)
+        .then(({ count }) => setHasRounds((count || 0) > 0))
+    check()
+    window.addEventListener('focus', check)
+    return () => window.removeEventListener('focus', check)
+  }, [sessionId, isPictionary]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (searchParams.get('assistant') === '1') setAssistantOpen(true)
@@ -293,7 +313,27 @@ export default function SessionDetailPage() {
   // database - it produces the same temp-id shapes QuestionEditor creates by
   // hand, so the existing saveQuestions() persists them unchanged once the
   // organizer has reviewed the draft and pressed Save.
-  const applyProposal = (kind, input) => {
+  const applyProposal = async (kind, input) => {
+    if (kind === 'words') {
+      // The Word list lives behind RPCs (hidden from client tables), so unlike
+      // questions it is saved here, through the same RPC the Words panel uses.
+      const { data: existing, error: readError } = await supabase.rpc('get_pictionary_words', { p_session_id: sessionId })
+      const merged = mergeWords(existing, input?.words ?? [], input?.mode)
+      const { data, error: saveError } = readError
+        ? { error: readError }
+        : await supabase.rpc('set_pictionary_words', { p_session_id: sessionId, p_words: merged })
+      if (saveError) {
+        setSaveMessage(null)
+        setSaveError(saveError.message)
+        return false
+      }
+      setSaveError(null)
+      setWordsKey((k) => k + 1) // remount the panel so it reloads the saved list
+      setActiveTab('questions')
+      setSaveMessage(`Saved ${data} ${data === 1 ? 'word' : 'words'} to the word list.`)
+      return true
+    }
+
     if (kind === 'settings') {
       // Merged into SessionForm's own state, not written. The organizer still
       // presses Save there, exactly as if they had changed the fields by hand.
@@ -691,7 +731,7 @@ export default function SessionDetailPage() {
                   Legacy · unscored
                 </span>
               )}
-              {!isComments && !isTreasureHunt && !isWheel && (
+              {!isComments && !isTreasureHunt && !isWheel && !isPictionary && (
                 <span className="inline-flex items-center rounded-full bg-primary/15 px-3 py-1 text-xs font-medium text-accent">
                   {RESULTS_MODE_LABELS[session.results_mode] || session.results_mode}
                 </span>
@@ -743,7 +783,7 @@ export default function SessionDetailPage() {
                 View Results
               </button>
             )}
-            {!isTreasureHunt && !readOnly && (
+            {!isTreasureHunt && !isPictionary && !readOnly && (
               <ClearResponsesButton
                 sessionId={sessionId}
                 rewindsQuiz={Boolean(session.is_scored)}
@@ -772,7 +812,7 @@ export default function SessionDetailPage() {
             <svg className="mr-2 h-5 w-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            {isWheel ? 'Entries' : 'Questions'}
+            {isWheel ? 'Entries' : isPictionary ? 'Words' : 'Questions'}
           </button>
           <button
             onClick={() => setActiveTab('qr')}
@@ -809,7 +849,17 @@ export default function SessionDetailPage() {
         <WheelEntriesPanel sessionId={sessionId} pollMs={5000} disabled={!canEdit} />
       )}
 
-      {activeTab === 'questions' && !isWheel && (
+      {activeTab === 'questions' && isPictionary && (saveError || saveMessage) && (
+        <p role="status" className={`mb-4 text-sm font-medium ${saveError ? 'text-destructive' : 'text-emerald-300'}`}>
+          {saveError || saveMessage}
+        </p>
+      )}
+
+      {activeTab === 'questions' && isPictionary && (
+        <PictionaryWordsPanel key={wordsKey} sessionId={sessionId} locked={hasRounds} disabled={!canEdit} />
+      )}
+
+      {activeTab === 'questions' && !isWheel && !isPictionary && (
         <div className="space-y-8">
           <fieldset disabled={readOnly} className={readOnly ? 'min-w-0 opacity-70' : 'min-w-0'}>
           <QuestionEditor
@@ -909,7 +959,7 @@ export default function SessionDetailPage() {
               initialData={session}
               onSubmit={updateSession}
               loading={loading}
-              lockParticipation={hasVotes || hasSpins}
+              lockParticipation={hasVotes || hasSpins || hasRounds}
               appliedSettings={appliedSettings}
             />
           </fieldset>
@@ -961,6 +1011,7 @@ export default function SessionDetailPage() {
           onApplyProposal={applyProposal}
           hasVotes={hasVotes}
           isScored={Boolean(session?.is_scored)}
+          wordsLocked={hasRounds}
         />
       )}
     </div>

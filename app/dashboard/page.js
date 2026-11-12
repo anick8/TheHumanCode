@@ -31,7 +31,9 @@ import SessionInspector from './components/SessionInspector'
 */
 
 // Preferred chip order; any unknown future type is appended after these.
-const TYPE_ORDER = ['poll', 'quiz', 'wheel', 'treasure_hunt', 'comments']
+// Types whose sessions have no Questions to count.
+const NO_QUESTIONS = ['wheel', 'pictionary']
+const TYPE_ORDER = ['poll', 'quiz', 'wheel', 'treasure_hunt', 'pictionary', 'comments']
 
 const DESKTOP_QUERY = '(min-width: 1024px)'
 
@@ -172,7 +174,7 @@ export default function DashboardHome() {
   useEffect(() => {
     setInspectorError(null)
     setQuestionCount(null)
-    if (!selected || selected.session_type === 'wheel') return
+    if (!selected || NO_QUESTIONS.includes(selected.session_type)) return
     let cancelled = false
     supabase
       .from('questions')
@@ -222,7 +224,7 @@ export default function DashboardHome() {
     // The count can still be loading when P is pressed; resuming depends on it,
     // so fetch it here rather than risk resetting a run in progress.
     let count = session.id === selected?.id ? questionCount : null
-    if (count === null && session.session_type !== 'wheel') {
+    if (count === null && !NO_QUESTIONS.includes(session.session_type)) {
       const { count: fetched } = await supabase
         .from('questions')
         .select('id', { count: 'exact', head: true })
@@ -315,7 +317,7 @@ export default function DashboardHome() {
         if (titleRes.ok) {
           const titleData = await titleRes.json()
           if (titleData.title) title = titleData.title
-          if (titleData.sessionType === 'poll' || titleData.sessionType === 'quiz') {
+          if (['poll', 'quiz', 'pictionary'].includes(titleData.sessionType)) {
             sessionType = titleData.sessionType
           }
         }
@@ -336,7 +338,7 @@ export default function DashboardHome() {
           participation_mode: sessionType === 'poll' ? 'anonymous' : 'identified',
           identity_requires_name: true,
           identity_requires_id: false,
-          is_scored: sessionType === 'quiz',
+          is_scored: sessionType === 'quiz' || sessionType === 'pictionary',
           score_time_limit_seconds: null,
           is_active: true,
           owner_id: user?.id,

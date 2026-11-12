@@ -5018,3 +5018,1382 @@ $$;
 
 REVOKE ALL ON FUNCTION public.get_clue(text) FROM public;
 GRANT EXECUTE ON FUNCTION public.get_clue(text) TO anon, authenticated;
+
+-- ============================================================================
+-- Pictionary: session type, hidden Words and the Round lifecycle (no guessing)
+-- ============================================================================
+
+-- A live drawing game. One Participant (the Drawer) picks a secret Word from
+-- three offered and draws it; the others guess. This migration holds the
+-- schema and the Round lifecycle only: Guess judging and scoring come later.
+-- The Word lives in a table no client can read; the public Round record
+-- carries it only after the Round is revealed.
+
+-- Fuzzy matching for Guess judging (a later ticket); needs to exist in the
+-- scratch database and on hosted Supabase.
+CREATE EXTENSION IF NOT EXISTS fuzzystrmatch WITH SCHEMA extensions;
+
+-- ---- session type and settings ---------------------------------------------
+ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_session_type_check;
+ALTER TABLE sessions ADD CONSTRAINT sessions_session_type_check
+  CHECK (session_type IN ('poll', 'quiz', 'comments', 'treasure_hunt', 'wheel', 'pictionary'));
+
+ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_type_consistency;
+ALTER TABLE sessions ADD CONSTRAINT sessions_type_consistency CHECK (
+     (session_type = 'poll'          AND participation_mode = 'anonymous'  AND NOT is_scored)
+  OR (session_type = 'quiz'          AND participation_mode = 'identified')
+  OR (session_type = 'comments'      AND participation_mode = 'identified' AND NOT is_scored)
+  OR (session_type = 'treasure_hunt' AND participation_mode = 'anonymous'  AND NOT is_scored)
+  OR (session_type = 'wheel'         AND participation_mode = 'identified' AND NOT is_scored
+                                     AND identity_requires_name AND NOT identity_requires_id)
+  OR (session_type = 'pictionary'    AND participation_mode = 'identified' AND is_scored
+                                     AND identity_requires_name AND NOT identity_requires_id)
+);
+
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS pictionary_round_count integer NOT NULL DEFAULT 8;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS pictionary_round_seconds integer NOT NULL DEFAULT 80;
+ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_pictionary_round_count_check;
+ALTER TABLE sessions ADD CONSTRAINT sessions_pictionary_round_count_check
+  CHECK (pictionary_round_count BETWEEN 1 AND 50);
+ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_pictionary_round_seconds_check;
+ALTER TABLE sessions ADD CONSTRAINT sessions_pictionary_round_seconds_check
+  CHECK (pictionary_round_seconds BETWEEN 10 AND 600);
+
+-- ---- Rounds (public, realtime) ---------------------------------------------
+-- status: choosing (Drawer picks a Word, 15s) -> drawing (timer runs) -> revealed.
+-- word stays NULL until revealed. winner_* and drawer_points are filled by the
+-- Guess tickets; a Round ended by Skip or timeout leaves them empty / 0.
+CREATE TABLE IF NOT EXISTS pictionary_rounds (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id uuid NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  round_number integer NOT NULL CHECK (round_number > 0),
+  drawer_id uuid REFERENCES participants(id) ON DELETE SET NULL,
+  status text NOT NULL DEFAULT 'choosing' CHECK (status IN ('choosing', 'drawing', 'revealed')),
+  word text,
+  choose_deadline timestamptz,
+  started_at timestamptz,
+  ends_at timestamptz,
+  ended_at timestamptz,
+  end_reason text CHECK (end_reason IN ('guessed', 'timeout', 'skipped')),
+  winner_participant_id uuid REFERENCES participants(id) ON DELETE SET NULL,
+  winner_points integer,
+  drawer_points integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (session_id, round_number)
+);
+
+-- ---- hidden Word store -------------------------------------------------------
+-- offered_round_id: on offer to that Round's Drawer. used_round_id: picked.
+-- A Word with neither is in the pool.
+CREATE TABLE IF NOT EXISTS pictionary_words (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id uuid NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  word text NOT NULL CHECK (char_length(word) BETWEEN 1 AND 40),
+  position integer NOT NULL,
+  offered_round_id uuid REFERENCES pictionary_rounds(id) ON DELETE SET NULL,
+  used_round_id uuid REFERENCES pictionary_rounds(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pictionary_words_session ON pictionary_words(session_id);
+
+-- ---- Guesses reuse Comments ----------------------------------------------------
+ALTER TABLE comments ALTER COLUMN question_id DROP NOT NULL;
+ALTER TABLE comments ADD COLUMN IF NOT EXISTS round_id uuid REFERENCES pictionary_rounds(id) ON DELETE CASCADE;
+ALTER TABLE comments DROP CONSTRAINT IF EXISTS comments_question_or_round;
+ALTER TABLE comments ADD CONSTRAINT comments_question_or_round
+  CHECK (question_id IS NOT NULL OR round_id IS NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_comments_round ON comments(round_id, created_at);
+
+ALTER TABLE pictionary_rounds ADD COLUMN IF NOT EXISTS winner_comment_id uuid REFERENCES comments(id) ON DELETE SET NULL;
+
+-- ---- RLS ---------------------------------------------------------------------
+-- Rounds: readable like Questions (active sessions, or the owner); every write
+-- goes through the functions below. Words: no policy and no grant, so no client
+-- can read or write them directly.
+ALTER TABLE pictionary_rounds ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pictionary_words ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Anyone can view rounds of active sessions" ON pictionary_rounds;
+CREATE POLICY "Anyone can view rounds of active sessions" ON pictionary_rounds FOR SELECT
+  USING (EXISTS (SELECT 1 FROM sessions s WHERE s.id = pictionary_rounds.session_id AND s.is_active = true));
+
+DROP POLICY IF EXISTS "Owners can view their rounds" ON pictionary_rounds;
+CREATE POLICY "Owners can view their rounds" ON pictionary_rounds FOR SELECT TO authenticated
+  USING (EXISTS (SELECT 1 FROM sessions s WHERE s.id = pictionary_rounds.session_id AND s.owner_id = auth.uid()));
+
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON pictionary_rounds FROM anon, authenticated;
+REVOKE ALL ON pictionary_words FROM anon, authenticated;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime')
+     AND NOT EXISTS (
+       SELECT 1 FROM pg_publication_tables
+       WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'pictionary_rounds'
+     )
+  THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE pictionary_rounds;
+  END IF;
+END $$;
+
+-- ---- type lock ---------------------------------------------------------------
+-- As before, plus the type freezes once the first Pictionary Round exists.
+CREATE OR REPLACE FUNCTION public.prevent_identity_change_after_votes()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+  IF (NEW.participation_mode IS DISTINCT FROM OLD.participation_mode
+      OR NEW.identity_requires_name IS DISTINCT FROM OLD.identity_requires_name
+      OR NEW.identity_requires_id IS DISTINCT FROM OLD.identity_requires_id
+      OR NEW.is_scored IS DISTINCT FROM OLD.is_scored
+      OR NEW.score_time_limit_seconds IS DISTINCT FROM OLD.score_time_limit_seconds
+      OR NEW.quiz_format IS DISTINCT FROM OLD.quiz_format)
+     AND EXISTS (
+       SELECT 1 FROM public.votes v
+       JOIN public.questions q ON q.id = v.question_id
+       WHERE q.session_id = NEW.id
+     )
+  THEN
+    RAISE EXCEPTION 'The session type cannot be changed after voting has started';
+  END IF;
+
+  -- Wheel -> Comments changes no flag above, so the type itself is checked.
+  IF (NEW.session_type IS DISTINCT FROM OLD.session_type
+      OR NEW.participation_mode IS DISTINCT FROM OLD.participation_mode
+      OR NEW.identity_requires_name IS DISTINCT FROM OLD.identity_requires_name
+      OR NEW.identity_requires_id IS DISTINCT FROM OLD.identity_requires_id
+      OR NEW.is_scored IS DISTINCT FROM OLD.is_scored)
+     AND EXISTS (SELECT 1 FROM public.wheel_spins w WHERE w.session_id = NEW.id)
+  THEN
+    RAISE EXCEPTION 'The session type cannot be changed after the wheel has been spun';
+  END IF;
+
+  IF (NEW.session_type IS DISTINCT FROM OLD.session_type
+      OR NEW.participation_mode IS DISTINCT FROM OLD.participation_mode
+      OR NEW.identity_requires_name IS DISTINCT FROM OLD.identity_requires_name
+      OR NEW.identity_requires_id IS DISTINCT FROM OLD.identity_requires_id
+      OR NEW.is_scored IS DISTINCT FROM OLD.is_scored)
+     AND EXISTS (SELECT 1 FROM public.pictionary_rounds r WHERE r.session_id = NEW.id)
+  THEN
+    RAISE EXCEPTION 'The session type cannot be changed after the first Pictionary round has started';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+-- ---- internal helpers (no client grants) ---------------------------------------
+-- The caller's own Pictionary session, locked; refuses anyone else.
+CREATE OR REPLACE FUNCTION public.pictionary_owned_session(p_session_id uuid)
+RETURNS public.sessions
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_session public.sessions%ROWTYPE;
+BEGIN
+  IF NOT public.is_organizer() THEN
+    RAISE EXCEPTION 'Not authorized';
+  END IF;
+  SELECT * INTO v_session FROM public.sessions WHERE id = p_session_id FOR UPDATE;
+  IF NOT FOUND OR v_session.owner_id IS DISTINCT FROM auth.uid() THEN
+    RAISE EXCEPTION 'Not authorized';
+  END IF;
+  IF v_session.session_type <> 'pictionary' THEN
+    RAISE EXCEPTION 'This session is not a Pictionary';
+  END IF;
+  RETURN v_session;
+END;
+$$;
+
+-- The Participant behind a join token, in a live Pictionary session.
+CREATE OR REPLACE FUNCTION public.pictionary_participant(p_join_token text)
+RETURNS public.participants
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_participant public.participants%ROWTYPE;
+  v_session public.sessions%ROWTYPE;
+BEGIN
+  SELECT * INTO v_participant FROM public.participants WHERE join_token = p_join_token;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Unknown participant';
+  END IF;
+  SELECT * INTO v_session FROM public.sessions WHERE id = v_participant.session_id;
+  IF NOT FOUND OR v_session.is_active = false OR v_session.session_type <> 'pictionary' THEN
+    RAISE EXCEPTION 'This session is not active';
+  END IF;
+  IF NOT public.owner_has_access(v_session.owner_id) THEN
+    RAISE EXCEPTION 'This session is closed';
+  END IF;
+  RETURN v_participant;
+END;
+$$;
+
+-- The Participant of the session who has drawn least (random among ties), so
+-- everyone draws once before anyone draws again. p_exclude is never chosen.
+CREATE OR REPLACE FUNCTION public.pictionary_pick_drawer(p_session_id uuid, p_exclude uuid)
+RETURNS uuid
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT p.id FROM public.participants p
+   WHERE p.session_id = p_session_id AND p.id IS DISTINCT FROM p_exclude
+   ORDER BY (SELECT count(*) FROM public.pictionary_rounds r WHERE r.drawer_id = p.id), random()
+   LIMIT 1;
+$$;
+
+-- Offers up to 3 pool Words to a Round, replacing any earlier offer. An empty
+-- pool starts over, so a long game never runs out.
+CREATE OR REPLACE FUNCTION public.pictionary_offer_words(p_round_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_session uuid;
+BEGIN
+  SELECT session_id INTO v_session FROM public.pictionary_rounds WHERE id = p_round_id;
+  UPDATE public.pictionary_words SET offered_round_id = NULL WHERE offered_round_id = p_round_id;
+  IF NOT EXISTS (SELECT 1 FROM public.pictionary_words WHERE session_id = v_session AND used_round_id IS NULL) THEN
+    UPDATE public.pictionary_words SET used_round_id = NULL WHERE session_id = v_session;
+  END IF;
+  UPDATE public.pictionary_words SET offered_round_id = p_round_id
+   WHERE id IN (SELECT id FROM public.pictionary_words
+                 WHERE session_id = v_session AND used_round_id IS NULL
+                 ORDER BY random() LIMIT 3);
+END;
+$$;
+
+-- Picks a Word for a Round: the unchosen offers return to the pool and the
+-- timer starts.
+CREATE OR REPLACE FUNCTION public.pictionary_begin_drawing(p_round_id uuid, p_word_id uuid)
+RETURNS public.pictionary_rounds
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_round public.pictionary_rounds%ROWTYPE;
+BEGIN
+  UPDATE public.pictionary_words SET used_round_id = p_round_id WHERE id = p_word_id;
+  UPDATE public.pictionary_words SET offered_round_id = NULL WHERE offered_round_id = p_round_id;
+  UPDATE public.pictionary_rounds r
+     SET status = 'drawing', started_at = now(),
+         ends_at = now() + make_interval(secs => s.pictionary_round_seconds)
+    FROM public.sessions s
+   WHERE r.id = p_round_id AND s.id = r.session_id
+  RETURNING r.* INTO v_round;
+  RETURN v_round;
+END;
+$$;
+
+-- Ends a Round with no winner and reveals its Word (when one was picked). The
+-- Guess tickets set winner_* themselves. Releases any Words still on offer.
+CREATE OR REPLACE FUNCTION public.end_pictionary_round(p_round_id uuid, p_reason text)
+RETURNS public.pictionary_rounds
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_round public.pictionary_rounds%ROWTYPE;
+BEGIN
+  UPDATE public.pictionary_words SET offered_round_id = NULL WHERE offered_round_id = p_round_id;
+  UPDATE public.pictionary_rounds
+     SET status = 'revealed', ended_at = now(), end_reason = p_reason,
+         word = (SELECT w.word FROM public.pictionary_words w WHERE w.used_round_id = p_round_id)
+   WHERE id = p_round_id
+  RETURNING * INTO v_round;
+  RETURN v_round;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.pictionary_owned_session(uuid) FROM public, anon, authenticated;
+REVOKE ALL ON FUNCTION public.pictionary_participant(text) FROM public, anon, authenticated;
+REVOKE ALL ON FUNCTION public.pictionary_pick_drawer(uuid, uuid) FROM public, anon, authenticated;
+REVOKE ALL ON FUNCTION public.pictionary_offer_words(uuid) FROM public, anon, authenticated;
+REVOKE ALL ON FUNCTION public.pictionary_begin_drawing(uuid, uuid) FROM public, anon, authenticated;
+REVOKE ALL ON FUNCTION public.end_pictionary_round(uuid, text) FROM public, anon, authenticated;
+
+-- ---- Word list (organizer) -----------------------------------------------------
+-- One Word per line; trimmed, blanks dropped, duplicates (any case) dropped.
+-- Locked once the first Round exists. Returns how many Words were stored.
+CREATE OR REPLACE FUNCTION public.set_pictionary_words(p_session_id uuid, p_words text)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_count integer;
+BEGIN
+  PERFORM public.pictionary_owned_session(p_session_id);
+  IF EXISTS (SELECT 1 FROM public.pictionary_rounds WHERE session_id = p_session_id) THEN
+    RAISE EXCEPTION 'The word list cannot be changed once the first round has started';
+  END IF;
+
+  DELETE FROM public.pictionary_words WHERE session_id = p_session_id;
+  WITH lines AS (
+    SELECT left(btrim(l.w), 40) AS word, l.ord
+      FROM regexp_split_to_table(coalesce(p_words, ''), E'\r?\n') WITH ORDINALITY AS l(w, ord)
+     WHERE btrim(l.w) <> ''
+  ), uniq AS (
+    SELECT DISTINCT ON (lower(word)) word, ord FROM lines ORDER BY lower(word), ord
+  ), ins AS (
+    INSERT INTO public.pictionary_words (session_id, word, position)
+    SELECT p_session_id, word, row_number() OVER (ORDER BY ord) FROM uniq
+    RETURNING 1
+  )
+  SELECT count(*) INTO v_count FROM ins;
+  IF v_count > 200 THEN
+    RAISE EXCEPTION 'A word list can have at most 200 words';
+  END IF;
+  RETURN v_count;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_pictionary_words(p_session_id uuid)
+RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+STABLE
+AS $$
+BEGIN
+  IF NOT public.is_organizer() OR NOT EXISTS (
+    SELECT 1 FROM public.sessions s
+     WHERE s.id = p_session_id AND s.owner_id = auth.uid() AND s.session_type = 'pictionary'
+  ) THEN
+    RAISE EXCEPTION 'Not authorized';
+  END IF;
+  RETURN coalesce((SELECT string_agg(word, E'\n' ORDER BY position)
+                     FROM public.pictionary_words WHERE session_id = p_session_id), '');
+END;
+$$;
+
+-- ---- Round lifecycle (organizer) -------------------------------------------------
+-- Starts the next Round (also used for "Next"). p_drawer_id NULL = random among
+-- Participants who have drawn least. Refuses while a Round is live, past the
+-- last Round, under 2 Participants or under 3 Words.
+CREATE OR REPLACE FUNCTION public.start_pictionary_round(p_session_id uuid, p_drawer_id uuid DEFAULT NULL)
+RETURNS public.pictionary_rounds
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_session public.sessions%ROWTYPE;
+  v_last public.pictionary_rounds%ROWTYPE;
+  v_drawer uuid := p_drawer_id;
+  v_round public.pictionary_rounds%ROWTYPE;
+BEGIN
+  v_session := public.pictionary_owned_session(p_session_id);
+
+  SELECT * INTO v_last FROM public.pictionary_rounds WHERE session_id = p_session_id ORDER BY round_number DESC LIMIT 1;
+  IF FOUND AND v_last.status <> 'revealed' THEN
+    RAISE EXCEPTION 'A round is still in progress';
+  END IF;
+  IF FOUND AND v_last.round_number >= v_session.pictionary_round_count THEN
+    RAISE EXCEPTION 'All rounds have been played';
+  END IF;
+  IF (SELECT count(*) FROM public.participants WHERE session_id = p_session_id) < 2 THEN
+    RAISE EXCEPTION 'Start needs at least 2 participants';
+  END IF;
+  IF (SELECT count(*) FROM public.pictionary_words WHERE session_id = p_session_id) < 3 THEN
+    RAISE EXCEPTION 'Add at least 3 words before starting';
+  END IF;
+
+  IF v_drawer IS NULL THEN
+    v_drawer := public.pictionary_pick_drawer(p_session_id, NULL);
+  ELSIF NOT EXISTS (SELECT 1 FROM public.participants WHERE id = v_drawer AND session_id = p_session_id) THEN
+    RAISE EXCEPTION 'That participant is not in this session';
+  END IF;
+
+  INSERT INTO public.pictionary_rounds (session_id, round_number, drawer_id, choose_deadline)
+  VALUES (p_session_id, coalesce(v_last.round_number, 0) + 1, v_drawer, now() + interval '15 seconds')
+  RETURNING * INTO v_round;
+  PERFORM public.pictionary_offer_words(v_round.id);
+  RETURN v_round;
+END;
+$$;
+
+-- Presenter fallback: after the 15s choosing window, picks a random offered Word.
+CREATE OR REPLACE FUNCTION public.auto_pick_pictionary_word(p_session_id uuid)
+RETURNS public.pictionary_rounds
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_round public.pictionary_rounds%ROWTYPE;
+  v_word uuid;
+BEGIN
+  PERFORM public.pictionary_owned_session(p_session_id);
+  SELECT * INTO v_round FROM public.pictionary_rounds WHERE session_id = p_session_id ORDER BY round_number DESC LIMIT 1;
+  IF NOT FOUND OR v_round.status <> 'choosing' THEN
+    RAISE EXCEPTION 'No word is waiting to be picked';
+  END IF;
+  IF now() < v_round.choose_deadline THEN
+    RAISE EXCEPTION 'The time to choose is not up yet';
+  END IF;
+  SELECT id INTO v_word FROM public.pictionary_words WHERE offered_round_id = v_round.id ORDER BY random() LIMIT 1;
+  RETURN public.pictionary_begin_drawing(v_round.id, v_word);
+END;
+$$;
+
+-- Ends a Round whose time has run out: Word revealed, no winner, no points.
+CREATE OR REPLACE FUNCTION public.timeout_pictionary_round(p_session_id uuid)
+RETURNS public.pictionary_rounds
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_round public.pictionary_rounds%ROWTYPE;
+BEGIN
+  PERFORM public.pictionary_owned_session(p_session_id);
+  SELECT * INTO v_round FROM public.pictionary_rounds WHERE session_id = p_session_id ORDER BY round_number DESC LIMIT 1;
+  IF NOT FOUND OR v_round.status <> 'drawing' THEN
+    RAISE EXCEPTION 'No round is being drawn';
+  END IF;
+  IF now() < v_round.ends_at THEN
+    RAISE EXCEPTION 'The time is not up yet';
+  END IF;
+  RETURN public.end_pictionary_round(v_round.id, 'timeout');
+END;
+$$;
+
+-- Skip: ends a Choosing or Drawing Round with no winner and no points.
+CREATE OR REPLACE FUNCTION public.skip_pictionary_round(p_session_id uuid)
+RETURNS public.pictionary_rounds
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_round public.pictionary_rounds%ROWTYPE;
+BEGIN
+  PERFORM public.pictionary_owned_session(p_session_id);
+  SELECT * INTO v_round FROM public.pictionary_rounds WHERE session_id = p_session_id ORDER BY round_number DESC LIMIT 1;
+  IF NOT FOUND OR v_round.status = 'revealed' THEN
+    RAISE EXCEPTION 'This round has already ended';
+  END IF;
+  RETURN public.end_pictionary_round(v_round.id, 'skipped');
+END;
+$$;
+
+-- Pick another Drawer mid-round: the Round goes back to Choosing with fresh
+-- Words (a Word already picked returns to the pool) and a new 15s window.
+-- p_drawer_id NULL = random among the others who have drawn least.
+CREATE OR REPLACE FUNCTION public.pick_another_pictionary_drawer(p_session_id uuid, p_drawer_id uuid DEFAULT NULL)
+RETURNS public.pictionary_rounds
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_round public.pictionary_rounds%ROWTYPE;
+  v_drawer uuid := p_drawer_id;
+BEGIN
+  PERFORM public.pictionary_owned_session(p_session_id);
+  SELECT * INTO v_round FROM public.pictionary_rounds WHERE session_id = p_session_id ORDER BY round_number DESC LIMIT 1;
+  IF NOT FOUND OR v_round.status = 'revealed' THEN
+    RAISE EXCEPTION 'There is no live round to change the drawer of';
+  END IF;
+
+  IF v_drawer IS NULL THEN
+    v_drawer := public.pictionary_pick_drawer(p_session_id, v_round.drawer_id);
+    IF v_drawer IS NULL THEN
+      RAISE EXCEPTION 'There is no other participant to draw';
+    END IF;
+  ELSIF v_drawer IS NOT DISTINCT FROM v_round.drawer_id THEN
+    RAISE EXCEPTION 'That participant is already the drawer';
+  ELSIF NOT EXISTS (SELECT 1 FROM public.participants WHERE id = v_drawer AND session_id = p_session_id) THEN
+    RAISE EXCEPTION 'That participant is not in this session';
+  END IF;
+
+  UPDATE public.pictionary_words SET used_round_id = NULL WHERE used_round_id = v_round.id;
+  UPDATE public.pictionary_rounds
+     SET drawer_id = v_drawer, status = 'choosing', started_at = NULL, ends_at = NULL,
+         choose_deadline = now() + interval '15 seconds'
+   WHERE id = v_round.id
+  RETURNING * INTO v_round;
+  PERFORM public.pictionary_offer_words(v_round.id);
+  RETURN v_round;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.set_pictionary_words(uuid, text) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.set_pictionary_words(uuid, text) TO authenticated;
+REVOKE ALL ON FUNCTION public.get_pictionary_words(uuid) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.get_pictionary_words(uuid) TO authenticated;
+REVOKE ALL ON FUNCTION public.start_pictionary_round(uuid, uuid) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.start_pictionary_round(uuid, uuid) TO authenticated;
+REVOKE ALL ON FUNCTION public.auto_pick_pictionary_word(uuid) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.auto_pick_pictionary_word(uuid) TO authenticated;
+REVOKE ALL ON FUNCTION public.timeout_pictionary_round(uuid) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.timeout_pictionary_round(uuid) TO authenticated;
+REVOKE ALL ON FUNCTION public.skip_pictionary_round(uuid) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.skip_pictionary_round(uuid) TO authenticated;
+REVOKE ALL ON FUNCTION public.pick_another_pictionary_drawer(uuid, uuid) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.pick_another_pictionary_drawer(uuid, uuid) TO authenticated;
+
+-- ---- Drawer (join token) -----------------------------------------------------------
+-- The Words on offer to the caller, who must be the Drawer of a Choosing Round.
+CREATE OR REPLACE FUNCTION public.get_pictionary_choices(p_join_token text)
+RETURNS TABLE (word_id uuid, word text)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+STABLE
+AS $$
+DECLARE
+  v_participant public.participants%ROWTYPE;
+  v_round public.pictionary_rounds%ROWTYPE;
+BEGIN
+  v_participant := public.pictionary_participant(p_join_token);
+  SELECT * INTO v_round FROM public.pictionary_rounds
+   WHERE session_id = v_participant.session_id ORDER BY round_number DESC LIMIT 1;
+  IF NOT FOUND OR v_round.status <> 'choosing' OR v_round.drawer_id IS DISTINCT FROM v_participant.id THEN
+    RAISE EXCEPTION 'You are not choosing a word';
+  END IF;
+  RETURN QUERY SELECT w.id, w.word FROM public.pictionary_words w
+   WHERE w.offered_round_id = v_round.id ORDER BY w.word;
+END;
+$$;
+
+-- The Drawer picks one of the offered Words; the timer starts.
+CREATE OR REPLACE FUNCTION public.choose_pictionary_word(p_join_token text, p_word_id uuid)
+RETURNS public.pictionary_rounds
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_participant public.participants%ROWTYPE;
+  v_round public.pictionary_rounds%ROWTYPE;
+BEGIN
+  v_participant := public.pictionary_participant(p_join_token);
+  SELECT * INTO v_round FROM public.pictionary_rounds
+   WHERE session_id = v_participant.session_id ORDER BY round_number DESC LIMIT 1 FOR UPDATE;
+  IF NOT FOUND OR v_round.status <> 'choosing' OR v_round.drawer_id IS DISTINCT FROM v_participant.id THEN
+    RAISE EXCEPTION 'You are not choosing a word';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.pictionary_words WHERE id = p_word_id AND offered_round_id = v_round.id) THEN
+    RAISE EXCEPTION 'That word was not offered to you';
+  END IF;
+  RETURN public.pictionary_begin_drawing(v_round.id, p_word_id);
+END;
+$$;
+
+-- The current Word, for the Drawer (by join token) or, with a NULL token, the
+-- session's owner. Only once it has been picked.
+CREATE OR REPLACE FUNCTION public.get_pictionary_word(p_session_id uuid, p_join_token text DEFAULT NULL)
+RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+STABLE
+AS $$
+DECLARE
+  v_round public.pictionary_rounds%ROWTYPE;
+  v_participant public.participants%ROWTYPE;
+  v_word text;
+BEGIN
+  SELECT * INTO v_round FROM public.pictionary_rounds
+   WHERE session_id = p_session_id ORDER BY round_number DESC LIMIT 1;
+
+  IF p_join_token IS NULL THEN
+    IF NOT public.is_organizer() OR NOT EXISTS (
+      SELECT 1 FROM public.sessions s WHERE s.id = p_session_id AND s.owner_id = auth.uid()
+    ) THEN
+      RAISE EXCEPTION 'Not authorized';
+    END IF;
+  ELSE
+    v_participant := public.pictionary_participant(p_join_token);
+    IF v_participant.session_id <> p_session_id OR v_round.drawer_id IS DISTINCT FROM v_participant.id THEN
+      RAISE EXCEPTION 'You are not the drawer';
+    END IF;
+  END IF;
+
+  SELECT w.word INTO v_word FROM public.pictionary_words w WHERE w.used_round_id = v_round.id;
+  IF v_word IS NULL THEN
+    RAISE EXCEPTION 'No word has been picked yet';
+  END IF;
+  RETURN v_word;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_pictionary_choices(text) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_pictionary_choices(text) TO anon, authenticated;
+REVOKE ALL ON FUNCTION public.choose_pictionary_word(text, uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.choose_pictionary_word(text, uuid) TO anon, authenticated;
+REVOKE ALL ON FUNCTION public.get_pictionary_word(uuid, text) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_pictionary_word(uuid, text) TO anon, authenticated;
+
+-- ============================================================================
+-- Pictionary: Guess judging, host-picked winner, scoring, leaderboard, results
+-- ============================================================================
+
+-- Guesses are stored as comments linked to the Round (comments.round_id). The
+-- server judges each one with a fuzzy match against the hidden Word; the first
+-- match wins the Round. The Organizer can also pick (and later change) the
+-- winner by hand. Points always come from the winning Guess's submit time.
+
+-- ---- matching (internal) -------------------------------------------------------
+-- Lowercase, strip punctuation, optionally drop a leading a/an/the, remove
+-- spaces, drop a trailing es/s.
+CREATE OR REPLACE FUNCTION public.pictionary_norm(p_text text, p_drop_article boolean)
+RETURNS text
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path = ''
+AS $$
+DECLARE
+  v_s text := btrim(regexp_replace(lower(coalesce(p_text, '')), '[^[:alnum:][:space:]]', '', 'g'));
+BEGIN
+  IF p_drop_article THEN
+    v_s := regexp_replace(v_s, '^(a|an|the)\s+', '');
+  END IF;
+  v_s := regexp_replace(v_s, '\s+', '', 'g');
+  IF v_s ~ '.es$' THEN
+    v_s := left(v_s, -2);
+  ELSIF v_s ~ '.s$' THEN
+    v_s := left(v_s, -1);
+  END IF;
+  RETURN v_s;
+END;
+$$;
+
+-- Does the Guess match the Word? Equal, or within the typo allowance (0 for up
+-- to 4 letters, 1 for 5-8, 2 for 9+). A Guess of up to 5 words also matches on
+-- any single word or any adjacent pair.
+CREATE OR REPLACE FUNCTION public.pictionary_matches(p_guess text, p_word text)
+RETURNS boolean
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path = ''
+AS $$
+DECLARE
+  v_word text := public.pictionary_norm(p_word, true);
+  v_allow integer;
+  v_words text[] := regexp_split_to_array(
+    btrim(regexp_replace(lower(coalesce(p_guess, '')), '[^[:alnum:][:space:]]', '', 'g')), '\s+');
+  v_cands text[] := ARRAY[public.pictionary_norm(p_guess, true)];
+  v_c text;
+BEGIN
+  IF v_word = '' THEN RETURN false; END IF;
+  v_allow := CASE WHEN char_length(v_word) <= 4 THEN 0 WHEN char_length(v_word) <= 8 THEN 1 ELSE 2 END;
+  IF array_length(v_words, 1) BETWEEN 2 AND 5 THEN
+    FOR i IN 1..array_length(v_words, 1) LOOP
+      v_cands := v_cands || public.pictionary_norm(v_words[i], false);
+      IF i < array_length(v_words, 1) THEN
+        v_cands := v_cands || public.pictionary_norm(v_words[i] || v_words[i + 1], false);
+      END IF;
+    END LOOP;
+  END IF;
+  FOREACH v_c IN ARRAY v_cands LOOP
+    -- the length check also keeps levenshtein under its 255-character limit
+    IF v_c <> '' AND abs(char_length(v_c) - char_length(v_word)) <= v_allow
+       AND extensions.levenshtein(v_c, v_word) <= v_allow THEN
+      RETURN true;
+    END IF;
+  END LOOP;
+  RETURN false;
+END;
+$$;
+
+-- Makes a Guess the Round's winner (first win or Change winner) and scores it:
+-- guesser max(300, 1000 x time left / Round time) at the Guess's submit time,
+-- Drawer a flat 500. Points live on the Round, so a change simply replaces them.
+CREATE OR REPLACE FUNCTION public.pictionary_award(p_round_id uuid, p_comment_id uuid)
+RETURNS public.pictionary_rounds
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_round public.pictionary_rounds%ROWTYPE;
+BEGIN
+  UPDATE public.pictionary_rounds r
+     SET winner_comment_id = c.id,
+         winner_participant_id = c.participant_id,
+         winner_points = greatest(300, least(1000, floor(
+           1000 * greatest(0, extract(epoch FROM r.ends_at - c.created_at)) / s.pictionary_round_seconds)::integer)),
+         drawer_points = 500,
+         end_reason = 'guessed'
+    FROM public.comments c, public.sessions s
+   WHERE r.id = p_round_id AND c.id = p_comment_id AND s.id = r.session_id
+  RETURNING r.* INTO v_round;
+  RETURN v_round;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.pictionary_norm(text, boolean) FROM public, anon, authenticated;
+REVOKE ALL ON FUNCTION public.pictionary_matches(text, text) FROM public, anon, authenticated;
+REVOKE ALL ON FUNCTION public.pictionary_award(uuid, uuid) FROM public, anon, authenticated;
+
+-- ---- submit a Guess (join token) -------------------------------------------------
+-- Only a joined Participant who is not the Drawer, inside the Drawing window,
+-- one Guess per 2 seconds. The Round row is locked, so the first match wins and
+-- a Guess arriving after it finds the Round closed and is refused. Returns the
+-- stored Guess and whether it won.
+CREATE OR REPLACE FUNCTION public.submit_pictionary_guess(p_join_token text, p_body text)
+RETURNS TABLE (comment_id uuid, won boolean)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_participant public.participants%ROWTYPE;
+  v_round public.pictionary_rounds%ROWTYPE;
+  v_body text := btrim(coalesce(p_body, ''));
+  v_id uuid;
+  v_won boolean;
+BEGIN
+  v_participant := public.pictionary_participant(p_join_token);
+  SELECT * INTO v_round FROM public.pictionary_rounds
+   WHERE session_id = v_participant.session_id ORDER BY round_number DESC LIMIT 1 FOR UPDATE;
+  IF NOT FOUND OR v_round.status <> 'drawing' OR now() >= v_round.ends_at THEN
+    RAISE EXCEPTION 'Guesses are not open right now';
+  END IF;
+  IF v_round.drawer_id = v_participant.id THEN
+    RAISE EXCEPTION 'The drawer cannot guess';
+  END IF;
+  IF v_body = '' THEN
+    RAISE EXCEPTION 'Type a guess first';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.comments c
+              WHERE c.participant_id = v_participant.id AND c.round_id IS NOT NULL
+                AND c.created_at > now() - interval '2 seconds') THEN
+    RAISE EXCEPTION 'Please wait a moment before guessing again';
+  END IF;
+
+  INSERT INTO public.comments (round_id, participant_id, body)
+  VALUES (v_round.id, v_participant.id, left(v_body, 500))
+  RETURNING id INTO v_id;
+
+  v_won := public.pictionary_matches(v_body,
+    (SELECT w.word FROM public.pictionary_words w WHERE w.used_round_id = v_round.id));
+  IF v_won THEN
+    PERFORM public.end_pictionary_round(v_round.id, 'guessed');
+    PERFORM public.pictionary_award(v_round.id, v_id);
+  END IF;
+  RETURN QUERY SELECT v_id, v_won;
+END;
+$$;
+
+-- ---- host pick / Change winner (organizer) ---------------------------------------
+-- Makes any Guess of the newest Round the winner: ends a Round still drawing,
+-- awards a timed-out or skipped one, or moves the win from the old winner.
+-- Allowed until the next Round starts.
+CREATE OR REPLACE FUNCTION public.pick_pictionary_winner(p_session_id uuid, p_comment_id uuid)
+RETURNS public.pictionary_rounds
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_round public.pictionary_rounds%ROWTYPE;
+BEGIN
+  PERFORM public.pictionary_owned_session(p_session_id);
+  SELECT * INTO v_round FROM public.pictionary_rounds
+   WHERE session_id = p_session_id ORDER BY round_number DESC LIMIT 1;
+  IF NOT FOUND OR v_round.status = 'choosing' THEN
+    RAISE EXCEPTION 'There is no round to pick a winner for';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.comments WHERE id = p_comment_id AND round_id = v_round.id) THEN
+    RAISE EXCEPTION 'That guess is not from the current round';
+  END IF;
+  IF v_round.status = 'drawing' THEN
+    PERFORM public.end_pictionary_round(v_round.id, 'guessed');
+  END IF;
+  RETURN public.pictionary_award(v_round.id, p_comment_id);
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.pick_pictionary_winner(uuid, uuid) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.pick_pictionary_winner(uuid, uuid) TO authenticated;
+
+-- ---- reads ------------------------------------------------------------------------
+-- The Guess feed of a Round (default: the newest), oldest first. comments has
+-- no policy for Round Guesses, so everyone reads the feed through this.
+CREATE OR REPLACE FUNCTION public.get_pictionary_guesses(p_session_id uuid, p_round_id uuid DEFAULT NULL)
+RETURNS TABLE (
+  comment_id uuid,
+  round_id uuid,
+  participant_id uuid,
+  author_name text,
+  body text,
+  created_at timestamptz,
+  is_winner boolean
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT c.id, c.round_id, c.participant_id, coalesce(p.name, p.external_id, 'Player'),
+         c.body, c.created_at, (r.winner_comment_id = c.id)
+    FROM public.pictionary_rounds r
+    JOIN public.sessions s ON s.id = r.session_id
+    JOIN public.comments c ON c.round_id = r.id
+    JOIN public.participants p ON p.id = c.participant_id
+   WHERE r.session_id = p_session_id
+     AND (s.is_active = true OR s.owner_id = auth.uid())
+     AND r.id = coalesce(p_round_id, (SELECT r2.id FROM public.pictionary_rounds r2
+                                       WHERE r2.session_id = p_session_id
+                                       ORDER BY r2.round_number DESC LIMIT 1))
+   ORDER BY c.created_at, c.id;
+$$;
+
+-- Ranked totals in the columns the Leaderboard component reads. A
+-- Participant's Score is the winner_points of Rounds they won plus the
+-- drawer_points of Rounds they drew. Equal Scores share a rank.
+CREATE OR REPLACE FUNCTION public.get_pictionary_leaderboard(p_session_id uuid)
+RETURNS TABLE (
+  participant_id uuid,
+  display_name text,
+  score integer,
+  answered_count integer,
+  finished_at timestamptz,
+  rank bigint,
+  total_response_ms bigint
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT sub.id, sub.display_name, sub.score, 0, NULL::timestamptz,
+         rank() OVER (ORDER BY sub.score DESC), 0::bigint
+    FROM (
+      SELECT p.id, coalesce(p.name, p.external_id, 'Player') AS display_name,
+             (coalesce((SELECT sum(r.winner_points) FROM public.pictionary_rounds r WHERE r.winner_participant_id = p.id), 0)
+            + coalesce((SELECT sum(r.drawer_points) FROM public.pictionary_rounds r WHERE r.drawer_id = p.id), 0))::integer AS score
+        FROM public.participants p
+        JOIN public.sessions s ON s.id = p.session_id
+       WHERE p.session_id = p_session_id AND s.session_type = 'pictionary'
+         AND (s.is_active = true OR s.owner_id = auth.uid())
+    ) sub
+   ORDER BY 6, 2;
+$$;
+
+-- One row per revealed Round: the Word, Drawer, winner (NULL = nobody), points
+-- and seconds from the start of drawing to the winning Guess.
+CREATE OR REPLACE FUNCTION public.get_pictionary_results(p_session_id uuid)
+RETURNS TABLE (
+  round_number integer,
+  word text,
+  drawer_id uuid,
+  drawer_name text,
+  winner_participant_id uuid,
+  winner_name text,
+  winner_points integer,
+  drawer_points integer,
+  seconds_to_guess numeric,
+  end_reason text
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT r.round_number, r.word, r.drawer_id, coalesce(d.name, d.external_id, 'Player'),
+         r.winner_participant_id, CASE WHEN w.id IS NULL THEN NULL ELSE coalesce(w.name, w.external_id, 'Player') END,
+         r.winner_points, r.drawer_points,
+         round(extract(epoch FROM c.created_at - r.started_at)::numeric, 1),
+         r.end_reason
+    FROM public.pictionary_rounds r
+    JOIN public.sessions s ON s.id = r.session_id
+    LEFT JOIN public.participants d ON d.id = r.drawer_id
+    LEFT JOIN public.participants w ON w.id = r.winner_participant_id
+    LEFT JOIN public.comments c ON c.id = r.winner_comment_id
+   WHERE r.session_id = p_session_id AND r.status = 'revealed'
+     AND (s.is_active = true OR s.owner_id = auth.uid())
+   ORDER BY r.round_number;
+$$;
+
+REVOKE ALL ON FUNCTION public.submit_pictionary_guess(text, text) FROM public;
+GRANT EXECUTE ON FUNCTION public.submit_pictionary_guess(text, text) TO anon, authenticated;
+REVOKE ALL ON FUNCTION public.get_pictionary_guesses(uuid, uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_pictionary_guesses(uuid, uuid) TO anon, authenticated;
+REVOKE ALL ON FUNCTION public.get_pictionary_leaderboard(uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_pictionary_leaderboard(uuid) TO anon, authenticated;
+REVOKE ALL ON FUNCTION public.get_pictionary_results(uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.get_pictionary_results(uuid) TO anon, authenticated;
+
+-- Pictionary: public letter blanks. word_pattern is the Word with letters/digits masked
+-- as "_" (punctuation kept, whitespace collapsed to single spaces), e.g. "ice cream" -> "___ _____".
+-- NULL until a Word is chosen; the Word itself stays hidden until the reveal.
+ALTER TABLE public.pictionary_rounds ADD COLUMN IF NOT EXISTS word_pattern text;
+
+CREATE OR REPLACE FUNCTION public.pictionary_word_pattern(p_word text)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+SET search_path = ''
+AS $$
+  SELECT regexp_replace(regexp_replace(btrim(p_word), '\w', '_', 'g'), '\s+', ' ', 'g')
+$$;
+REVOKE ALL ON FUNCTION public.pictionary_word_pattern(text) FROM public, anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.pictionary_begin_drawing(p_round_id uuid, p_word_id uuid)
+RETURNS public.pictionary_rounds
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_round public.pictionary_rounds%ROWTYPE;
+BEGIN
+  UPDATE public.pictionary_words SET used_round_id = p_round_id WHERE id = p_word_id;
+  UPDATE public.pictionary_words SET offered_round_id = NULL WHERE offered_round_id = p_round_id;
+  UPDATE public.pictionary_rounds r
+     SET status = 'drawing', started_at = now(),
+         ends_at = now() + make_interval(secs => s.pictionary_round_seconds),
+         word_pattern = (SELECT public.pictionary_word_pattern(w.word) FROM public.pictionary_words w WHERE w.id = p_word_id)
+    FROM public.sessions s
+   WHERE r.id = p_round_id AND s.id = r.session_id
+  RETURNING r.* INTO v_round;
+  RETURN v_round;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.pictionary_begin_drawing(uuid, uuid) FROM public, anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.pick_another_pictionary_drawer(p_session_id uuid, p_drawer_id uuid DEFAULT NULL)
+RETURNS public.pictionary_rounds
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_round public.pictionary_rounds%ROWTYPE;
+  v_drawer uuid := p_drawer_id;
+BEGIN
+  PERFORM public.pictionary_owned_session(p_session_id);
+  SELECT * INTO v_round FROM public.pictionary_rounds WHERE session_id = p_session_id ORDER BY round_number DESC LIMIT 1;
+  IF NOT FOUND OR v_round.status = 'revealed' THEN
+    RAISE EXCEPTION 'There is no live round to change the drawer of';
+  END IF;
+
+  IF v_drawer IS NULL THEN
+    v_drawer := public.pictionary_pick_drawer(p_session_id, v_round.drawer_id);
+    IF v_drawer IS NULL THEN
+      RAISE EXCEPTION 'There is no other participant to draw';
+    END IF;
+  ELSIF v_drawer IS NOT DISTINCT FROM v_round.drawer_id THEN
+    RAISE EXCEPTION 'That participant is already the drawer';
+  ELSIF NOT EXISTS (SELECT 1 FROM public.participants WHERE id = v_drawer AND session_id = p_session_id) THEN
+    RAISE EXCEPTION 'That participant is not in this session';
+  END IF;
+
+  UPDATE public.pictionary_words SET used_round_id = NULL WHERE used_round_id = v_round.id;
+  UPDATE public.pictionary_rounds
+     SET drawer_id = v_drawer, status = 'choosing', started_at = NULL, ends_at = NULL,
+         word_pattern = NULL, choose_deadline = now() + interval '15 seconds'
+   WHERE id = v_round.id
+  RETURNING * INTO v_round;
+  PERFORM public.pictionary_offer_words(v_round.id);
+  RETURN v_round;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.pick_another_pictionary_drawer(uuid, uuid) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.pick_another_pictionary_drawer(uuid, uuid) TO authenticated;
+
+-- ============================================================================
+-- Pictionary review fixes: plural matching, Round timing, swap and race fixes
+-- ============================================================================
+
+-- ---- matching ---------------------------------------------------------------
+-- Lowercase and strip punctuation (shared by norm and the word splitter).
+CREATE OR REPLACE FUNCTION public.pictionary_clean(p_text text)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+SET search_path = ''
+AS $$
+  SELECT btrim(regexp_replace(lower(coalesce(p_text, '')), '[^[:alnum:][:space:]]', '', 'g'))
+$$;
+
+-- Clean, optionally drop a leading a/an/the, remove spaces. No plural stripping:
+-- pictionary_forms adds those so both sides are compared with and without it.
+CREATE OR REPLACE FUNCTION public.pictionary_norm(p_text text, p_drop_article boolean)
+RETURNS text
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path = ''
+AS $$
+DECLARE
+  v_s text := public.pictionary_clean(p_text);
+BEGIN
+  IF p_drop_article THEN
+    v_s := regexp_replace(v_s, '^(a|an|the)\s+', '');
+  END IF;
+  RETURN regexp_replace(v_s, '\s+', '', 'g');
+END;
+$$;
+
+-- The string plus its singular guesses (drop s, drop es). A stem under 3 letters
+-- is never produced, so "bus" is not "bu" and short words stay strict.
+CREATE OR REPLACE FUNCTION public.pictionary_forms(p_s text)
+RETURNS text[]
+LANGUAGE sql
+IMMUTABLE
+SET search_path = ''
+AS $$
+  SELECT ARRAY[p_s]
+      || CASE WHEN p_s ~ 's$' AND char_length(p_s) >= 4 THEN ARRAY[left(p_s, -1)] ELSE ARRAY[]::text[] END
+      || CASE WHEN p_s ~ 'es$' AND char_length(p_s) >= 5 THEN ARRAY[left(p_s, -2)] ELSE ARRAY[]::text[] END
+$$;
+
+-- Does the Guess match the Word? Equal (with or without a plural), or within the
+-- typo allowance (0 for up to 4 letters, 1 for 5-8, 2 for 9+). A Guess of up to 5
+-- words also matches on any single word or any adjacent pair.
+CREATE OR REPLACE FUNCTION public.pictionary_matches(p_guess text, p_word text)
+RETURNS boolean
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path = ''
+AS $$
+DECLARE
+  v_word text := public.pictionary_norm(p_word, true);
+  v_wforms text[] := public.pictionary_forms(v_word);
+  v_allow integer;
+  v_words text[] := regexp_split_to_array(public.pictionary_clean(p_guess), '\s+');
+  v_cands text[] := ARRAY[public.pictionary_norm(p_guess, true)];
+  v_c text;
+  v_cf text;
+  v_wf text;
+BEGIN
+  IF v_word = '' THEN RETURN false; END IF;
+  v_allow := CASE WHEN char_length(v_word) <= 4 THEN 0 WHEN char_length(v_word) <= 8 THEN 1 ELSE 2 END;
+  IF array_length(v_words, 1) BETWEEN 2 AND 5 THEN
+    FOR i IN 1..array_length(v_words, 1) LOOP
+      v_cands := v_cands || public.pictionary_norm(v_words[i], false);
+      IF i < array_length(v_words, 1) THEN
+        v_cands := v_cands || public.pictionary_norm(v_words[i] || v_words[i + 1], false);
+      END IF;
+    END LOOP;
+  END IF;
+  FOREACH v_c IN ARRAY v_cands LOOP
+    IF v_c = '' THEN CONTINUE; END IF;
+    FOREACH v_cf IN ARRAY public.pictionary_forms(v_c) LOOP
+      FOREACH v_wf IN ARRAY v_wforms LOOP
+        -- the length check also keeps levenshtein under its 255-character limit
+        IF abs(char_length(v_cf) - char_length(v_wf)) <= v_allow
+           AND extensions.levenshtein(v_cf, v_wf) <= v_allow THEN
+          RETURN true;
+        END IF;
+      END LOOP;
+    END LOOP;
+  END LOOP;
+  RETURN false;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.pictionary_clean(text) FROM public, anon, authenticated;
+REVOKE ALL ON FUNCTION public.pictionary_forms(text) FROM public, anon, authenticated;
+
+-- ---- scoring from the Round's own timing -------------------------------------
+-- Round time is started_at to ends_at, so editing the session setting never
+-- changes a live Round's scores or Change winner.
+CREATE OR REPLACE FUNCTION public.pictionary_award(p_round_id uuid, p_comment_id uuid)
+RETURNS public.pictionary_rounds
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_round public.pictionary_rounds%ROWTYPE;
+BEGIN
+  UPDATE public.pictionary_rounds r
+     SET winner_comment_id = c.id,
+         winner_participant_id = c.participant_id,
+         winner_points = greatest(300, least(1000, floor(
+           1000 * greatest(0, extract(epoch FROM r.ends_at - c.created_at))
+                / nullif(extract(epoch FROM r.ends_at - r.started_at), 0))::integer)),
+         drawer_points = 500,
+         end_reason = 'guessed'
+    FROM public.comments c
+   WHERE r.id = p_round_id AND c.id = p_comment_id
+  RETURNING r.* INTO v_round;
+  RETURN v_round;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.pictionary_award(uuid, uuid) FROM public, anon, authenticated;
+
+-- ---- round time lock ---------------------------------------------------------
+-- As before, plus pictionary_round_seconds freezes once the first Round exists.
+CREATE OR REPLACE FUNCTION public.prevent_identity_change_after_votes()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+  IF (NEW.participation_mode IS DISTINCT FROM OLD.participation_mode
+      OR NEW.identity_requires_name IS DISTINCT FROM OLD.identity_requires_name
+      OR NEW.identity_requires_id IS DISTINCT FROM OLD.identity_requires_id
+      OR NEW.is_scored IS DISTINCT FROM OLD.is_scored
+      OR NEW.score_time_limit_seconds IS DISTINCT FROM OLD.score_time_limit_seconds
+      OR NEW.quiz_format IS DISTINCT FROM OLD.quiz_format)
+     AND EXISTS (
+       SELECT 1 FROM public.votes v
+       JOIN public.questions q ON q.id = v.question_id
+       WHERE q.session_id = NEW.id
+     )
+  THEN
+    RAISE EXCEPTION 'The session type cannot be changed after voting has started';
+  END IF;
+
+  -- Wheel -> Comments changes no flag above, so the type itself is checked.
+  IF (NEW.session_type IS DISTINCT FROM OLD.session_type
+      OR NEW.participation_mode IS DISTINCT FROM OLD.participation_mode
+      OR NEW.identity_requires_name IS DISTINCT FROM OLD.identity_requires_name
+      OR NEW.identity_requires_id IS DISTINCT FROM OLD.identity_requires_id
+      OR NEW.is_scored IS DISTINCT FROM OLD.is_scored)
+     AND EXISTS (SELECT 1 FROM public.wheel_spins w WHERE w.session_id = NEW.id)
+  THEN
+    RAISE EXCEPTION 'The session type cannot be changed after the wheel has been spun';
+  END IF;
+
+  IF (NEW.session_type IS DISTINCT FROM OLD.session_type
+      OR NEW.participation_mode IS DISTINCT FROM OLD.participation_mode
+      OR NEW.identity_requires_name IS DISTINCT FROM OLD.identity_requires_name
+      OR NEW.identity_requires_id IS DISTINCT FROM OLD.identity_requires_id
+      OR NEW.is_scored IS DISTINCT FROM OLD.is_scored)
+     AND EXISTS (SELECT 1 FROM public.pictionary_rounds r WHERE r.session_id = NEW.id)
+  THEN
+    RAISE EXCEPTION 'The session type cannot be changed after the first Pictionary round has started';
+  END IF;
+
+  IF NEW.pictionary_round_seconds IS DISTINCT FROM OLD.pictionary_round_seconds
+     AND EXISTS (SELECT 1 FROM public.pictionary_rounds r WHERE r.session_id = NEW.id)
+  THEN
+    RAISE EXCEPTION 'The round time cannot be changed after the first Pictionary round has started';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+-- ---- submit a Guess: lock the session row, stamp real server time -----------------
+-- Same session-row lock as the owner functions, so a Guess, a skip, a timeout and
+-- an auto-pick are serialised and each re-reads the Round after the lock. created_at
+-- is clock_timestamp(), so first match = order of real server time, not of
+-- transaction start.
+CREATE OR REPLACE FUNCTION public.submit_pictionary_guess(p_join_token text, p_body text)
+RETURNS TABLE (comment_id uuid, won boolean)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_participant public.participants%ROWTYPE;
+  v_round public.pictionary_rounds%ROWTYPE;
+  v_body text := btrim(coalesce(p_body, ''));
+  v_id uuid;
+  v_won boolean;
+BEGIN
+  v_participant := public.pictionary_participant(p_join_token);
+  PERFORM 1 FROM public.sessions WHERE id = v_participant.session_id FOR UPDATE;
+  SELECT * INTO v_round FROM public.pictionary_rounds
+   WHERE session_id = v_participant.session_id ORDER BY round_number DESC LIMIT 1 FOR UPDATE;
+  IF NOT FOUND OR v_round.status <> 'drawing' OR clock_timestamp() >= v_round.ends_at THEN
+    RAISE EXCEPTION 'Guesses are not open right now';
+  END IF;
+  IF v_round.drawer_id = v_participant.id THEN
+    RAISE EXCEPTION 'The drawer cannot guess';
+  END IF;
+  IF v_body = '' THEN
+    RAISE EXCEPTION 'Type a guess first';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.comments c
+              WHERE c.participant_id = v_participant.id AND c.round_id IS NOT NULL
+                AND c.created_at > clock_timestamp() - interval '2 seconds') THEN
+    RAISE EXCEPTION 'Please wait a moment before guessing again';
+  END IF;
+
+  INSERT INTO public.comments (round_id, participant_id, body, created_at)
+  VALUES (v_round.id, v_participant.id, left(v_body, 500), clock_timestamp())
+  RETURNING id INTO v_id;
+
+  v_won := public.pictionary_matches(v_body,
+    (SELECT w.word FROM public.pictionary_words w WHERE w.used_round_id = v_round.id));
+  IF v_won THEN
+    PERFORM public.end_pictionary_round(v_round.id, 'guessed');
+    PERFORM public.pictionary_award(v_round.id, v_id);
+  END IF;
+  RETURN QUERY SELECT v_id, v_won;
+END;
+$$;
+
+-- ---- the Drawer's pick: same lock ------------------------------------------------
+CREATE OR REPLACE FUNCTION public.choose_pictionary_word(p_join_token text, p_word_id uuid)
+RETURNS public.pictionary_rounds
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_participant public.participants%ROWTYPE;
+  v_round public.pictionary_rounds%ROWTYPE;
+BEGIN
+  v_participant := public.pictionary_participant(p_join_token);
+  PERFORM 1 FROM public.sessions WHERE id = v_participant.session_id FOR UPDATE;
+  SELECT * INTO v_round FROM public.pictionary_rounds
+   WHERE session_id = v_participant.session_id ORDER BY round_number DESC LIMIT 1 FOR UPDATE;
+  IF NOT FOUND OR v_round.status <> 'choosing' OR v_round.drawer_id IS DISTINCT FROM v_participant.id THEN
+    RAISE EXCEPTION 'You are not choosing a word';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.pictionary_words WHERE id = p_word_id AND offered_round_id = v_round.id) THEN
+    RAISE EXCEPTION 'That word was not offered to you';
+  END IF;
+  RETURN public.pictionary_begin_drawing(v_round.id, p_word_id);
+END;
+$$;
+
+-- ---- auto-pick: a no-op unless the Round is still choosing with offers ------------
+CREATE OR REPLACE FUNCTION public.auto_pick_pictionary_word(p_session_id uuid)
+RETURNS public.pictionary_rounds
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_round public.pictionary_rounds%ROWTYPE;
+  v_word uuid;
+BEGIN
+  PERFORM public.pictionary_owned_session(p_session_id);
+  SELECT * INTO v_round FROM public.pictionary_rounds WHERE session_id = p_session_id ORDER BY round_number DESC LIMIT 1;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'No word is waiting to be picked';
+  END IF;
+  -- the Drawer picked (or the Round ended) while this call waited for the lock
+  IF v_round.status <> 'choosing' THEN
+    RETURN v_round;
+  END IF;
+  IF now() < v_round.choose_deadline THEN
+    RAISE EXCEPTION 'The time to choose is not up yet';
+  END IF;
+  SELECT id INTO v_word FROM public.pictionary_words WHERE offered_round_id = v_round.id ORDER BY random() LIMIT 1;
+  IF v_word IS NULL THEN
+    RETURN v_round;
+  END IF;
+  RETURN public.pictionary_begin_drawing(v_round.id, v_word);
+END;
+$$;
+
+-- ---- pick another Drawer: Guesses belong to the old Word and timer --------------
+-- The Round's Guesses are deleted with the swap: they were judged against the old
+-- Word and scored against the old ends_at, and one may be by the new Drawer.
+CREATE OR REPLACE FUNCTION public.pick_another_pictionary_drawer(p_session_id uuid, p_drawer_id uuid DEFAULT NULL)
+RETURNS public.pictionary_rounds
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_round public.pictionary_rounds%ROWTYPE;
+  v_drawer uuid := p_drawer_id;
+BEGIN
+  PERFORM public.pictionary_owned_session(p_session_id);
+  SELECT * INTO v_round FROM public.pictionary_rounds WHERE session_id = p_session_id ORDER BY round_number DESC LIMIT 1;
+  IF NOT FOUND OR v_round.status = 'revealed' THEN
+    RAISE EXCEPTION 'There is no live round to change the drawer of';
+  END IF;
+
+  IF v_drawer IS NULL THEN
+    v_drawer := public.pictionary_pick_drawer(p_session_id, v_round.drawer_id);
+    IF v_drawer IS NULL THEN
+      RAISE EXCEPTION 'There is no other participant to draw';
+    END IF;
+  ELSIF v_drawer IS NOT DISTINCT FROM v_round.drawer_id THEN
+    RAISE EXCEPTION 'That participant is already the drawer';
+  ELSIF NOT EXISTS (SELECT 1 FROM public.participants WHERE id = v_drawer AND session_id = p_session_id) THEN
+    RAISE EXCEPTION 'That participant is not in this session';
+  END IF;
+
+  DELETE FROM public.comments WHERE round_id = v_round.id;
+  UPDATE public.pictionary_words SET used_round_id = NULL WHERE used_round_id = v_round.id;
+  UPDATE public.pictionary_rounds
+     SET drawer_id = v_drawer, status = 'choosing', started_at = NULL, ends_at = NULL,
+         word_pattern = NULL, choose_deadline = now() + interval '15 seconds'
+   WHERE id = v_round.id
+  RETURNING * INTO v_round;
+  PERFORM public.pictionary_offer_words(v_round.id);
+  RETURN v_round;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.pick_another_pictionary_drawer(uuid, uuid) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.pick_another_pictionary_drawer(uuid, uuid) TO authenticated;
+
+-- ---- host pick: never the Drawer's own Guess --------------------------------------
+CREATE OR REPLACE FUNCTION public.pick_pictionary_winner(p_session_id uuid, p_comment_id uuid)
+RETURNS public.pictionary_rounds
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_round public.pictionary_rounds%ROWTYPE;
+BEGIN
+  PERFORM public.pictionary_owned_session(p_session_id);
+  SELECT * INTO v_round FROM public.pictionary_rounds
+   WHERE session_id = p_session_id ORDER BY round_number DESC LIMIT 1;
+  IF NOT FOUND OR v_round.status = 'choosing' THEN
+    RAISE EXCEPTION 'There is no round to pick a winner for';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.comments WHERE id = p_comment_id AND round_id = v_round.id) THEN
+    RAISE EXCEPTION 'That guess is not from the current round';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.comments WHERE id = p_comment_id AND participant_id = v_round.drawer_id) THEN
+    RAISE EXCEPTION 'The drawer cannot win their own round';
+  END IF;
+  IF v_round.status = 'drawing' THEN
+    PERFORM public.end_pictionary_round(v_round.id, 'guessed');
+  END IF;
+  RETURN public.pictionary_award(v_round.id, p_comment_id);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.pick_pictionary_winner(uuid, uuid) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.pick_pictionary_winner(uuid, uuid) TO authenticated;
+
+-- Pictionary: the host can Remove a participant (spec #50, story 24). Same as the existing
+-- function plus 'pictionary'. Round, winner and Drawer references are ON DELETE SET NULL, so a
+-- removed Drawer leaves the Round recoverable with Pick another Drawer, and Guesses cascade.
+CREATE OR REPLACE FUNCTION public.remove_participant(p_participant_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_session public.sessions%ROWTYPE;
+BEGIN
+  SELECT s.* INTO v_session
+    FROM public.participants p
+    JOIN public.sessions s ON s.id = p.session_id
+   WHERE p.id = p_participant_id;
+
+  IF NOT FOUND OR v_session.owner_id IS DISTINCT FROM auth.uid() THEN
+    RAISE EXCEPTION 'Participant not found';
+  END IF;
+  IF NOT public.is_organizer() THEN
+    RAISE EXCEPTION 'Not authorized';
+  END IF;
+  IF v_session.session_type NOT IN ('quiz', 'comments', 'pictionary') THEN
+    RAISE EXCEPTION 'Participants can only be removed from a quiz, comments or Pictionary session';
+  END IF;
+
+  DELETE FROM public.participants WHERE id = p_participant_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.remove_participant(uuid) FROM public;
+GRANT EXECUTE ON FUNCTION public.remove_participant(uuid) TO authenticated;

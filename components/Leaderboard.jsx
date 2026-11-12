@@ -11,6 +11,7 @@ export default function Leaderboard({
   currentId = null,
   podium = false,
   total = entries.length,
+  showAnswered = true,
 }) {
   const ranked = entries
   const tied = tiedScores(ranked)
@@ -91,9 +92,11 @@ export default function Leaderboard({
               </span>
             </span>
             <span className="flex shrink-0 items-center gap-4 text-sm">
-              <span className="text-muted-foreground">
-                {p.answered_count ?? 0}/{total}
-              </span>
+              {showAnswered && (
+                <span className="text-muted-foreground">
+                  {p.answered_count ?? 0}/{total}
+                </span>
+              )}
               <span className="font-bold text-accent">{p.score} pts</span>
             </span>
           </li>

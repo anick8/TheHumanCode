@@ -90,6 +90,14 @@ function MiniScreen({ type, theme, title, content }) {
         </div>
       </div>
     ),
+    pictionary: (
+      <>
+        <svg viewBox="0 0 100 100" className="aspect-square w-full max-w-[6rem] self-center rounded-md border border-border bg-white" aria-hidden="true">
+          <path d="M20 80 L20 48 L50 22 L80 48 L80 80 Z" fill="none" stroke="currentColor" strokeWidth="4" className="text-primary" />
+        </svg>
+        <span className="mt-auto block rounded-md border border-border bg-card px-2 py-1 text-[10px] text-foreground">{content.people.guesses[0].body}</span>
+      </>
+    ),
     treasure_hunt: (
       <div className="mt-1 flex flex-1 flex-col justify-center rounded-md border border-border bg-card p-2 text-center">
         <p className="text-[8px] font-semibold uppercase tracking-widest text-accent">Clue #1</p>

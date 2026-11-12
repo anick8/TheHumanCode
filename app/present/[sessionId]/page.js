@@ -13,6 +13,7 @@ import { getAppUrl } from '@/lib/utils'
 import SessionTheme from '@/components/SessionTheme'
 import SessionLogo from '@/components/SessionLogo'
 import WheelPresenter from '@/components/WheelPresenter'
+import PictionaryPresenter from '@/components/PictionaryPresenter'
 import InstagramBadge, { InstagramGlyph } from '@/components/InstagramBadge'
 import { parseInstagramHandle } from '@/lib/instagram'
 
@@ -206,6 +207,7 @@ export default function PresentPage() {
   // count per image so the footer/stage pill can show "N comments" like votes.
   const isComments = session?.session_type === 'comments'
   const isWheel = session?.session_type === 'wheel'
+  const isPictionary = session?.session_type === 'pictionary'
   useEffect(() => {
     if (!isComments || !inQuestion || !sessionId) return
     const questionId = questions[session.current_question_index]?.id
@@ -306,7 +308,7 @@ export default function PresentPage() {
 
   // Scored quiz: the live ranked board shown on the presenter screen.
   useEffect(() => {
-    if (!isScored || isRound || !sessionId) return
+    if (!isScored || isRound || isPictionary || !sessionId) return
     let cancelled = false
     const load = async () => {
       // Ranked server-side (Score, then cumulative Response time) so the
@@ -332,7 +334,7 @@ export default function PresentPage() {
       cancelled = true
       clearInterval(interval)
     }
-  }, [isScored, isRound, sessionId])
+  }, [isScored, isRound, isPictionary, sessionId])
 
   // How many participants have locked an answer for the currently open
   // question - a total only, so it never leaks the option split before
@@ -469,7 +471,7 @@ export default function PresentPage() {
 
   const removeParticipant = async (participant) => {
     const label = participant.name || participant.external_id || 'this participant'
-    if (!confirm(`Remove ${label}? Their ${isComments ? 'comments' : 'answers'} are deleted too.`)) return
+    if (!confirm(`Remove ${label}? Their ${isComments ? 'comments' : isPictionary ? 'guesses' : 'answers'} are deleted too.`)) return
     setError(null)
     const { error: rpcError } = await supabase.rpc('remove_participant', { p_participant_id: participant.id })
     if (rpcError) {
@@ -595,6 +597,8 @@ export default function PresentPage() {
           <p className="text-sm text-muted-foreground">
             {isWheel
               ? 'Wheel of Fortune'
+              : isPictionary
+              ? 'Pictionary'
               : closed
               ? 'Quiz closed · Final results'
               : index < 0
@@ -653,9 +657,11 @@ export default function PresentPage() {
       )}
 
       {/* Stage */}
-      <main className={isWheel ? 'flex flex-1 flex-col lg:min-h-0' : 'relative flex flex-1 items-center justify-center px-6 py-10'}>
+      <main className={isWheel ? 'flex flex-1 flex-col lg:min-h-0' : isPictionary ? 'flex flex-1 flex-col' : 'relative flex flex-1 items-center justify-center px-6 py-10'}>
         {isWheel ? (
           <WheelPresenter sessionId={sessionId} session={session} isOwner={isOwner} voteUrl={voteUrl} onError={setError} entriesClosed={entriesClosed} onToggleEntries={toggleEntries} togglingEntries={advancing} instagramHandle={isOwner && showInstagram ? instagramHandle : null} />
+        ) : isPictionary ? (
+          <PictionaryPresenter sessionId={sessionId} session={session} isOwner={isOwner} voteUrl={voteUrl} onError={setError} entriesClosed={entriesClosed} onToggleEntries={toggleEntries} togglingEntries={advancing} onToggleRoster={() => setShowRoster((v) => !v)} onUpdateSession={updateSession} />
         ) : closed ? (
           <div className="text-center w-full max-w-4xl">
             <p className="text-sm font-semibold uppercase tracking-widest text-accent">Final results</p>
@@ -894,10 +900,10 @@ export default function PresentPage() {
             )}
           </div>
         )}
-        {!isWheel && isOwner && instagramHandle && showInstagram && (
+        {!isWheel && !isPictionary && isOwner && instagramHandle && showInstagram && (
           <InstagramBadge handle={instagramHandle} className="absolute bottom-6 left-6 hidden lg:flex" />
         )}
-        {!isWheel && showJoinCorner && (
+        {!isWheel && !isPictionary && showJoinCorner && (
           <div className="absolute bottom-6 right-6 hidden flex-col items-center gap-2 rounded-xl bg-white p-3 shadow-2xl lg:flex">
             <QRCodeSVG value={voteUrl} size={140} level="M" bgColor="#ffffff" fgColor="#000000" />
             <p className="text-xs font-semibold uppercase tracking-widest text-black">Scan to join</p>
@@ -907,7 +913,7 @@ export default function PresentPage() {
       </main>
 
       {/* Controls - the session owner only */}
-      {isWheel ? null : closed ? (
+      {isWheel || isPictionary ? null : closed ? (
         <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-border px-6 py-4">
           <p className="text-sm text-muted-foreground">Quiz closed · final results shown</p>
           {isOwner ? (
