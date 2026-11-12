@@ -471,7 +471,7 @@ export default function PresentPage() {
 
   const removeParticipant = async (participant) => {
     const label = participant.name || participant.external_id || 'this participant'
-    if (!confirm(`Remove ${label}? Their ${isComments ? 'comments' : 'answers'} are deleted too.`)) return
+    if (!confirm(`Remove ${label}? Their ${isComments ? 'comments' : isPictionary ? 'guesses' : 'answers'} are deleted too.`)) return
     setError(null)
     const { error: rpcError } = await supabase.rpc('remove_participant', { p_participant_id: participant.id })
     if (rpcError) {
