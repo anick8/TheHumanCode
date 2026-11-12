@@ -36,7 +36,8 @@ export default function SessionInspector({
 }) {
   const [copied, setCopied] = useState(false)
   const typeCopy = copyFor(session.session_type)
-  const isWheel = session.session_type === 'wheel'
+  // Wheel and Pictionary have no Questions to count.
+  const isWheel = session.session_type === 'wheel' || session.session_type === 'pictionary'
   const isHunt = session.session_type === 'treasure_hunt'
   const isComments = session.session_type === 'comments'
   const joinUrl = `${getAppUrl()}/vote/${session.slug}`

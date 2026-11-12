@@ -46,10 +46,13 @@ export default function SessionResultsPage() {
   const isScored = Boolean(session?.is_scored && isIdentified)
   // Round-by-round quizzes have no cumulative result, so no Scores tab, Score
   // or Time columns - only per-question answers.
-  const showScores = isScored && session?.quiz_format !== 'round_by_round'
+  const showScores = isScored && session?.session_type !== 'pictionary' && session?.quiz_format !== 'round_by_round'
   const isComments = session?.session_type === 'comments'
   // A wheel has no questions or votes: no Overview / All Questions views.
   const isWheel = session?.session_type === 'wheel'
+  // Pictionary's per-Round results page is a later ticket; until then only the
+  // Participants and Export tabs apply.
+  const isPictionary = session?.session_type === 'pictionary'
 
   const sessionId = params.sessionId
 
@@ -90,6 +93,7 @@ export default function SessionResultsPage() {
       if (data.session_type === 'comments') {
         setActiveTab('comments')
       }
+      if (data.session_type === 'pictionary') setActiveTab('participants')
       if (data.session_type === 'wheel') {
         setActiveTab('spins')
         await loadSpins()
@@ -515,7 +519,7 @@ export default function SessionResultsPage() {
               <HelpLink slug="results-and-export" label="About results and export" />
             </div>
             <div className="mt-2 text-muted-foreground">
-              {!isComments && !isWheel && <span>{RESULTS_MODE_LABELS[session.results_mode] || session.results_mode} • </span>}
+              {!isComments && !isWheel && !isPictionary && <span>{RESULTS_MODE_LABELS[session.results_mode] || session.results_mode} • </span>}
               <span>{lastUpdated ? `Updated ${formatDateTime(lastUpdated)}` : 'Loading…'}</span>
             </div>
           </div>
@@ -582,7 +586,7 @@ export default function SessionResultsPage() {
       {/* Tabs */}
       <div className="mb-8 border-b border-border">
         <nav className="-mb-px flex space-x-8">
-          {!isComments && !isWheel && (
+          {!isComments && !isWheel && !isPictionary && (
             <button
               onClick={() => setActiveTab('overview')}
               className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
@@ -597,7 +601,7 @@ export default function SessionResultsPage() {
               Overview
             </button>
           )}
-          {!isComments && !isWheel && (
+          {!isComments && !isWheel && !isPictionary && (
             <button
               onClick={() => setActiveTab('questions')}
               className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
@@ -686,7 +690,7 @@ export default function SessionResultsPage() {
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'overview' && !isComments && !isWheel && (
+      {activeTab === 'overview' && !isComments && !isWheel && !isPictionary && (
         <div className="space-y-8">
           {/* Stats Cards - only stats the schema can actually support.
               Completion rate and average time were removed rather than
@@ -772,7 +776,7 @@ export default function SessionResultsPage() {
         </div>
       )}
 
-      {activeTab === 'questions' && !isComments && !isWheel && (
+      {activeTab === 'questions' && !isComments && !isWheel && !isPictionary && (
         <div className="space-y-8">
           {questions.map((question, index) => (
             <div key={question.id} className="rounded-2xl border border-border bg-card p-8 shadow-lg">
