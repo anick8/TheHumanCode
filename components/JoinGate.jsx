@@ -19,6 +19,7 @@ export default function JoinGate({ session, onJoined, removed = false }) {
   const collected = requiresName && requiresId ? 'name and ID' : requiresName ? 'name' : 'ID'
   const typeCopy = copyFor(session?.session_type)
   const isWheel = session?.session_type === 'wheel'
+  const isPictionary = session?.session_type === 'pictionary'
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -116,6 +117,8 @@ export default function JoinGate({ session, onJoined, removed = false }) {
         <p className="mt-2 text-muted-foreground">
           {isWheel
             ? `Enter your name to go on the wheel for ${session?.title}.`
+            : isPictionary
+            ? `Enter your name to play ${session?.title}. Your name is shown to the room.`
             : `${session?.title} collects your ${collected} so the organizer can see who responded.`}
           {joiningMidGame && " The quiz has started - you'll join on the current question."}
         </p>
@@ -171,7 +174,7 @@ export default function JoinGate({ session, onJoined, removed = false }) {
           </button>
         </form>
 
-        {!isWheel && (
+        {!isWheel && !isPictionary && (
           <p className="mt-4 text-xs text-muted-foreground">
             Your answers are stored with your {collected} and visible to the organizer. Only your first answer
             on each question is recorded.
