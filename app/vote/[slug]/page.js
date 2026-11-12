@@ -12,6 +12,7 @@ import JoinGate from '@/components/JoinGate'
 import Leaderboard from '@/components/Leaderboard'
 import { RoundBoard, RoundRecap } from '@/components/RoundBoard'
 import WheelPhone from '@/components/WheelPhone'
+import PictionaryPhone from '@/components/PictionaryPhone'
 import { generateVoterToken } from '@/lib/utils'
 
 const RESULTS_MODE_LABELS = { live: 'Live results', after_all: 'After all questions' }
@@ -57,7 +58,8 @@ export default function VotingPage() {
   const [commentError, setCommentError] = useState(null)
   const supabase = createClient()
 
-  const isScored = Boolean(session?.is_scored && session?.participation_mode === 'identified')
+  // Pictionary is scored too, but PictionaryPhone does its own polling (no questions or quiz standing).
+  const isScored = Boolean(session?.is_scored && session?.participation_mode === 'identified' && session?.session_type !== 'pictionary')
   const isRound = isScored && session?.quiz_format === 'round_by_round'
   const isComments = session?.session_type === 'comments'
   participantRef.current = participant
@@ -816,6 +818,20 @@ export default function VotingPage() {
           </div>
         </header>
         <WheelPhone participant={participant} onSwitch={switchParticipant} />
+      </SessionTheme>
+    )
+  }
+
+  if (session.session_type === 'pictionary' && participant) {
+    return (
+      <SessionTheme theme={session.theme} className="min-h-screen bg-gradient-to-br from-background to-muted">
+        <header className="border-b border-border bg-card">
+          <div className="container mx-auto flex items-center gap-4 px-4 py-4">
+            <SessionLogo theme={session.theme} className="h-10 shrink-0" />
+            <h1 className="font-display truncate text-xl font-bold text-foreground">{session.title}</h1>
+          </div>
+        </header>
+        <PictionaryPhone session={session} participant={participant} onSwitch={switchParticipant} />
       </SessionTheme>
     )
   }
