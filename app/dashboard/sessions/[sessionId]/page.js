@@ -8,6 +8,7 @@ import QRCodeDisplay from '@/components/QRCodeDisplay'
 import SessionForm from '@/components/SessionForm'
 import QuestionEditor from '@/components/QuestionEditor'
 import WheelEntriesPanel from '@/components/WheelEntriesPanel'
+import { mergeWords } from '@/lib/pictionaryWords'
 import PictionaryWordsPanel from '@/components/PictionaryWordsPanel'
 import AssistantPanel from '@/components/AssistantPanel'
 import { useAccess } from '@/app/components/AccessProvider'
@@ -71,6 +72,7 @@ export default function SessionDetailPage() {
   const [hasSpins, setHasSpins] = useState(false)
   // Likewise a Pictionary session's Rounds lock its type and Word list.
   const [hasRounds, setHasRounds] = useState(false)
+  const [wordsKey, setWordsKey] = useState(0)
   const [questionKeys, setQuestionKeys] = useState({})
   // Editor contents as last loaded/saved; null until the first load finishes.
   const [savedSnapshot, setSavedSnapshot] = useState(null)
@@ -311,7 +313,27 @@ export default function SessionDetailPage() {
   // database - it produces the same temp-id shapes QuestionEditor creates by
   // hand, so the existing saveQuestions() persists them unchanged once the
   // organizer has reviewed the draft and pressed Save.
-  const applyProposal = (kind, input) => {
+  const applyProposal = async (kind, input) => {
+    if (kind === 'words') {
+      // The Word list lives behind RPCs (hidden from client tables), so unlike
+      // questions it is saved here, through the same RPC the Words panel uses.
+      const { data: existing, error: readError } = await supabase.rpc('get_pictionary_words', { p_session_id: sessionId })
+      const merged = mergeWords(existing, input?.words ?? [], input?.mode)
+      const { data, error: saveError } = readError
+        ? { error: readError }
+        : await supabase.rpc('set_pictionary_words', { p_session_id: sessionId, p_words: merged })
+      if (saveError) {
+        setSaveMessage(null)
+        setSaveError(saveError.message)
+        return false
+      }
+      setSaveError(null)
+      setWordsKey((k) => k + 1) // remount the panel so it reloads the saved list
+      setActiveTab('questions')
+      setSaveMessage(`Saved ${data} ${data === 1 ? 'word' : 'words'} to the word list.`)
+      return true
+    }
+
     if (kind === 'settings') {
       // Merged into SessionForm's own state, not written. The organizer still
       // presses Save there, exactly as if they had changed the fields by hand.
@@ -728,7 +750,7 @@ export default function SessionDetailPage() {
                 {presentLabel(session, questions.length)}
               </button>
             )}
-            {canEdit && !isWheel && !isPictionary && (
+            {canEdit && !isWheel && (
               <button
                 onClick={() => setAssistantOpen(true)}
                 className="inline-flex items-center justify-center rounded-lg border border-border bg-card px-6 py-3 text-base font-semibold text-foreground shadow-sm hover:bg-muted transition-colors"
@@ -827,8 +849,14 @@ export default function SessionDetailPage() {
         <WheelEntriesPanel sessionId={sessionId} pollMs={5000} disabled={!canEdit} />
       )}
 
+      {activeTab === 'questions' && isPictionary && (saveError || saveMessage) && (
+        <p role="status" className={`mb-4 text-sm font-medium ${saveError ? 'text-destructive' : 'text-emerald-300'}`}>
+          {saveError || saveMessage}
+        </p>
+      )}
+
       {activeTab === 'questions' && isPictionary && (
-        <PictionaryWordsPanel sessionId={sessionId} locked={hasRounds} disabled={!canEdit} />
+        <PictionaryWordsPanel key={wordsKey} sessionId={sessionId} locked={hasRounds} disabled={!canEdit} />
       )}
 
       {activeTab === 'questions' && !isWheel && !isPictionary && (
@@ -974,7 +1002,7 @@ export default function SessionDetailPage() {
         </div>
       )}
 
-      {canEdit && !isWheel && !isPictionary && (
+      {canEdit && !isWheel && (
         <AssistantPanel
           open={assistantOpen}
           onClose={() => setAssistantOpen(false)}
@@ -983,6 +1011,7 @@ export default function SessionDetailPage() {
           onApplyProposal={applyProposal}
           hasVotes={hasVotes}
           isScored={Boolean(session?.is_scored)}
+          wordsLocked={hasRounds}
         />
       )}
     </div>
