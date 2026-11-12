@@ -79,7 +79,8 @@ export default function PictionaryPresenter({ sessionId, session, isOwner, voteU
   }, [round?.id, status, loadGuesses])
 
   // Ranking between Rounds and at the end.
-  useEffect(() => { if (status === 'revealed' || podium) loadBoard() }, [status, round?.id, podium, loadBoard])
+  // The winner can change within a revealed Round (Change winner), so it is a dependency too.
+  useEffect(() => { if (status === 'revealed' || podium) loadBoard() }, [status, round?.id, round?.winner_comment_id, podium, loadBoard])
 
   // Clock, and the time boundaries the presenter drives (the server re-validates each call).
   useEffect(() => {
@@ -200,7 +201,7 @@ export default function PictionaryPresenter({ sessionId, session, isOwner, voteU
             </div>
           )}
           {feed}
-          {!drawing && board.length > 0 && <div className="max-h-56 overflow-y-auto"><Leaderboard entries={board} total={participants.length} /></div>}
+          {!drawing && board.length > 0 && <div className="max-h-56 overflow-y-auto"><Leaderboard entries={board} total={participants.length} showAnswered={false} /></div>}
         </div>
       </div>
     )

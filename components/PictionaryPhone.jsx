@@ -74,6 +74,7 @@ export default function PictionaryPhone({ session, participant, onSwitch }) {
 
   // Reset per-Round state when the Round changes.
   const roundId = round?.id ?? null
+  const winnerId = round?.winner_comment_id ?? null // changes on Change winner, with no status change
   useEffect(() => {
     roundIdRef.current = roundId
     setGuesses([])
@@ -91,7 +92,7 @@ export default function PictionaryPhone({ session, participant, onSwitch }) {
     if (!live) return
     const timer = setInterval(() => loadGuesses(roundId), FEED_POLL_MS)
     return () => clearInterval(timer)
-  }, [roundId, live, status, loadGuesses])
+  }, [roundId, live, status, winnerId, loadGuesses])
 
   // Leaderboard: names for the Drawer/winner, own standing, and the final ranking.
   useEffect(() => {
@@ -99,7 +100,7 @@ export default function PictionaryPhone({ session, participant, onSwitch }) {
     const timer = setInterval(loadBoard, 5000)
     return () => clearInterval(timer)
   }, [loadBoard])
-  useEffect(() => { if (status === 'revealed') loadBoard() }, [status, roundId, loadBoard])
+  useEffect(() => { if (status === 'revealed') loadBoard() }, [status, roundId, winnerId, loadBoard])
 
   // Drawer: the 3 offered Words while Choosing, the picked Word while Drawing.
   useEffect(() => {
@@ -187,7 +188,7 @@ export default function PictionaryPhone({ session, participant, onSwitch }) {
         </div>
       )}
       <div className={card}>
-        <Leaderboard entries={board} currentId={participant.id} total={session.pictionary_round_count} />
+        <Leaderboard entries={board} currentId={participant.id} total={session.pictionary_round_count} showAnswered={false} />
       </div>
     </div>
   )

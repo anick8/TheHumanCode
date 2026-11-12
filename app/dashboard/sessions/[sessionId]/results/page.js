@@ -265,6 +265,7 @@ export default function SessionResultsPage() {
         setVoteCounts({})
         setUniqueVoters(0)
         setParticipantAnswers({})
+        setLastUpdated(new Date().toISOString())
         return
       }
 
