@@ -9,6 +9,7 @@ import { formatDateTime } from '@/lib/utils'
 import { tiedScores, tieNote } from '@/lib/tiebreak'
 import SessionTheme from '@/components/SessionTheme'
 import SessionLogo from '@/components/SessionLogo'
+import PictionaryResults from '@/components/PictionaryResults'
 import ClearResponsesButton from '@/components/ClearResponsesButton'
 import { useAccess } from '@/app/components/AccessProvider'
 
@@ -50,8 +51,8 @@ export default function SessionResultsPage() {
   const isComments = session?.session_type === 'comments'
   // A wheel has no questions or votes: no Overview / All Questions views.
   const isWheel = session?.session_type === 'wheel'
-  // Pictionary's per-Round results page is a later ticket; until then only the
-  // Participants and Export tabs apply.
+  // Pictionary has no Questions: a Rounds + Leaderboard tab replaces Overview,
+  // All Questions and Scores.
   const isPictionary = session?.session_type === 'pictionary'
 
   const sessionId = params.sessionId
@@ -93,7 +94,7 @@ export default function SessionResultsPage() {
       if (data.session_type === 'comments') {
         setActiveTab('comments')
       }
-      if (data.session_type === 'pictionary') setActiveTab('participants')
+      if (data.session_type === 'pictionary') setActiveTab('rounds')
       if (data.session_type === 'wheel') {
         setActiveTab('spins')
         await loadSpins()
@@ -643,6 +644,18 @@ export default function SessionResultsPage() {
               Spins ({wheelSpins.length})
             </button>
           )}
+          {isPictionary && (
+            <button
+              onClick={() => setActiveTab('rounds')}
+              className={`whitespace-nowrap py-4 px-1 border-b-2 text-sm font-medium ${
+                activeTab === 'rounds'
+                  ? 'border-ring text-accent'
+                  : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
+              }`}
+            >
+              Rounds & Leaderboard
+            </button>
+          )}
           {isIdentified && (
             <button
               onClick={() => setActiveTab('participants')}
@@ -1021,6 +1034,8 @@ export default function SessionResultsPage() {
           </div>
         </div>
       )}
+
+      {activeTab === 'rounds' && isPictionary && <PictionaryResults sessionId={sessionId} />}
 
       {activeTab === 'scores' && showScores && (
         <div className="space-y-8">
