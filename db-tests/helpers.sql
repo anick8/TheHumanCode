@@ -219,3 +219,40 @@ BEGIN
     RAISE EXCEPTION 'unknown state %', p_state;
   END IF;
 END $$;
+
+
+-- ============================================================================
+-- Pictionary fixtures
+-- ============================================================================
+
+-- A Pictionary session owned by a fresh organizer, with its Word list set
+-- through the public function (the caller is left acting as the owner).
+-- Returns the session id.
+CREATE FUNCTION pg_temp.make_pictionary(p_words text DEFAULT E'cat\ndog\nfish\nbird\nhorse')
+RETURNS uuid LANGUAGE plpgsql AS $$
+DECLARE
+  v_owner uuid := gen_random_uuid();
+  v_session uuid := gen_random_uuid();
+BEGIN
+  INSERT INTO auth.users (id, email) VALUES (v_owner, v_owner || '@test.local');
+  PERFORM pg_temp.grant_to(v_owner, now() - interval '1 day', NULL);
+  INSERT INTO public.sessions (id, owner_id, title, slug, session_type, participation_mode,
+                               identity_requires_name, identity_requires_id, is_scored)
+  VALUES (v_session, v_owner, 'Scenario pictionary', 'scn-' || v_session, 'pictionary', 'identified',
+          true, false, true);
+  PERFORM pg_temp.act_as_owner(v_session);
+  PERFORM public.set_pictionary_words(v_session, p_words);
+  RETURN v_session;
+END $$;
+
+-- The newest Round of a session.
+CREATE FUNCTION pg_temp.latest_round(p_session uuid) RETURNS public.pictionary_rounds
+LANGUAGE sql AS $$
+  SELECT r FROM public.pictionary_rounds r WHERE r.session_id = p_session ORDER BY r.round_number DESC LIMIT 1
+$$;
+
+-- Join token of the newest Round's Drawer.
+CREATE FUNCTION pg_temp.drawer_token(p_session uuid) RETURNS text
+LANGUAGE sql AS $$
+  SELECT p.join_token FROM public.participants p WHERE p.id = (pg_temp.latest_round(p_session)).drawer_id
+$$;
