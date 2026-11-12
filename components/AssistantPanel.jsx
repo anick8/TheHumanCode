@@ -13,6 +13,7 @@ const ENTER_EASE = 'cubic-bezier(0.16, 1, 0.3, 1)'
 // catch drift, so these are asserted against the streamed part names below.
 const TOOL_PROPOSE_QUESTIONS = 'propose_questions'
 const TOOL_PROPOSE_SESSION_SETTINGS = 'propose_session_settings'
+const TOOL_PROPOSE_PICTIONARY_WORDS = 'propose_pictionary_words'
 
 const READ_TOOL_LABELS = {
   'tool-list_sessions': 'Looking through your sessions',
@@ -46,7 +47,10 @@ const LOCKED_AFTER_VOTES = [
 
 // Why a draft cannot be applied, or null when it can. Returned as a sentence
 // because it is shown to the organizer in place of the Apply button.
-function blockedReason({ kind, input, hasVotes, isScored }) {
+function blockedReason({ kind, input, hasVotes, isScored, wordsLocked }) {
+  if (kind === 'words') {
+    return wordsLocked ? 'The word list is locked because a round has already been played.' : null
+  }
   if (!hasVotes) return null
 
   if (kind === 'questions') {
@@ -62,7 +66,7 @@ function blockedReason({ kind, input, hasVotes, isScored }) {
   return 'This session already has votes, so its type, scoring and identity settings are locked.'
 }
 
-export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, onApplyProposal, hasVotes = false, isScored = false }) {
+export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, onApplyProposal, hasVotes = false, isScored = false, wordsLocked = false }) {
   const [input, setInput] = useState('')
   const [resolved, setResolved] = useState({})
   const [reduceMotion, setReduceMotion] = useState(true)
@@ -300,10 +304,12 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
                 const isQuestionProposal = part.type === `tool-${TOOL_PROPOSE_QUESTIONS}`
                 const isSettingsProposal = part.type === `tool-${TOOL_PROPOSE_SESSION_SETTINGS}`
 
-                if ((isQuestionProposal || isSettingsProposal) && part.state !== 'input-streaming') {
-                  const tool = isQuestionProposal ? TOOL_PROPOSE_QUESTIONS : TOOL_PROPOSE_SESSION_SETTINGS
-                  const kind = isQuestionProposal ? 'questions' : 'settings'
-                  const blocked = blockedReason({ kind, input: part.input, hasVotes, isScored })
+                const isWordsProposal = part.type === `tool-${TOOL_PROPOSE_PICTIONARY_WORDS}`
+
+                if ((isQuestionProposal || isSettingsProposal || isWordsProposal) && part.state !== 'input-streaming') {
+                  const tool = isQuestionProposal ? TOOL_PROPOSE_QUESTIONS : isWordsProposal ? TOOL_PROPOSE_PICTIONARY_WORDS : TOOL_PROPOSE_SESSION_SETTINGS
+                  const kind = isQuestionProposal ? 'questions' : isWordsProposal ? 'words' : 'settings'
+                  const blocked = blockedReason({ kind, input: part.input, hasVotes, isScored, wordsLocked })
                   return (
                     <AssistantProposal
                       key={index}
@@ -311,10 +317,12 @@ export default function AssistantPanel({ open, onClose, sessionId, seedPrompt, o
                       input={part.input}
                       resolved={resolved[part.toolCallId]}
                       blockedReason={blocked}
-                      onApply={(draft) => {
-                        onApplyProposal(kind, draft)
-                        respond(tool, part.toolCallId, 'applied')
-                        onClose()
+                      onApply={async (draft) => {
+                        // A words draft saves on apply and can fail; the
+                        // page returns false and shows the error.
+                        const ok = await onApplyProposal(kind, draft)
+                        respond(tool, part.toolCallId, ok === false ? 'discarded' : 'applied')
+                        if (ok !== false) onClose()
                       }}
                       onDiscard={() => respond(tool, part.toolCallId, 'discarded')}
                     />

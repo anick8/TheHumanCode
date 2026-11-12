@@ -317,7 +317,7 @@ export default function DashboardHome() {
         if (titleRes.ok) {
           const titleData = await titleRes.json()
           if (titleData.title) title = titleData.title
-          if (titleData.sessionType === 'poll' || titleData.sessionType === 'quiz') {
+          if (['poll', 'quiz', 'pictionary'].includes(titleData.sessionType)) {
             sessionType = titleData.sessionType
           }
         }
@@ -338,7 +338,7 @@ export default function DashboardHome() {
           participation_mode: sessionType === 'poll' ? 'anonymous' : 'identified',
           identity_requires_name: true,
           identity_requires_id: false,
-          is_scored: sessionType === 'quiz',
+          is_scored: sessionType === 'quiz' || sessionType === 'pictionary',
           score_time_limit_seconds: null,
           is_active: true,
           owner_id: user?.id,

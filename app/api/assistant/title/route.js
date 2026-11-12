@@ -55,12 +55,14 @@ export async function POST(request) {
     const { text } = await generateText({
       model: getModel(),
       instructions:
-        'Given a short description of a quiz or poll, respond in the exact form ' +
+        'Given a short description of a quiz, poll or Pictionary game, respond in the exact form ' +
         '<Word>|<type>. <Word> is ONE word naming the topic, Title Case, no punctuation. ' +
         '<type> is "quiz" if the description implies right/wrong answers, scoring or a ' +
-        'leaderboard, or "poll" for opinions, voting or feedback. Nothing else. Examples: ' +
+        'leaderboard, "pictionary" for a drawing-and-guessing game, or "poll" for opinions, ' +
+        'voting or feedback. Nothing else. Examples: ' +
         'input "a 6-question quiz on renewable energy" -> output "Renewable|quiz"; ' +
-        'input "ask the team which lunch spot they prefer" -> output "Lunch|poll".',
+        'input "ask the team which lunch spot they prefer" -> output "Lunch|poll"; ' +
+        'input "a pictionary game about animals" -> output "Animals|pictionary".',
       prompt: prompt.slice(0, 500),
       maxOutputTokens: 16,
       // The configured model (lib/ai/provider.js) is a reasoning model. Without
@@ -87,7 +89,8 @@ export async function POST(request) {
 // prompt's own wording so a failed or malformed reply still picks sensibly.
 function sanitizeType(raw, prompt) {
   const type = String(raw ?? '').trim().toLowerCase()
-  if (type === 'quiz' || type === 'poll') return type
+  if (type === 'quiz' || type === 'poll' || type === 'pictionary') return type
+  if (/\bpictionary\b/i.test(prompt)) return 'pictionary'
   return /\b(quiz|trivia|score|scored|leaderboard|test)\b/i.test(prompt) ? 'quiz' : 'poll'
 }
 
